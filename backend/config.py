@@ -16,7 +16,8 @@ ACCESS_PASSWORD = os.getenv("ACCESS_PASSWORD", "")  # Empty = no password requir
 
 # Server configuration
 HOST = "0.0.0.0"
-PORT = int(os.getenv("PORT", 8000))
+# Use BACKEND_PORT to avoid conflict with Railway's PORT (used for frontend)
+PORT = int(os.getenv("BACKEND_PORT", os.getenv("PORT", 8001)))
 
 # File paths
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
