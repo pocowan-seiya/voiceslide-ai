@@ -3,7 +3,8 @@
 import { useState, useCallback, DragEvent } from "react";
 import { Header } from "@/components/Header";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// 本番環境では相対パス（Next.js rewritesでプロキシ）、ローカルでは直接
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 type WorkflowMode = "hybrid" | "full-ai" | null;
