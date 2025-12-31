@@ -1,11 +1,21 @@
 "use client";
 
-import { useState, useCallback, DragEvent } from "react";
+import { useState, useCallback, DragEvent, useEffect } from "react";
 import { Header } from "@/components/Header";
+import { APIKeysSettings, getAPIKeys, hasAPIKeys } from "@/components/APIKeysSettings";
 
 // 本番環境：Next.js API Routes経由でバックエンドにプロキシ
 // ローカル：直接バックエンドに接続
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+// Helper to get API headers with keys
+function getAPIHeaders(): HeadersInit {
+  const keys = getAPIKeys();
+  const headers: HeadersInit = {};
+  if (keys.openai) headers["x-openai-key"] = keys.openai;
+  if (keys.gemini) headers["x-gemini-key"] = keys.gemini;
+  return headers;
+}
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 type WorkflowMode = "hybrid" | "full-ai" | null;
@@ -75,6 +85,13 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [editedTranscript, setEditedTranscript] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [hasKeys, setHasKeys] = useState(false);
+
+  // Check for API keys on mount
+  useEffect(() => {
+    setHasKeys(hasAPIKeys());
+  }, [showSettings]);
 
   const STEPS = state.workflowMode === "full-ai" ? FULL_AI_STEPS : HYBRID_STEPS;
 
@@ -123,14 +140,22 @@ export default function Home() {
 
   // Step 2: Transcribe
   const handleTranscribe = async () => {
-    updateState({ isProcessing: true });
+    // Check if API keys are set
+    if (!hasAPIKeys()) {
+      setShowSettings(true);
+      updateState({ error: "APIキーを設定してください" });
+      return;
+    }
+
+    updateState({ isProcessing: true, error: null });
 
     try {
       const res = await fetch(`${API_URL}/api/transcribe/${state.jobId}`, {
         method: "POST",
+        headers: getAPIHeaders(),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Transcription failed");
+      if (!res.ok) throw new Error(data.detail || data.error || "Transcription failed");
 
       updateState({
         transcript: data.transcript,
@@ -438,7 +463,23 @@ export default function Home() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
+      {/* API Keys Settings Modal */}
+      {showSettings && <APIKeysSettings onClose={() => setShowSettings(false)} />}
+
       <main className="flex-1 container mx-auto px-4 py-8 max-w-5xl">
+        {/* Settings Button */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => setShowSettings(true)}
+            className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-all ${hasKeys
+                ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                : "bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 border border-yellow-600/50"
+              }`}
+          >
+            🔑 {hasKeys ? "APIキー設定" : "APIキーを設定してください"}
+          </button>
+        </div>
+
         {/* Progress */}
         <div className="mb-8 overflow-x-auto">
           <div className="flex items-center min-w-max">

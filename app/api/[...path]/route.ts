@@ -16,11 +16,17 @@ export async function GET(
     const targetUrl = `${BACKEND_URL}/api/${pathString}${url.search}`;
 
     try {
-        const response = await fetch(targetUrl, {
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
+        // Forward API keys from headers
+        const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+        };
+
+        const openaiKey = request.headers.get('x-openai-key');
+        const geminiKey = request.headers.get('x-gemini-key');
+        if (openaiKey) headers['x-openai-key'] = openaiKey;
+        if (geminiKey) headers['x-gemini-key'] = geminiKey;
+
+        const response = await fetch(targetUrl, { headers });
 
         const data = await response.json();
         return NextResponse.json(data, { status: response.status });
@@ -47,6 +53,12 @@ export async function POST(
         let body: BodyInit | undefined;
         let headers: HeadersInit = {};
 
+        // Forward API keys from headers
+        const openaiKey = request.headers.get('x-openai-key');
+        const geminiKey = request.headers.get('x-gemini-key');
+        if (openaiKey) headers['x-openai-key'] = openaiKey;
+        if (geminiKey) headers['x-gemini-key'] = geminiKey;
+
         if (contentType.includes('multipart/form-data')) {
             // Handle file uploads - pass through FormData
             body = await request.formData();
@@ -54,7 +66,7 @@ export async function POST(
             // Handle JSON
             try {
                 body = JSON.stringify(await request.json());
-                headers = { 'Content-Type': 'application/json' };
+                headers['Content-Type'] = 'application/json';
             } catch {
                 body = undefined;
             }
@@ -86,8 +98,15 @@ export async function DELETE(
     const targetUrl = `${BACKEND_URL}/api/${pathString}`;
 
     try {
+        const headers: HeadersInit = {};
+        const openaiKey = request.headers.get('x-openai-key');
+        const geminiKey = request.headers.get('x-gemini-key');
+        if (openaiKey) headers['x-openai-key'] = openaiKey;
+        if (geminiKey) headers['x-gemini-key'] = geminiKey;
+
         const response = await fetch(targetUrl, {
             method: 'DELETE',
+            headers,
         });
 
         const data = await response.json();

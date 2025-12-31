@@ -162,14 +162,26 @@ async def upload_audio(file: UploadFile = File(...)):
 # ========== STEP 2: Transcribe ==========
 
 @app.post("/api/transcribe/{job_id}")
-async def transcribe(job_id: str, cleanup_audio: bool = True):
+async def transcribe(
+    job_id: str, 
+    cleanup_audio: bool = True,
+    x_openai_key: Optional[str] = Header(None),
+    x_gemini_key: Optional[str] = Header(None)
+):
     """Step 2: Transcribe audio (with optional cleanup)"""
     pipeline = get_or_create_pipeline(job_id)
+    
+    # Store API keys in job for later use
+    if x_openai_key:
+        jobs[job_id]["openai_key"] = x_openai_key
+    if x_gemini_key:
+        jobs[job_id]["gemini_key"] = x_gemini_key
     
     jobs[job_id]["step"] = 2
     jobs[job_id]["status"] = "processing"
     
-    result = await pipeline.step_transcribe()
+    # Pass API key to transcription
+    result = await pipeline.step_transcribe(openai_key=x_openai_key)
     
     # オプション: 無音・フィラーを除去
     cleanup_result = None

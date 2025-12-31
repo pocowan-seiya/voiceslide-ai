@@ -52,9 +52,9 @@ class HybridPipeline:
         self.video_path = None
     
     # Step 2: Transcription
-    async def step_transcribe(self) -> Dict[str, Any]:
+    async def step_transcribe(self, openai_key: Optional[str] = None) -> Dict[str, Any]:
         """Transcribe audio to text with timestamps"""
-        result = await transcribe_audio(self.audio_path)
+        result = await transcribe_audio(self.audio_path, openai_key=openai_key)
         
         self.raw_transcript = result["full_text"]
         self.segments = result["segments"]
