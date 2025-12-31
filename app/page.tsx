@@ -3,7 +3,8 @@
 import { useState, useCallback, DragEvent } from "react";
 import { Header } from "@/components/Header";
 
-// 本番環境では相対パス（Next.js rewritesでプロキシ）、ローカルでは直接
+// 本番環境：Next.js API Routes経由でバックエンドにプロキシ
+// ローカル：直接バックエンドに接続
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
