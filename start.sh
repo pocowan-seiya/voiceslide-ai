@@ -5,16 +5,17 @@ set -e
 
 echo "🚀 Starting VoiceSlide AI..."
 
-# Railwayは$PORTを提供（通常3000）
-# フロントエンドはRailwayの$PORTを使用
-# バックエンドは内部ポート8001を使用（競合回避）
+# Railwayは$PORTを提供
 FRONTEND_PORT=${PORT:-3000}
 BACKEND_PORT=8001
+
+echo "Frontend will run on port: $FRONTEND_PORT"
+echo "Backend will run on port: $BACKEND_PORT"
 
 # ディレクトリ作成
 mkdir -p /app/outputs /app/uploads
 
-# バックエンドを起動（バックグラウンド、ポート8001）
+# バックエンドを起動（ポート8001）
 echo "📡 Starting backend on port $BACKEND_PORT..."
 cd /app/backend
 PORT=$BACKEND_PORT python main.py &
@@ -23,16 +24,13 @@ BACKEND_PID=$!
 # バックエンドの起動を待機
 sleep 5
 
-# フロントエンドを起動
+# フロントエンドを起動（npm経由）
 echo "🌐 Starting frontend on port $FRONTEND_PORT..."
 cd /app
-export PORT=$FRONTEND_PORT
-next start -p $FRONTEND_PORT &
+PORT=$FRONTEND_PORT npm start &
 FRONTEND_PID=$!
 
 echo "✅ VoiceSlide AI is running!"
-echo "   Frontend: http://localhost:$FRONTEND_PORT"
-echo "   Backend:  http://localhost:$BACKEND_PORT"
 
 # シグナルハンドリング
 trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null" SIGTERM SIGINT EXIT
