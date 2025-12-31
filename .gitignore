@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.next/
+out/
+venv/
+.venv/
+backend/venv/
+.env.production
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Build
+dist/
+build/
+
+# Uploads and outputs
+uploads/
+outputs/
+*.mp4
+*.mp3
+*.wav
+*.m4a
+*.srt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
