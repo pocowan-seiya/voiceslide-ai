@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = 'http://localhost:8001';
 
+type RouteContext = {
+    params: Promise<{ path: string[] }>;
+};
+
 export async function GET(
     request: NextRequest,
-    { params }: { params: { path: string[] } }
+    context: RouteContext
 ) {
-    const path = params.path.join('/');
+    const { path } = await context.params;
+    const pathString = path.join('/');
     const url = new URL(request.url);
-    const targetUrl = `${BACKEND_URL}/api/${path}${url.search}`;
+    const targetUrl = `${BACKEND_URL}/api/${pathString}${url.search}`;
 
     try {
         const response = await fetch(targetUrl, {
@@ -30,24 +35,26 @@ export async function GET(
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { path: string[] } }
+    context: RouteContext
 ) {
-    const path = params.path.join('/');
+    const { path } = await context.params;
+    const pathString = path.join('/');
     const url = new URL(request.url);
-    const targetUrl = `${BACKEND_URL}/api/${path}${url.search}`;
+    const targetUrl = `${BACKEND_URL}/api/${pathString}${url.search}`;
 
     try {
         const contentType = request.headers.get('content-type') || '';
-        let body;
+        let body: BodyInit | undefined;
+        let headers: HeadersInit = {};
 
         if (contentType.includes('multipart/form-data')) {
-            // Handle file uploads
-            const formData = await request.formData();
-            body = formData;
-        } else {
+            // Handle file uploads - pass through FormData
+            body = await request.formData();
+        } else if (contentType.includes('application/json')) {
             // Handle JSON
             try {
                 body = JSON.stringify(await request.json());
+                headers = { 'Content-Type': 'application/json' };
             } catch {
                 body = undefined;
             }
@@ -55,10 +62,8 @@ export async function POST(
 
         const response = await fetch(targetUrl, {
             method: 'POST',
-            headers: contentType.includes('multipart/form-data')
-                ? {}
-                : { 'Content-Type': 'application/json' },
-            body: body,
+            headers,
+            body,
         });
 
         const data = await response.json();
@@ -74,10 +79,11 @@ export async function POST(
 
 export async function DELETE(
     request: NextRequest,
-    { params }: { params: { path: string[] } }
+    context: RouteContext
 ) {
-    const path = params.path.join('/');
-    const targetUrl = `${BACKEND_URL}/api/${path}`;
+    const { path } = await context.params;
+    const pathString = path.join('/');
+    const targetUrl = `${BACKEND_URL}/api/${pathString}`;
 
     try {
         const response = await fetch(targetUrl, {
