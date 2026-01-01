@@ -271,14 +271,23 @@ POLISH_PROMPT = """# タスク
 """
 
 
-async def generate_outline(transcript: str, segments: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def generate_outline(transcript: str, segments: List[Dict[str, Any]], gemini_key: str = None) -> Dict[str, Any]:
     """
     高精度タイムスタンプ同期のスライドアウトラインを生成
     
     Args:
         transcript: ユーザーが編集した可能性のある文字起こし（これを優先）
         segments: 元のタイムスタンプ情報（タイミング用）
+        gemini_key: Optional Gemini API key from user
     """
+    
+    # Configure Gemini with provided key or default
+    if gemini_key:
+        genai.configure(api_key=gemini_key)
+    elif GEMINI_API_KEY:
+        genai.configure(api_key=GEMINI_API_KEY)
+    else:
+        raise ValueError("Gemini API key is required. Please set it in settings.")
     
     if not segments:
         return create_fallback_outline(transcript)

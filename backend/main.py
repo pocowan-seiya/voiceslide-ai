@@ -231,15 +231,23 @@ async def transcribe(
 # ========== STEP 3: Polish Transcript ==========
 
 @app.post("/api/polish-transcript/{job_id}")
-async def polish_transcript(job_id: str, update: Optional[TranscriptUpdate] = None):
+async def polish_transcript(
+    job_id: str, 
+    update: Optional[TranscriptUpdate] = None,
+    x_gemini_key: Optional[str] = Header(None)
+):
     """Step 3: Polish and improve transcript"""
     pipeline = get_or_create_pipeline(job_id)
+    
+    # Store API key for this job
+    if x_gemini_key:
+        jobs[job_id]["gemini_key"] = x_gemini_key
     
     jobs[job_id]["step"] = 3
     jobs[job_id]["status"] = "processing"
     
     edited = update.transcript if update else None
-    result = await pipeline.step_polish_transcript(edited)
+    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key)
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["polished_transcript"] = result["polished_transcript"]
@@ -254,15 +262,23 @@ async def polish_transcript(job_id: str, update: Optional[TranscriptUpdate] = No
 # ========== STEP 4: Generate Outline ==========
 
 @app.post("/api/generate-outline/{job_id}")
-async def generate_outline(job_id: str, update: Optional[TranscriptUpdate] = None):
+async def generate_outline(
+    job_id: str, 
+    update: Optional[TranscriptUpdate] = None,
+    x_gemini_key: Optional[str] = Header(None)
+):
     """Step 4: Generate slide outline"""
     pipeline = get_or_create_pipeline(job_id)
+    
+    # Store API key for this job
+    if x_gemini_key:
+        jobs[job_id]["gemini_key"] = x_gemini_key
     
     jobs[job_id]["step"] = 4
     jobs[job_id]["status"] = "processing"
     
     edited = update.transcript if update else None
-    result = await pipeline.step_generate_outline(edited)
+    result = await pipeline.step_generate_outline(edited, gemini_key=x_gemini_key)
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["outline"] = result["outline"]

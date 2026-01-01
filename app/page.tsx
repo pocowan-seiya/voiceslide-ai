@@ -169,16 +169,25 @@ export default function Home() {
 
   // Step 3: Polish Transcript
   const handlePolishTranscript = async () => {
-    updateState({ isProcessing: true });
+    if (!hasAPIKeys()) {
+      setShowSettings(true);
+      updateState({ error: "APIキーを設定してください" });
+      return;
+    }
+
+    updateState({ isProcessing: true, error: null });
 
     try {
       const res = await fetch(`${API_URL}/api/polish-transcript/${state.jobId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAPIHeaders()
+        },
         body: JSON.stringify({ transcript: editText }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Polish failed");
+      if (!res.ok) throw new Error(data.detail || data.error || "Polish failed");
 
       updateState({
         polishedTranscript: data.polished_transcript,
@@ -193,16 +202,25 @@ export default function Home() {
 
   // Step 4: Generate Outline
   const handleGenerateOutline = async () => {
-    updateState({ isProcessing: true });
+    if (!hasAPIKeys()) {
+      setShowSettings(true);
+      updateState({ error: "APIキーを設定してください" });
+      return;
+    }
+
+    updateState({ isProcessing: true, error: null });
 
     try {
       const res = await fetch(`${API_URL}/api/generate-outline/${state.jobId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAPIHeaders()
+        },
         body: JSON.stringify({ transcript: editText }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Outline generation failed");
+      if (!res.ok) throw new Error(data.detail || data.error || "Outline generation failed");
 
       updateState({
         outline: data.outline,
@@ -472,8 +490,8 @@ export default function Home() {
           <button
             onClick={() => setShowSettings(true)}
             className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-all ${hasKeys
-                ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-                : "bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 border border-yellow-600/50"
+              ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+              : "bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 border border-yellow-600/50"
               }`}
           >
             🔑 {hasKeys ? "APIキー設定" : "APIキーを設定してください"}

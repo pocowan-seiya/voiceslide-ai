@@ -68,11 +68,11 @@ class HybridPipeline:
         }
     
     # Step 3: Transcription Polish
-    async def step_polish_transcript(self, edited_transcript: Optional[str] = None) -> Dict[str, Any]:
+    async def step_polish_transcript(self, edited_transcript: Optional[str] = None, gemini_key: Optional[str] = None) -> Dict[str, Any]:
         """Polish and improve the transcript"""
         text_to_polish = edited_transcript or self.raw_transcript
         
-        self.polished_transcript = await polish_transcript(text_to_polish)
+        self.polished_transcript = await polish_transcript(text_to_polish, gemini_key=gemini_key)
         
         return {
             "step": 3,
@@ -81,11 +81,11 @@ class HybridPipeline:
         }
     
     # Step 4: Outline Generation
-    async def step_generate_outline(self, edited_transcript: Optional[str] = None) -> Dict[str, Any]:
+    async def step_generate_outline(self, edited_transcript: Optional[str] = None, gemini_key: Optional[str] = None) -> Dict[str, Any]:
         """Generate slide outline from transcript"""
         transcript = edited_transcript or self.polished_transcript or self.raw_transcript
         
-        self.raw_outline = await generate_outline(transcript, self.segments)
+        self.raw_outline = await generate_outline(transcript, self.segments, gemini_key=gemini_key)
         
         return {
             "step": 4,
