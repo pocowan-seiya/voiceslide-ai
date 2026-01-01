@@ -18,6 +18,64 @@ from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
 # STEP 1 & 2: Design Strategy Generation
 # =============================================================================
 
+# Color Theme Presets for user selection
+COLOR_THEMES = {
+    "cosmic": {
+        "name": "Cosmic Dark",
+        "description": "宇宙的な深みと神秘感",
+        "primary": "#F59E0B",
+        "secondary": "#8B5CF6",
+        "accent": "#06B6D4",
+        "background_start": "#0f172a",
+        "background_end": "#1e293b"
+    },
+    "warm": {
+        "name": "Warm Sunset",
+        "description": "温かみのあるオレンジ・ゴールド",
+        "primary": "#F97316",
+        "secondary": "#DC2626",
+        "accent": "#FBBF24",
+        "background_start": "#1c1917",
+        "background_end": "#292524"
+    },
+    "elegant": {
+        "name": "Elegant Purple",
+        "description": "エレガントな紫・ピンク",
+        "primary": "#A855F7",
+        "secondary": "#EC4899",
+        "accent": "#F472B6",
+        "background_start": "#0c0a1d",
+        "background_end": "#1e1b4b"
+    },
+    "nature": {
+        "name": "Nature Green",
+        "description": "自然とリラックス",
+        "primary": "#10B981",
+        "secondary": "#059669",
+        "accent": "#34D399",
+        "background_start": "#022c22",
+        "background_end": "#064e3b"
+    },
+    "ocean": {
+        "name": "Ocean Blue",
+        "description": "海のような開放感",
+        "primary": "#3B82F6",
+        "secondary": "#0EA5E9",
+        "accent": "#38BDF8",
+        "background_start": "#0c1a2c",
+        "background_end": "#1e3a5f"
+    },
+    "mono": {
+        "name": "Monochrome",
+        "description": "シンプルでクリーン",
+        "primary": "#FFFFFF",
+        "secondary": "#A1A1AA",
+        "accent": "#E4E4E7",
+        "background_start": "#18181b",
+        "background_end": "#27272a"
+    }
+}
+
 DESIGN_STRATEGY_PROMPT = """# Role definition
 あなたは、世界最高峰のクリエイティブエージェンシーに所属する「AIデザインアーキテクト」です。
 あなたの使命は、提供されたプレゼンテーション全体の内容を深く理解し、統一感のある「オーダーメイドのスライドデザイン戦略」を設計することです。
@@ -27,6 +85,8 @@ DESIGN_STRATEGY_PROMPT = """# Role definition
 
 スライド内容:
 {slides_content}
+
+{color_theme_instruction}
 
 ---
 
@@ -40,11 +100,19 @@ DESIGN_STRATEGY_PROMPT = """# Role definition
 
 ### Step 2: Design Style Definition (デザインスタイルの定義)
 1. **Concept Name:** デザインのテーマ名と概要
-2. **Color Palette:** 
+2. **Color Palette:** コンテンツに最適な配色を選択
+   - **重要**: 青系だけでなく、コンテンツの感情トーンに合った多様な配色を検討してください
+   - 温かみのあるテーマ → オレンジ、ゴールド、レッド系
+   - エレガントなテーマ → パープル、ピンク、マゼンタ系
+   - 自然・安らぎ → グリーン、ターコイズ系
+   - プロフェッショナル → ブルー、グレー系
+   - 情熱・エネルギー → レッド、オレンジ系
+   
+   以下の形式で指定:
    - primary: メインカラー (HEX)
    - secondary: サブカラー (HEX)
    - accent: アクセントカラー (HEX)
-   - background_start: 背景グラデーション開始色 (HEX)
+   - background_start: 背景グラデーション開始色 (HEX、暗い色)
    - background_end: 背景グラデーション終了色 (HEX)
 3. **Typography Direction:** タイトル用と本文用のスタイル方向性
 4. **Visual Theme:** ビジュアルの方向性（抽象的な幾何学、有機的なライン、未来的、温かみなど）
@@ -203,10 +271,12 @@ def determine_slide_type(slide: Dict, slide_number: int, total_slides: int) -> s
 
 async def generate_design_strategy(
     outline: Dict[str, Any],
-    gemini_key: Optional[str] = None
+    gemini_key: Optional[str] = None,
+    color_theme: Optional[str] = None  # 'cosmic', 'warm', 'elegant', 'nature', 'ocean', 'mono', or None for AI
 ) -> Dict[str, Any]:
     """
     Step 1 & 2: Analyze content and define design strategy
+    color_theme: If specified, use preset. If None, AI will choose appropriate colors.
     """
     key = gemini_key or GEMINI_API_KEY
     if not key:
@@ -229,9 +299,25 @@ async def generate_design_strategy(
         if key_msg:
             slides_content += f"キーメッセージ: {key_msg}\n"
     
+    # Build color theme instruction
+    if color_theme and color_theme in COLOR_THEMES:
+        theme = COLOR_THEMES[color_theme]
+        color_theme_instruction = f"""
+# 指定された配色テーマ
+ユーザーは「{theme['name']}」テーマを選択しました。以下の配色を使用してください：
+- Primary: {theme['primary']}
+- Secondary: {theme['secondary']}
+- Accent: {theme['accent']}
+- Background Start: {theme['background_start']}
+- Background End: {theme['background_end']}
+"""
+    else:
+        color_theme_instruction = ""
+    
     prompt = DESIGN_STRATEGY_PROMPT.format(
         presentation_title=outline.get("presentation_title", "プレゼンテーション"),
-        slides_content=slides_content
+        slides_content=slides_content,
+        color_theme_instruction=color_theme_instruction
     )
     
     try:
@@ -491,7 +577,8 @@ async def generate_all_custom_slides(
     slides: List[Dict[str, Any]],
     job_id: str,
     gemini_key: Optional[str] = None,
-    outline: Optional[Dict[str, Any]] = None
+    outline: Optional[Dict[str, Any]] = None,
+    color_theme: Optional[str] = None  # User-selected color theme
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -508,7 +595,7 @@ async def generate_all_custom_slides(
         outline = {"slides": slides}
     
     print("[Design Architect] Analyzing content and defining design strategy...")
-    strategy = await generate_design_strategy(outline, gemini_key)
+    strategy = await generate_design_strategy(outline, gemini_key, color_theme)
     
     # Save strategy and slide data for later use (feedback editing)
     save_slide_data(job_id, slides, strategy)

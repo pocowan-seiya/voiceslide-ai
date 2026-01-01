@@ -93,6 +93,9 @@ export default function Home() {
   const [slideFeedback, setSlideFeedback] = useState("");
   const [isRegenerating, setIsRegenerating] = useState(false);
 
+  // Color theme selection
+  const [selectedColorTheme, setSelectedColorTheme] = useState<string>(""); // empty = AI chooses
+
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -282,12 +285,17 @@ export default function Home() {
     updateState({ isProcessing: true });
 
     try {
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+        ...getAPIHeaders()
+      };
+      if (selectedColorTheme) {
+        (headers as Record<string, string>)["x-color-theme"] = selectedColorTheme;
+      }
+
       const res = await fetch(`${API_URL}/api/generate-slides/${state.jobId}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAPIHeaders()
-        },
+        headers,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Slide generation failed");
@@ -888,8 +896,8 @@ export default function Home() {
                           key={i}
                           onClick={() => setSelectedSlide(i + 1)}
                           className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
-                              ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
-                              : 'border-zinc-700 hover:border-zinc-500'
+                            ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                            : 'border-zinc-700 hover:border-zinc-500'
                             }`}
                         >
                           <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
@@ -977,6 +985,27 @@ export default function Home() {
               <p className="text-zinc-400 mb-6">
                 アウトラインを元に、AIがスライドを自動デザインします。
               </p>
+
+              {/* Color Theme Selector */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-zinc-400 mb-2">
+                  🎨 カラーテーマ
+                </label>
+                <select
+                  value={selectedColorTheme}
+                  onChange={(e) => setSelectedColorTheme(e.target.value)}
+                  className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
+                >
+                  <option value="">AIにおまかせ（コンテンツに最適な配色）</option>
+                  <option value="cosmic">🌌 Cosmic Dark - 宇宙的な深みと神秘感</option>
+                  <option value="warm">🌅 Warm Sunset - 温かみのあるオレンジ・ゴールド</option>
+                  <option value="elegant">💜 Elegant Purple - エレガントな紫・ピンク</option>
+                  <option value="nature">🌿 Nature Green - 自然とリラックス</option>
+                  <option value="ocean">🌊 Ocean Blue - 海のような開放感</option>
+                  <option value="mono">⚫ Monochrome - シンプルでクリーン</option>
+                </select>
+              </div>
+
               <button
                 onClick={handleGenerateSlides}
                 disabled={state.isProcessing}

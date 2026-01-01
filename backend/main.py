@@ -71,6 +71,28 @@ class APIKeysRequest(BaseModel):
     gemini_api_key: Optional[str] = None
 
 
+# ========== Color Themes ==========
+
+@app.get("/api/color-themes")
+async def get_color_themes():
+    """Get available color theme presets"""
+    from services.ai_slide_generator import COLOR_THEMES
+    themes = []
+    for key, value in COLOR_THEMES.items():
+        themes.append({
+            "id": key,
+            "name": value["name"],
+            "description": value["description"],
+            "colors": {
+                "primary": value["primary"],
+                "secondary": value["secondary"],
+                "accent": value["accent"],
+                "background": value["background_start"]
+            }
+        })
+    return {"themes": themes}
+
+
 # ========== Authentication ==========
 
 @app.post("/api/auth/login")
@@ -343,7 +365,8 @@ async def export_outline(job_id: str, format: str = "json"):
 @app.post("/api/generate-slides/{job_id}")
 async def generate_slides_endpoint(
     job_id: str,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_color_theme: Optional[str] = Header(None)  # Color theme: cosmic, warm, elegant, nature, ocean, mono
 ):
     """Step 7 (Full AI Mode): AI generates unique custom slides from outline"""
     pipeline = get_or_create_pipeline(job_id)
@@ -363,13 +386,16 @@ async def generate_slides_endpoint(
         total_slides = len(slides)
         
         print(f"[Generate Slides] Generating {total_slides} unique custom slides with AI...")
+        if x_color_theme:
+            print(f"[Generate Slides] Using color theme: {x_color_theme}")
         
         # Generate completely custom HTML/CSS for each slide using AI Design Architect
         image_paths = await generate_all_custom_slides(
             slides=slides,
             job_id=job_id,
             gemini_key=x_gemini_key,
-            outline=outline  # Pass full outline for design strategy
+            outline=outline,
+            color_theme=x_color_theme  # Pass user-selected color theme
         )
         
         # パイプラインに保存
