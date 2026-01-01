@@ -397,6 +397,56 @@ async def generate_slides_endpoint(
         raise HTTPException(500, f"スライド生成エラー: {str(e)}")
 
 
+# ========== Slide Feedback & Editing ==========
+
+class SlideFeedbackRequest(BaseModel):
+    slide_number: int
+    feedback: str
+    feedback_type: str = "general"  # copy, layout, visual, general
+
+
+@app.post("/api/slides/{job_id}/feedback")
+async def slide_feedback_endpoint(
+    job_id: str,
+    request: SlideFeedbackRequest,
+    x_gemini_key: Optional[str] = Header(None)
+):
+    """Regenerate a slide based on user feedback"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    try:
+        from services.ai_slide_generator import regenerate_slide_with_feedback
+        
+        result = await regenerate_slide_with_feedback(
+            job_id=job_id,
+            slide_number=request.slide_number,
+            feedback=request.feedback,
+            feedback_type=request.feedback_type,
+            gemini_key=x_gemini_key
+        )
+        
+        if not result["success"]:
+            raise HTTPException(500, result.get("error", "Regeneration failed"))
+        
+        # Add cache buster to URL
+        import time
+        result["preview_url"] = f"{result['preview_url']}?t={int(time.time())}"
+        
+        return {
+            "job_id": job_id,
+            **result,
+            "message": f"スライド {request.slide_number} を更新しました"
+        }
+        
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"フィードバック処理エラー: {str(e)}")
+
+
 # ========== STEP 8: Upload Slides ==========
 
 @app.post("/api/upload-slides/{job_id}")

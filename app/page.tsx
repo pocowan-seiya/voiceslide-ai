@@ -88,6 +88,11 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [hasKeys, setHasKeys] = useState(false);
 
+  // Slide feedback editing
+  const [selectedSlide, setSelectedSlide] = useState<number | null>(null);
+  const [slideFeedback, setSlideFeedback] = useState("");
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -293,8 +298,45 @@ export default function Home() {
         step: 6 as Step, // フルAIモードのステップ6は動画生成
         isProcessing: false,
       });
+      setSelectedSlide(null);
+      setSlideFeedback("");
     } catch (err: any) {
       updateState({ error: err.message, isProcessing: false });
+    }
+  };
+
+  // Slide Feedback: Regenerate a slide based on user feedback
+  const handleSlideFeedback = async () => {
+    if (!selectedSlide || !slideFeedback.trim()) return;
+
+    setIsRegenerating(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/feedback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAPIHeaders()
+        },
+        body: JSON.stringify({
+          slide_number: selectedSlide,
+          feedback: slideFeedback,
+          feedback_type: "general"
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Feedback failed");
+
+      // Update the slide preview with cache buster
+      const newPreviews = [...state.slidePreviews];
+      newPreviews[selectedSlide - 1] = `${API_URL}${data.preview_url}`;
+      updateState({ slidePreviews: newPreviews });
+
+      setSlideFeedback("");
+    } catch (err: any) {
+      updateState({ error: err.message });
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -838,14 +880,57 @@ export default function Home() {
                     AIが{state.slideCount}枚のスライドを自動生成しました。
                   </p>
 
-                  {/* スライドプレビュー */}
+                  {/* スライドプレビュー（クリックで選択） */}
                   {state.slidePreviews.length > 0 && (
                     <div className="grid grid-cols-3 gap-4 mb-6">
                       {state.slidePreviews.map((preview, i) => (
-                        <div key={i} className="rounded-lg overflow-hidden border border-zinc-700">
+                        <div
+                          key={i}
+                          onClick={() => setSelectedSlide(i + 1)}
+                          className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
+                              ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                              : 'border-zinc-700 hover:border-zinc-500'
+                            }`}
+                        >
                           <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
+                          <div className="bg-zinc-800 text-center text-xs py-1">
+                            スライド {i + 1}
+                          </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* フィードバック入力 */}
+                  {selectedSlide && (
+                    <div className="bg-zinc-800/50 rounded-xl p-4 mb-6 border border-zinc-700">
+                      <h4 className="font-semibold mb-2 text-amber-400">
+                        📝 スライド {selectedSlide} を編集
+                      </h4>
+                      <textarea
+                        value={slideFeedback}
+                        onChange={(e) => setSlideFeedback(e.target.value)}
+                        placeholder="例：タイトルを「価値の創造」に変更。背景をもっと暗く。ポイントを3つに減らして..."
+                        className="w-full h-24 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
+                      />
+                      <div className="flex gap-3">
+                        <button
+                          onClick={handleSlideFeedback}
+                          disabled={isRegenerating || !slideFeedback.trim()}
+                          className="btn-primary flex-1"
+                        >
+                          {isRegenerating ? "再生成中..." : "🔄 フィードバックを適用"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedSlide(null);
+                            setSlideFeedback("");
+                          }}
+                          className="btn-secondary"
+                        >
+                          キャンセル
+                        </button>
+                      </div>
                     </div>
                   )}
 

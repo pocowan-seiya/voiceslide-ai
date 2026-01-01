@@ -481,8 +481,12 @@ async def generate_all_custom_slides(
     print("[Design Architect] Analyzing content and defining design strategy...")
     strategy = await generate_design_strategy(outline, gemini_key)
     
+    # Save strategy and slide data for later use (feedback editing)
+    save_slide_data(job_id, slides, strategy)
+    
     # Step 3: Generate each slide with consistent strategy
     image_paths = []
+    html_contents = []
     total_slides = len(slides)
     
     async with async_playwright() as p:
@@ -499,6 +503,8 @@ async def generate_all_custom_slides(
                 gemini_key=gemini_key
             )
             
+            html_contents.append(html)
+            
             # Render to image
             page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
             await page.set_content(html)
@@ -512,5 +518,185 @@ async def generate_all_custom_slides(
         
         await browser.close()
     
+    # Save HTML contents for feedback editing
+    save_html_contents(job_id, html_contents)
+    
     print(f"[Design Architect] Generated {len(image_paths)} slides with unified design strategy")
     return image_paths
+
+
+# =============================================================================
+# Slide Data Storage (for feedback editing)
+# =============================================================================
+
+_slide_data_cache: Dict[str, Dict[str, Any]] = {}
+
+def save_slide_data(job_id: str, slides: List[Dict], strategy: Dict):
+    """Save slide data and strategy for later feedback editing"""
+    _slide_data_cache[job_id] = {
+        "slides": slides,
+        "strategy": strategy
+    }
+
+def get_slide_data(job_id: str) -> Optional[Dict[str, Any]]:
+    """Get saved slide data"""
+    return _slide_data_cache.get(job_id)
+
+def save_html_contents(job_id: str, html_contents: List[str]):
+    """Save generated HTML contents"""
+    if job_id in _slide_data_cache:
+        _slide_data_cache[job_id]["html_contents"] = html_contents
+
+def get_html_content(job_id: str, slide_number: int) -> Optional[str]:
+    """Get HTML content for a specific slide"""
+    data = _slide_data_cache.get(job_id)
+    if data and "html_contents" in data:
+        idx = slide_number - 1
+        if 0 <= idx < len(data["html_contents"]):
+            return data["html_contents"][idx]
+    return None
+
+def update_html_content(job_id: str, slide_number: int, html: str):
+    """Update HTML content for a specific slide"""
+    if job_id in _slide_data_cache and "html_contents" in _slide_data_cache[job_id]:
+        idx = slide_number - 1
+        if 0 <= idx < len(_slide_data_cache[job_id]["html_contents"]):
+            _slide_data_cache[job_id]["html_contents"][idx] = html
+
+
+# =============================================================================
+# Feedback-Based Slide Regeneration
+# =============================================================================
+
+FEEDBACK_REGENERATION_PROMPT = """# Role
+あなたはAIデザインアーキテクトです。ユーザーからのフィードバックに基づき、スライドを改善してください。
+
+# 現在のスライドHTML
+```html
+{current_html}
+```
+
+# デザイン戦略
+コンセプト: {concept_name}
+カラーパレット: Primary={primary}, Secondary={secondary}, Accent={accent}
+
+# ユーザーフィードバック
+{feedback}
+
+# フィードバックタイプ
+{feedback_type}
+
+# 指示
+1. ユーザーのフィードバックを正確に理解してください
+2. 現在のデザインを基盤として、フィードバックを反映した改善を行ってください
+3. デザインの統一感（色、フォント、スタイル）は維持してください
+4. サイズは幅{width}px × 高さ{height}pxを維持してください
+
+# 出力
+改善されたHTMLを出力してください（<!DOCTYPE html>から</html>まで）。
+説明は不要です。HTMLのみ。
+"""
+
+
+async def regenerate_slide_with_feedback(
+    job_id: str,
+    slide_number: int,
+    feedback: str,
+    feedback_type: str = "general",  # copy, layout, visual, general
+    gemini_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Regenerate a single slide based on user feedback
+    """
+    import os
+    from playwright.async_api import async_playwright
+    from config import OUTPUT_DIR
+    
+    key = gemini_key or GEMINI_API_KEY
+    if not key:
+        raise ValueError("Gemini API key is required")
+    
+    # Get saved data
+    slide_data = get_slide_data(job_id)
+    if not slide_data:
+        raise ValueError(f"Slide data not found for job {job_id}")
+    
+    current_html = get_html_content(job_id, slide_number)
+    if not current_html:
+        raise ValueError(f"HTML content not found for slide {slide_number}")
+    
+    strategy = slide_data.get("strategy", {})
+    style = strategy.get("design_style", {})
+    colors = style.get("color_palette", {})
+    
+    # Generate improved HTML based on feedback
+    genai.configure(api_key=key)
+    
+    prompt = FEEDBACK_REGENERATION_PROMPT.format(
+        current_html=current_html,
+        concept_name=style.get("concept_name", ""),
+        primary=colors.get("primary", "#F59E0B"),
+        secondary=colors.get("secondary", "#8B5CF6"),
+        accent=colors.get("accent", "#06B6D4"),
+        feedback=feedback,
+        feedback_type=feedback_type,
+        width=VIDEO_WIDTH,
+        height=VIDEO_HEIGHT
+    )
+    
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=4096
+            )
+        )
+        
+        new_html = response.text.strip()
+        
+        # Extract HTML from markdown code block if present
+        if "```html" in new_html:
+            new_html = new_html.split("```html")[1].split("```")[0].strip()
+        elif "```" in new_html:
+            new_html = new_html.split("```")[1].split("```")[0].strip()
+        
+        if not new_html.startswith("<!DOCTYPE") and not new_html.startswith("<html"):
+            raise ValueError("Invalid HTML generated")
+        
+        # Render new version
+        slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+            await page.set_content(new_html)
+            await page.wait_for_timeout(1500)
+            
+            # Save as new version
+            new_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
+            await page.screenshot(path=new_path, type="png")
+            
+            await page.close()
+            await browser.close()
+        
+        # Update stored HTML
+        update_html_content(job_id, slide_number, new_html)
+        
+        print(f"[Feedback] Regenerated slide {slide_number} based on: {feedback[:50]}...")
+        
+        return {
+            "success": True,
+            "slide_number": slide_number,
+            "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png",
+            "feedback_applied": feedback
+        }
+        
+    except Exception as e:
+        print(f"[Feedback] Error regenerating slide {slide_number}: {e}")
+        return {
+            "success": False,
+            "slide_number": slide_number,
+            "error": str(e)
+        }
