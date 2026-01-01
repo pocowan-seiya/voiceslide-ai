@@ -1157,16 +1157,94 @@ export default function Home() {
 
           {/* Step 10: Complete */}
           {state.step === 10 && state.videoUrl && (
-            <div className="text-center">
-              <span className="text-6xl">🎉</span>
-              <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
+            <div>
+              <div className="text-center">
+                <span className="text-6xl">🎉</span>
+                <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
+              </div>
+
               <video src={state.videoUrl} controls className="w-full rounded-xl mb-6" />
-              <div className="flex justify-center gap-4">
+
+              <div className="flex justify-center gap-4 mb-8">
                 <a href={`${API_URL}/api/download/${state.jobId}`} className="btn-primary" download>
                   📥 ダウンロード
                 </a>
                 <button onClick={handleReset} className="btn-secondary">
                   🔄 新規作成
+                </button>
+              </div>
+
+              {/* Video Feedback Section */}
+              <div className="border-t border-zinc-700 pt-6">
+                <h3 className="text-xl font-semibold mb-4">💡 修正したい場合</h3>
+                <p className="text-zinc-400 mb-4">
+                  スライドをクリックして修正し、動画を再生成できます。
+                </p>
+
+                {/* Slide Previews for Feedback */}
+                {state.slidePreviews.length > 0 && (
+                  <div className="grid grid-cols-4 gap-3 mb-6">
+                    {state.slidePreviews.map((preview, i) => (
+                      <div
+                        key={i}
+                        onClick={() => setSelectedSlide(i + 1)}
+                        className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
+                            ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                            : 'border-zinc-700 hover:border-zinc-500'
+                          }`}
+                      >
+                        <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
+                        <div className="bg-zinc-800 text-center text-xs py-1">
+                          {i + 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Feedback Input */}
+                {selectedSlide && (
+                  <div className="bg-zinc-800/50 rounded-xl p-4 mb-4 border border-zinc-700">
+                    <h4 className="font-semibold mb-2 text-amber-400">
+                      📝 スライド {selectedSlide} を編集
+                    </h4>
+                    <textarea
+                      value={slideFeedback}
+                      onChange={(e) => setSlideFeedback(e.target.value)}
+                      placeholder="修正したい内容を入力..."
+                      className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
+                    />
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleSlideFeedback}
+                        disabled={isRegenerating || !slideFeedback.trim()}
+                        className="btn-primary flex-1"
+                      >
+                        {isRegenerating ? "再生成中..." : "🔄 スライドを更新"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedSlide(null);
+                          setSlideFeedback("");
+                        }}
+                        className="btn-secondary"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Regenerate Video Button */}
+                <button
+                  onClick={() => {
+                    setSelectedSlide(null);
+                    handleGenerateVideo();
+                  }}
+                  disabled={state.isProcessing}
+                  className="btn-secondary w-full"
+                >
+                  🎬 動画を再生成
                 </button>
               </div>
             </div>
