@@ -96,6 +96,9 @@ export default function Home() {
   // Color theme selection
   const [selectedColorTheme, setSelectedColorTheme] = useState<string>(""); // empty = AI chooses
 
+  // Progress tracking
+  const [progress, setProgress] = useState<{ percent: number, message: string }>({ percent: 0, message: "" });
+
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -283,6 +286,20 @@ export default function Home() {
     }
 
     updateState({ isProcessing: true });
+    setProgress({ percent: 0, message: "開始中..." });
+
+    // Start progress polling
+    const progressInterval = setInterval(async () => {
+      try {
+        const progressRes = await fetch(`${API_URL}/api/progress/${state.jobId}`);
+        if (progressRes.ok) {
+          const progressData = await progressRes.json();
+          setProgress({ percent: progressData.percent, message: progressData.message });
+        }
+      } catch (e) {
+        // Ignore polling errors
+      }
+    }, 2000);
 
     try {
       const headers: HeadersInit = {
@@ -297,8 +314,13 @@ export default function Home() {
         method: "POST",
         headers,
       });
+
+      clearInterval(progressInterval);
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Slide generation failed");
+
+      setProgress({ percent: 100, message: "完了!" });
 
       updateState({
         slideCount: data.slide_count,
@@ -309,6 +331,7 @@ export default function Home() {
       setSelectedSlide(null);
       setSlideFeedback("");
     } catch (err: any) {
+      clearInterval(progressInterval);
       updateState({ error: err.message, isProcessing: false });
     }
   };
@@ -1262,9 +1285,23 @@ export default function Home() {
           {/* Processing Indicator */}
           {state.isProcessing && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-zinc-900 rounded-2xl p-8 text-center">
+              <div className="bg-zinc-900 rounded-2xl p-8 text-center min-w-[300px]">
                 <div className="text-5xl mb-4 animate-bounce">⚙️</div>
-                <p className="text-xl">処理中...</p>
+
+                {/* Progress bar */}
+                {progress.percent > 0 && (
+                  <div className="mb-4">
+                    <div className="bg-zinc-700 rounded-full h-3 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-amber-500 to-orange-500 h-full transition-all duration-500"
+                        style={{ width: `${progress.percent}%` }}
+                      />
+                    </div>
+                    <p className="text-2xl font-bold mt-2 text-amber-400">{progress.percent}%</p>
+                  </div>
+                )}
+
+                <p className="text-lg text-zinc-300">{progress.message || "処理中..."}</p>
               </div>
             </div>
           )}

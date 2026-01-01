@@ -52,6 +52,9 @@ valid_tokens: Dict[str, datetime] = {}
 # API keys storage (per-job)
 api_keys: Dict[str, Dict[str, str]] = {}
 
+# Slide generation progress storage
+slide_progress: Dict[str, Dict[str, Any]] = {}
+
 
 # Request models
 class TranscriptUpdate(BaseModel):
@@ -91,6 +94,28 @@ async def get_color_themes():
             }
         })
     return {"themes": themes}
+
+
+# ========== Progress Tracking ==========
+
+@app.get("/api/progress/{job_id}")
+async def get_progress(job_id: str):
+    """Get slide generation progress"""
+    if job_id not in slide_progress:
+        return {"current": 0, "total": 0, "percent": 0, "message": "開始待ち..."}
+    
+    progress = slide_progress[job_id]
+    current = progress.get("current", 0)
+    total = progress.get("total", 1)
+    percent = int((current / total) * 100) if total > 0 else 0
+    message = progress.get("message", "処理中...")
+    
+    return {
+        "current": current,
+        "total": total,
+        "percent": percent,
+        "message": message
+    }
 
 
 # ========== Authentication ==========
@@ -385,9 +410,24 @@ async def generate_slides_endpoint(
         slides = outline.get("slides", [])
         total_slides = len(slides)
         
+        # Initialize progress tracking
+        slide_progress[job_id] = {
+            "current": 0,
+            "total": total_slides + 1,  # +1 for design strategy step
+            "message": "デザイン戦略を生成中..."
+        }
+        
         print(f"[Generate Slides] Generating {total_slides} unique custom slides with AI...")
         if x_color_theme:
             print(f"[Generate Slides] Using color theme: {x_color_theme}")
+        
+        # Progress update callback
+        def update_progress(current: int, total: int, message: str):
+            slide_progress[job_id] = {
+                "current": current,
+                "total": total,
+                "message": message
+            }
         
         # Generate completely custom HTML/CSS for each slide using AI Design Architect
         image_paths = await generate_all_custom_slides(
@@ -395,7 +435,8 @@ async def generate_slides_endpoint(
             job_id=job_id,
             gemini_key=x_gemini_key,
             outline=outline,
-            color_theme=x_color_theme  # Pass user-selected color theme
+            color_theme=x_color_theme,
+            progress_callback=update_progress
         )
         
         # パイプラインに保存

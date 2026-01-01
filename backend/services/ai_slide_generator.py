@@ -332,15 +332,47 @@ async def generate_design_strategy(
         
         strategy = json.loads(response.text)
         print(f"[Design Architect] Strategy: {strategy['design_style']['concept_name']}")
+        
+        # Force apply color theme if specified (override AI's choice)
+        if color_theme and color_theme in COLOR_THEMES:
+            theme = COLOR_THEMES[color_theme]
+            print(f"[Design Architect] Forcing color theme: {theme['name']}")
+            strategy['design_style']['color_palette'] = {
+                "primary": theme['primary'],
+                "secondary": theme['secondary'],
+                "accent": theme['accent'],
+                "background_start": theme['background_start'],
+                "background_end": theme['background_end']
+            }
+        
         return strategy
         
     except Exception as e:
         print(f"[Design Architect] Strategy generation failed: {e}")
-        return get_fallback_strategy()
+        return get_fallback_strategy(color_theme)
 
 
-def get_fallback_strategy() -> Dict[str, Any]:
+def get_fallback_strategy(color_theme: Optional[str] = None) -> Dict[str, Any]:
     """Fallback design strategy"""
+    # Select colors based on theme or default to cosmic
+    if color_theme and color_theme in COLOR_THEMES:
+        theme = COLOR_THEMES[color_theme]
+        colors = {
+            "primary": theme['primary'],
+            "secondary": theme['secondary'],
+            "accent": theme['accent'],
+            "background_start": theme['background_start'],
+            "background_end": theme['background_end']
+        }
+    else:
+        colors = {
+            "primary": "#F59E0B",
+            "secondary": "#8B5CF6",
+            "accent": "#06B6D4",
+            "background_start": "#0f172a",
+            "background_end": "#1e293b"
+        }
+    
     return {
         "content_analysis": {
             "core_message": "価値あるアウトプット",
@@ -349,17 +381,11 @@ def get_fallback_strategy() -> Dict[str, Any]:
             "target_audience": "ビジネスパーソン"
         },
         "design_style": {
-            "concept_name": "Cosmic Professional",
-            "concept_description": "宇宙的な広がりと知的な深みを感じさせる、プロフェッショナルなデザイン",
-            "color_palette": {
-                "primary": "#F59E0B",
-                "secondary": "#8B5CF6",
-                "accent": "#06B6D4",
-                "background_start": "#0f172a",
-                "background_end": "#1e293b"
-            },
+            "concept_name": "Professional Design",
+            "concept_description": "プロフェッショナルで洗練されたデザイン",
+            "color_palette": colors,
             "typography_direction": "力強いサンセリフ体、クリーンで現代的",
-            "visual_theme": "抽象的な幾何学と宇宙的なグラデーション"
+            "visual_theme": "抽象的な幾何学とモダンなグラデーション"
         }
     }
 
@@ -578,7 +604,8 @@ async def generate_all_custom_slides(
     job_id: str,
     gemini_key: Optional[str] = None,
     outline: Optional[Dict[str, Any]] = None,
-    color_theme: Optional[str] = None  # User-selected color theme
+    color_theme: Optional[str] = None,  # User-selected color theme
+    progress_callback: Optional[callable] = None  # Progress callback(current, total, message)
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -590,12 +617,20 @@ async def generate_all_custom_slides(
     slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
     os.makedirs(slides_dir, exist_ok=True)
     
+    total_slides = len(slides)
+    
     # Step 1 & 2: Generate design strategy for the entire presentation
     if outline is None:
         outline = {"slides": slides}
     
     print("[Design Architect] Analyzing content and defining design strategy...")
+    if progress_callback:
+        progress_callback(0, total_slides + 1, "デザイン戦略を生成中...")
+    
     strategy = await generate_design_strategy(outline, gemini_key, color_theme)
+    
+    if progress_callback:
+        progress_callback(1, total_slides + 1, f"スライド生成中 (0/{total_slides})")
     
     # Save strategy and slide data for later use (feedback editing)
     save_slide_data(job_id, slides, strategy)
@@ -648,6 +683,10 @@ async def generate_all_custom_slides(
             
             image_paths.append(output_path)
             print(f"[Design Architect] Completed slide {slide_number}/{total_slides}")
+            
+            # Update progress
+            if progress_callback:
+                progress_callback(slide_number + 1, total_slides + 1, f"スライド生成中 ({slide_number}/{total_slides})")
         
         await browser.close()
     
