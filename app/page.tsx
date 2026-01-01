@@ -942,13 +942,22 @@ export default function Home() {
                     </div>
                   )}
 
-                  <button
-                    onClick={handleGenerateVideo}
-                    disabled={state.isProcessing}
-                    className="btn-primary w-full"
-                  >
-                    {state.isProcessing ? "動画生成中..." : "🎬 動画を生成"}
-                  </button>
+                  <div className="flex gap-4">
+                    <button
+                      onClick={handleGenerateVideo}
+                      disabled={state.isProcessing}
+                      className="btn-primary flex-1"
+                    >
+                      {state.isProcessing ? "動画生成中..." : "🎬 動画を生成"}
+                    </button>
+                    <button
+                      onClick={() => updateState({ step: 5 as Step })}
+                      disabled={state.isProcessing}
+                      className="btn-secondary"
+                    >
+                      🔄 スライド再生成
+                    </button>
+                  </div>
                 </div>
               ) : (
                 // ハイブリッドモード: アウトライン出力
@@ -1189,8 +1198,8 @@ export default function Home() {
                         key={i}
                         onClick={() => setSelectedSlide(i + 1)}
                         className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
-                            ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
-                            : 'border-zinc-700 hover:border-zinc-500'
+                          ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                          : 'border-zinc-700 hover:border-zinc-500'
                           }`}
                       >
                         <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
