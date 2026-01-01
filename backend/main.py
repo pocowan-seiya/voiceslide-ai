@@ -345,7 +345,7 @@ async def generate_slides_endpoint(
     job_id: str,
     x_gemini_key: Optional[str] = Header(None)
 ):
-    """Step 7 (Full AI Mode): AI generates slides from outline with dynamic design"""
+    """Step 7 (Full AI Mode): AI generates unique custom slides from outline"""
     pipeline = get_or_create_pipeline(job_id)
     
     jobs[job_id]["step"] = 7
@@ -357,44 +357,18 @@ async def generate_slides_endpoint(
         raise HTTPException(400, "アウトラインが見つかりません。先にアウトラインを生成してください。")
     
     try:
-        from services.slide_design_ai import analyze_slide_design, generate_background_image
-        from services.html_slide_renderer import generate_html_slides
+        from services.ai_slide_generator import generate_all_custom_slides
         
         slides = outline.get("slides", [])
         total_slides = len(slides)
         
-        print(f"[Generate Slides] Processing {total_slides} slides...")
+        print(f"[Generate Slides] Generating {total_slides} unique custom slides with AI...")
         
-        # Step 1: Analyze design for each slide
-        designs = []
-        for i, slide in enumerate(slides):
-            design = await analyze_slide_design(
-                slide=slide,
-                slide_number=i + 1,
-                total_slides=total_slides,
-                gemini_key=x_gemini_key
-            )
-            designs.append(design)
-        
-        # Step 2: Generate background images (optional - can be slow)
-        background_images = []
-        for i, design in enumerate(designs):
-            try:
-                bg_image = await generate_background_image(
-                    prompt=design.get("background_prompt", ""),
-                    gemini_key=x_gemini_key
-                )
-                background_images.append(bg_image)
-            except Exception as e:
-                print(f"[Generate Slides] Background generation failed for slide {i+1}: {e}")
-                background_images.append(None)
-        
-        # Step 3: Render HTML slides to images
-        image_paths = await generate_html_slides(
+        # Generate completely custom HTML/CSS for each slide using AI
+        image_paths = await generate_all_custom_slides(
             slides=slides,
-            designs=designs,
             job_id=job_id,
-            background_images=background_images
+            gemini_key=x_gemini_key
         )
         
         # パイプラインに保存
@@ -412,7 +386,7 @@ async def generate_slides_endpoint(
             "step": 7,
             "slide_count": len(image_paths),
             "slide_previews": slide_previews,
-            "message": "AIがスライドを自動生成しました"
+            "message": "AIがユニークなスライドデザインを自動生成しました"
         }
         
     except Exception as e:
