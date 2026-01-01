@@ -612,20 +612,9 @@ async def generate_all_custom_slides(
             slide_number = i + 1
             slide_type = determine_slide_type(slide, slide_number, total_slides)
             
-            # Step 3a: Generate image only for title/closing slides (faster)
+            # Step 3a: Image generation temporarily disabled (API version compatibility)
+            # TODO: Re-enable when google-generativeai supports response_modalities
             image_info = None
-            should_generate_image = slide_number == 1 or slide_number == total_slides
-            
-            if should_generate_image:
-                try:
-                    from services.stock_images import get_image_for_slide, extract_image_keywords
-                    keywords = extract_image_keywords(slide, strategy)
-                    if keywords:
-                        image_info = await get_image_for_slide(keywords, slide_type, gemini_key)
-                        if image_info:
-                            print(f"[Design Architect] Generated image for slide {slide_number}")
-                except Exception as e:
-                    print(f"[Design Architect] Image generation skipped for slide {slide_number}: {e}")
             
             # Step 3b: Generate HTML
             html = await generate_slide_html(
