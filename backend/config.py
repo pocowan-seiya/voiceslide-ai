@@ -10,6 +10,7 @@ load_dotenv()
 # API Keys - Can be overridden by user-provided keys in requests
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
 
 # Authentication
 ACCESS_PASSWORD = os.getenv("ACCESS_PASSWORD", "")  # Empty = no password required (local dev)

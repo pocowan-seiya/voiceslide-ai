@@ -107,6 +107,8 @@ SLIDE_DESIGN_PROMPT = """# Role
 {points}
 キーメッセージ: {key_message}
 
+{image_section}
+
 # Design Requirements
 
 1. **サイズ**: 幅{width}px × 高さ{height}px
@@ -158,6 +160,22 @@ SLIDE_DESIGN_PROMPT = """# Role
 CSSはすべて<style>タグ内に記述。
 外部リソースはGoogle Fonts（Noto Sans JP）のみ。
 説明は不要です。HTMLのみ。
+"""
+
+# Image section template for prompts
+IMAGE_SECTION_TEMPLATE = """
+# 使用する画像
+以下の画像をスライドに効果的に配置してください：
+- 画像URL: {image_url}
+- 撮影者: {photographer} (Unsplash)
+
+画像の配置オプション:
+1. 背景画像として全面に配置（暗いオーバーレイ付き）
+2. 右半分に配置（左にテキスト）
+3. 上部バナーとして配置
+
+**必ず画像を使用してください。**
+<img>タグのsrc属性にそのまま画像URLを使用してください。
 """
 
 
@@ -265,7 +283,8 @@ async def generate_slide_html(
     slide_number: int,
     total_slides: int,
     strategy: Dict[str, Any],
-    gemini_key: Optional[str] = None
+    gemini_key: Optional[str] = None,
+    image_info: Optional[Dict[str, str]] = None
 ) -> str:
     """
     Step 3: Generate individual slide HTML based on strategy
@@ -293,6 +312,15 @@ async def generate_slide_html(
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
     
+    # Build image section if image provided
+    if image_info:
+        image_section = IMAGE_SECTION_TEMPLATE.format(
+            image_url=image_info.get("url", ""),
+            photographer=image_info.get("photographer", "Unknown")
+        )
+    else:
+        image_section = ""
+    
     prompt = SLIDE_DESIGN_PROMPT.format(
         concept_name=style.get("concept_name", "Modern Professional"),
         concept_description=style.get("concept_description", ""),
@@ -310,6 +338,7 @@ async def generate_slide_html(
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
+        image_section=image_section,
         width=VIDEO_WIDTH,
         height=VIDEO_HEIGHT
     )
@@ -495,13 +524,26 @@ async def generate_all_custom_slides(
         for i, slide in enumerate(slides):
             slide_number = i + 1
             
-            # Step 3a: Generate initial HTML
+            # Step 3a: Fetch stock image for slide
+            image_info = None
+            try:
+                from services.stock_images import get_image_for_slide, extract_image_keywords
+                keywords = extract_image_keywords(slide, strategy)
+                if keywords:
+                    image_info = await get_image_for_slide(keywords)
+                    if image_info:
+                        print(f"[Design Architect] Fetched image for slide {slide_number}")
+            except Exception as e:
+                print(f"[Design Architect] Image fetch failed for slide {slide_number}: {e}")
+            
+            # Step 3b: Generate initial HTML with image
             html = await generate_slide_html(
                 slide=slide,
                 slide_number=slide_number,
                 total_slides=total_slides,
                 strategy=strategy,
-                gemini_key=gemini_key
+                gemini_key=gemini_key,
+                image_info=image_info
             )
             
             # Step 3b: AI Self-Review (auto-improve before showing to user)
