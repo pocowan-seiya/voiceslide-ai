@@ -364,11 +364,12 @@ async def generate_slides_endpoint(
         
         print(f"[Generate Slides] Generating {total_slides} unique custom slides with AI...")
         
-        # Generate completely custom HTML/CSS for each slide using AI
+        # Generate completely custom HTML/CSS for each slide using AI Design Architect
         image_paths = await generate_all_custom_slides(
             slides=slides,
             job_id=job_id,
-            gemini_key=x_gemini_key
+            gemini_key=x_gemini_key,
+            outline=outline  # Pass full outline for design strategy
         )
         
         # パイプラインに保存
