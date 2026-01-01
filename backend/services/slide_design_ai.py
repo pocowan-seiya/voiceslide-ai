@@ -139,22 +139,35 @@ async def analyze_slide_design(
     
     genai.configure(api_key=key)
     
-    title = slide.get("title", "")
-    subtitle = slide.get("subtitle", "")
-    points = slide.get("points", [])
+    # Extract data from slide_copy structure (from outline generator)
+    slide_copy = slide.get("slide_copy", {})
+    
+    title = (
+        slide_copy.get("headline") or 
+        slide.get("title") or 
+        ""
+    )
+    subtitle = (
+        slide_copy.get("subheadline") or 
+        slide.get("subtitle") or 
+        ""
+    )
+    raw_points = (
+        slide_copy.get("bullet_points") or 
+        slide.get("points") or 
+        []
+    )
+    key_message = slide_copy.get("key_message") or ""
     
     # Format points for prompt
-    if isinstance(points, list):
-        if points and isinstance(points[0], dict):
-            points_str = "\n".join([f"- {p.get('title', '')}: {p.get('description', '')}" for p in points])
-        else:
-            points_str = "\n".join([f"- {p}" for p in points])
+    if isinstance(raw_points, list):
+        points_str = "\n".join([f"- {p}" if isinstance(p, str) else f"- {p.get('title', '')}" for p in raw_points])
     else:
-        points_str = str(points)
+        points_str = str(raw_points)
     
     prompt = DESIGN_ANALYSIS_PROMPT.format(
         title=title,
-        subtitle=subtitle,
+        subtitle=f"{subtitle}\nキーメッセージ: {key_message}" if key_message else subtitle,
         points=points_str,
         slide_number=slide_number,
         total_slides=total_slides
@@ -226,8 +239,9 @@ def validate_design(design: Dict, slide: Dict, slide_number: int, total_slides: 
 
 def determine_layout_from_content(slide: Dict, slide_number: int, total_slides: int) -> str:
     """Rule-based layout determination"""
-    points = slide.get("points", [])
-    title = slide.get("title", "")
+    slide_copy = slide.get("slide_copy", {})
+    points = slide_copy.get("bullet_points") or slide.get("points", [])
+    title = slide_copy.get("headline") or slide.get("title", "")
     
     # First slide is usually title
     if slide_number == 1:
@@ -255,6 +269,10 @@ def get_fallback_design(slide: Dict, slide_number: int, total_slides: int) -> Di
     """Generate fallback design when AI fails"""
     layout = determine_layout_from_content(slide, slide_number, total_slides)
     
+    # Get points count from slide_copy
+    slide_copy = slide.get("slide_copy", {})
+    points = slide_copy.get("bullet_points") or slide.get("points", [])
+    
     # Cycle through color schemes
     schemes = list(COLOR_SCHEMES.keys())
     scheme = schemes[(slide_number - 1) % len(schemes)]
@@ -263,7 +281,7 @@ def get_fallback_design(slide: Dict, slide_number: int, total_slides: int) -> Di
         "layout_type": layout,
         "color_scheme": scheme,
         "background_prompt": "abstract gradient with subtle geometric patterns, professional",
-        "icons": ["💡", "⭐", "🎯", "✨"][:len(slide.get("points", []))],
+        "icons": ["💡", "⭐", "🎯", "✨", "🚀"][:len(points)],
         "emphasis_words": [],
         "colors": COLOR_SCHEMES[scheme]
     }

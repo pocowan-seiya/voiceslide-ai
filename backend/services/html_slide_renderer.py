@@ -364,23 +364,74 @@ def generate_slide_html(
     emphasis_words = design.get("emphasis_words", [])
     icons = design.get("icons", [])
     
+    # Extract data from slide_copy structure (from outline generator)
+    slide_copy = slide.get("slide_copy", {})
+    
+    # Get title - try multiple sources
+    title = (
+        slide_copy.get("headline") or 
+        slide.get("title") or 
+        slide.get("headline") or 
+        ""
+    )
+    
+    # Get subtitle
+    subtitle = (
+        slide_copy.get("subheadline") or 
+        slide.get("subtitle") or 
+        slide.get("subheadline") or 
+        ""
+    )
+    
+    # Get points - try bullet_points from slide_copy first
+    raw_points = (
+        slide_copy.get("bullet_points") or 
+        slide.get("points") or 
+        slide.get("bullet_points") or 
+        []
+    )
+    
+    # Convert bullet points to structured format for templates
+    points = []
+    for p in raw_points:
+        if isinstance(p, str):
+            points.append({"title": p, "description": ""})
+        elif isinstance(p, dict):
+            points.append(p)
+    
+    # Get key message
+    key_message = slide_copy.get("key_message") or slide.get("key_message") or ""
+    
+    # Get section label
+    section = slide.get("section", "")
+    
+    # Create enriched slide data
+    enriched_slide = {
+        "title": title,
+        "subtitle": subtitle,
+        "points": points,
+        "key_message": key_message,
+        "section": section,
+        "bottom_quote": key_message,  # Use key_message as bottom quote
+        "author": "",
+    }
+    
     # Apply emphasis to title
-    title = slide.get("title", "")
     for word in emphasis_words:
         if word in title:
             title = title.replace(word, f'<span class="emphasis">{word}</span>')
     
     # Generate content based on layout
     if layout_type == "title":
-        content = generate_title_layout(slide, title)
+        content = generate_title_layout(enriched_slide, title)
     elif layout_type == "flow":
-        content = generate_flow_layout(slide, title, icons)
+        content = generate_flow_layout(enriched_slide, title, icons)
     elif layout_type == "three_columns":
-        content = generate_columns_layout(slide, title, icons)
+        content = generate_columns_layout(enriched_slide, title, icons)
     elif layout_type == "quote":
-        content = generate_quote_layout(slide, title)
+        content = generate_quote_layout(enriched_slide, title)
     else:  # key_points
-        content = generate_points_layout(slide, title, icons)
+        content = generate_points_layout(enriched_slide, title, icons)
     
     # Background image tag
     bg_tag = ""
