@@ -30,7 +30,20 @@ def configure_gemini(api_key: Optional[str] = None):
     key = api_key or GEMINI_API_KEY
     if not key:
         raise ValueError("Gemini API key is required. Please set it in settings.")
+    
+    # Log key info (only first/last 4 chars for security)
+    key_preview = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "***"
+    print(f"[Gemini Config] Configuring with key: {key_preview}")
+    
     genai.configure(api_key=key)
+    
+    # Try to list available models for debugging
+    try:
+        models = list(genai.list_models())
+        model_names = [m.name for m in models if 'generateContent' in str(m.supported_generation_methods)]
+        print(f"[Gemini Config] Available models: {model_names[:5]}")  # First 5 models
+    except Exception as e:
+        print(f"[Gemini Config] Could not list models: {str(e)[:100]}")
 
 
 def _transcribe_sync(audio_path: str, openai_key: Optional[str] = None) -> Dict[str, Any]:
