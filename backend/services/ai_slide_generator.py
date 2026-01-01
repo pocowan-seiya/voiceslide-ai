@@ -524,17 +524,18 @@ async def generate_all_custom_slides(
         for i, slide in enumerate(slides):
             slide_number = i + 1
             
-            # Step 3a: Fetch stock image for slide
+            # Step 3a: Generate custom image using Gemini Imagen
             image_info = None
+            slide_type = determine_slide_type(slide, slide_number, total_slides)
             try:
                 from services.stock_images import get_image_for_slide, extract_image_keywords
                 keywords = extract_image_keywords(slide, strategy)
                 if keywords:
-                    image_info = await get_image_for_slide(keywords)
+                    image_info = await get_image_for_slide(keywords, slide_type, gemini_key)
                     if image_info:
-                        print(f"[Design Architect] Fetched image for slide {slide_number}")
+                        print(f"[Design Architect] Generated image for slide {slide_number}")
             except Exception as e:
-                print(f"[Design Architect] Image fetch failed for slide {slide_number}: {e}")
+                print(f"[Design Architect] Image generation failed for slide {slide_number}: {e}")
             
             # Step 3b: Generate initial HTML with image
             html = await generate_slide_html(
