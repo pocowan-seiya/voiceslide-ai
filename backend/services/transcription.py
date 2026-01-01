@@ -25,25 +25,39 @@ def get_openai_client(api_key: Optional[str] = None) -> OpenAI:
     return OpenAI(api_key=key)
 
 
-def configure_gemini(api_key: Optional[str] = None):
-    """Configure Gemini with provided or default API key"""
-    key = api_key or GEMINI_API_KEY
-    if not key:
-        raise ValueError("Gemini API key is required. Please set it in settings.")
+def get_available_gemini_model(api_key: str) -> str:
+    """Find an available Gemini model for content generation"""
+    print(f"[Gemini] Configuring with key: {api_key[:10]}...{api_key[-4:]}")
+    genai.configure(api_key=api_key)
     
-    # Log key info (only first/last 4 chars for security)
-    key_preview = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "***"
-    print(f"[Gemini Config] Configuring with key: {key_preview}")
-    
-    genai.configure(api_key=key)
-    
-    # Try to list available models for debugging
+    # Try to list available models
     try:
-        models = list(genai.list_models())
-        model_names = [m.name for m in models if 'generateContent' in str(m.supported_generation_methods)]
-        print(f"[Gemini Config] Available models: {model_names[:5]}")  # First 5 models
+        available_models = []
+        for model in genai.list_models():
+            if 'generateContent' in str(model.supported_generation_methods):
+                available_models.append(model.name)
+        
+        print(f"[Gemini] Available models: {available_models[:10]}")
+        
+        # Prefer flash models, then pro
+        preferred = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        for pref in preferred:
+            for avail in available_models:
+                if pref in avail:
+                    print(f"[Gemini] Selected model: {avail}")
+                    return avail.replace('models/', '')
+        
+        # Return first available if no preference matches
+        if available_models:
+            model_name = available_models[0].replace('models/', '')
+            print(f"[Gemini] Using first available: {model_name}")
+            return model_name
+            
     except Exception as e:
-        print(f"[Gemini Config] Could not list models: {str(e)[:100]}")
+        print(f"[Gemini] Could not list models: {e}")
+    
+    # Fallback - try these in order
+    return "gemini-pro"
 
 
 def _transcribe_sync(audio_path: str, openai_key: Optional[str] = None) -> Dict[str, Any]:
@@ -112,9 +126,16 @@ def format_timestamp(seconds: float) -> str:
 
 def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
     """Synchronous polishing (runs in thread pool)"""
+    key = gemini_key or GEMINI_API_KEY
+    if not key:
+        raise ValueError("Gemini API key is required. Please set it in settings.")
+    
+    print(f"[Polish] Starting with key: {key[:10]}...{key[-4:] if len(key) > 10 else '***'}")
+    
     try:
-        print(f"[Polish] Configuring Gemini with key: {'provided' if gemini_key else 'default'}")
-        configure_gemini(gemini_key)
+        # Get available model
+        model_name = get_available_gemini_model(key)
+        print(f"[Polish] Using model: {model_name}")
         
         prompt = f"""以下の文字起こしテキストを読みやすく整形してください。
     
@@ -130,25 +151,14 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
 
 整形後:"""
         
-        # Try different model names (API version compatibility)
-        model_names = ["gemini-2.0-flash-exp", "gemini-1.5-flash-latest", "gemini-pro"]
-        
-        for model_name in model_names:
-            try:
-                print(f"[Polish] Trying model: {model_name}")
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
-                print(f"[Polish] Success with {model_name}!")
-                return response.text.strip()
-            except Exception as e:
-                print(f"[Polish] Model {model_name} failed: {str(e)[:100]}")
-                continue
-        
-        raise ValueError("利用可能なGeminiモデルがありません")
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(prompt)
+        print(f"[Polish] Success!")
+        return response.text.strip()
         
     except Exception as e:
         print(f"[Polish] Error: {type(e).__name__}: {str(e)}")
-        raise ValueError(f"Gemini APIエラー: {str(e)}. APIキーを確認してください。")
+        raise ValueError(f"Gemini APIエラー: {str(e)}")
 
 
 async def polish_transcript(text: str, gemini_key: Optional[str] = None) -> str:
