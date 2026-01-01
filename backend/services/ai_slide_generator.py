@@ -523,21 +523,24 @@ async def generate_all_custom_slides(
         
         for i, slide in enumerate(slides):
             slide_number = i + 1
-            
-            # Step 3a: Generate custom image using Gemini Imagen
-            image_info = None
             slide_type = determine_slide_type(slide, slide_number, total_slides)
-            try:
-                from services.stock_images import get_image_for_slide, extract_image_keywords
-                keywords = extract_image_keywords(slide, strategy)
-                if keywords:
-                    image_info = await get_image_for_slide(keywords, slide_type, gemini_key)
-                    if image_info:
-                        print(f"[Design Architect] Generated image for slide {slide_number}")
-            except Exception as e:
-                print(f"[Design Architect] Image generation failed for slide {slide_number}: {e}")
             
-            # Step 3b: Generate initial HTML with image
+            # Step 3a: Generate image only for title/closing slides (faster)
+            image_info = None
+            should_generate_image = slide_number == 1 or slide_number == total_slides
+            
+            if should_generate_image:
+                try:
+                    from services.stock_images import get_image_for_slide, extract_image_keywords
+                    keywords = extract_image_keywords(slide, strategy)
+                    if keywords:
+                        image_info = await get_image_for_slide(keywords, slide_type, gemini_key)
+                        if image_info:
+                            print(f"[Design Architect] Generated image for slide {slide_number}")
+                except Exception as e:
+                    print(f"[Design Architect] Image generation skipped for slide {slide_number}: {e}")
+            
+            # Step 3b: Generate HTML
             html = await generate_slide_html(
                 slide=slide,
                 slide_number=slide_number,
@@ -547,26 +550,28 @@ async def generate_all_custom_slides(
                 image_info=image_info
             )
             
-            # Step 3b: AI Self-Review (auto-improve before showing to user)
-            print(f"[Design Architect] Self-reviewing slide {slide_number}...")
-            html = await self_review_slide(
-                html=html,
-                strategy=strategy,
-                gemini_key=gemini_key
-            )
+            # Step 3c: Self-review only for first and last slide (faster)
+            if slide_number == 1 or slide_number == total_slides:
+                print(f"[Design Architect] Self-reviewing slide {slide_number}...")
+                html = await self_review_slide(
+                    html=html,
+                    strategy=strategy,
+                    gemini_key=gemini_key
+                )
             
             html_contents.append(html)
             
             # Render to image
             page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
             await page.set_content(html)
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(1000)
             
             output_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
             await page.screenshot(path=output_path, type="png")
             await page.close()
             
             image_paths.append(output_path)
+            print(f"[Design Architect] Completed slide {slide_number}/{total_slides}")
         
         await browser.close()
     
