@@ -358,13 +358,20 @@ def compose_slide_layout(
 
 def load_font(size: int) -> ImageFont.FreeTypeFont:
     """
-    Load a font with fallback options
+    Load a font with fallback options (Japanese font priority for CJK support)
     """
     font_paths = [
+        # Linux/Docker - Noto Sans CJK (Japanese)
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        # macOS - Japanese fonts
         "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
         "/System/Library/Fonts/Hiragino Sans GB.ttc", 
         "/Library/Fonts/Arial Unicode.ttf",
         "/System/Library/Fonts/Helvetica.ttc",
+        # Fallback
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     ]
     
@@ -372,9 +379,11 @@ def load_font(size: int) -> ImageFont.FreeTypeFont:
         if os.path.exists(font_path):
             try:
                 return ImageFont.truetype(font_path, size)
-            except Exception:
+            except Exception as e:
+                print(f"Font load failed for {font_path}: {e}")
                 continue
     
+    print("Warning: Using default font, Japanese may not render correctly")
     return ImageFont.load_default()
 
 

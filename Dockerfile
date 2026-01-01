@@ -3,11 +3,15 @@
 
 FROM python:3.11-slim
 
-# 必要なシステムパッケージをインストール
+# 必要なシステムパッケージをインストール（日本語フォント含む）
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    fonts-noto-cjk \
+    fonts-noto-cjk-extra \
+    fontconfig \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -fv
 
 # Node.jsをインストール
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
