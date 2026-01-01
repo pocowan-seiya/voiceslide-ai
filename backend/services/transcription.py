@@ -113,18 +113,25 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
 - 敬体（です・ます調）を維持
 
 元のテキスト:
-{text[:500]}...
+{text}
 
 整形後:"""
         
-        print("[Polish] Creating Gemini model...")
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Try different model names (API version compatibility)
+        model_names = ["gemini-2.0-flash-exp", "gemini-1.5-flash-latest", "gemini-pro"]
         
-        print("[Polish] Calling generate_content...")
-        response = model.generate_content(prompt)
+        for model_name in model_names:
+            try:
+                print(f"[Polish] Trying model: {model_name}")
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                print(f"[Polish] Success with {model_name}!")
+                return response.text.strip()
+            except Exception as e:
+                print(f"[Polish] Model {model_name} failed: {str(e)[:100]}")
+                continue
         
-        print("[Polish] Success!")
-        return response.text.strip()
+        raise ValueError("利用可能なGeminiモデルがありません")
         
     except Exception as e:
         print(f"[Polish] Error: {type(e).__name__}: {str(e)}")

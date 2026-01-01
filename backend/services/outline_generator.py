@@ -319,15 +319,30 @@ async def generate_outline(transcript: str, segments: List[Dict[str, Any]], gemi
     )
     
     try:
-        # Gemini Pro で高精度生成
-        model = genai.GenerativeModel("gemini-1.5-pro")
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                temperature=0.1  # 低温度で一貫性を高める
-            )
-        )
+        # Gemini で高精度生成 (複数モデルを試行)
+        model_names = ["gemini-2.0-flash-exp", "gemini-1.5-flash-latest", "gemini-pro"]
+        response = None
+        
+        for model_name in model_names:
+            try:
+                print(f"[Outline] Trying model: {model_name}")
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json",
+                        temperature=0.1
+                    )
+                )
+                print(f"[Outline] Success with {model_name}!")
+                break
+            except Exception as e:
+                print(f"[Outline] Model {model_name} failed: {str(e)[:100]}")
+                continue
+        
+        if response is None:
+            raise ValueError("All Gemini models failed")
+        
         result = json.loads(response.text)
         
     except Exception as e:
@@ -378,13 +393,26 @@ async def polish_outline(outline: Dict[str, Any]) -> Dict[str, Any]:
     )
     
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json"
-            )
-        )
+        model_names = ["gemini-2.0-flash-exp", "gemini-1.5-flash-latest", "gemini-pro"]
+        response = None
+        
+        for model_name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json"
+                    )
+                )
+                break
+            except Exception as e:
+                print(f"[Polish Outline] Model {model_name} failed: {str(e)[:100]}")
+                continue
+        
+        if response is None:
+            raise ValueError("All Gemini models failed")
+        
         result = json.loads(response.text)
         
     except Exception as e:
