@@ -99,9 +99,11 @@ def format_timestamp(seconds: float) -> str:
 
 def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
     """Synchronous polishing (runs in thread pool)"""
-    configure_gemini(gemini_key)
-    
-    prompt = f"""以下の文字起こしテキストを読みやすく整形してください。
+    try:
+        print(f"[Polish] Configuring Gemini with key: {'provided' if gemini_key else 'default'}")
+        configure_gemini(gemini_key)
+        
+        prompt = f"""以下の文字起こしテキストを読みやすく整形してください。
     
 要件:
 - 「えー」「あー」などのフィラーを削除
@@ -111,18 +113,30 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
 - 敬体（です・ます調）を維持
 
 元のテキスト:
-{text}
+{text[:500]}...
 
 整形後:"""
-    
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(prompt)
-    
-    return response.text.strip()
+        
+        print("[Polish] Creating Gemini model...")
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        print("[Polish] Calling generate_content...")
+        response = model.generate_content(prompt)
+        
+        print("[Polish] Success!")
+        return response.text.strip()
+        
+    except Exception as e:
+        print(f"[Polish] Error: {type(e).__name__}: {str(e)}")
+        raise ValueError(f"Gemini APIエラー: {str(e)}. APIキーを確認してください。")
 
 
 async def polish_transcript(text: str, gemini_key: Optional[str] = None) -> str:
     """Async wrapper for polishing"""
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(executor, _polish_sync, text, gemini_key)
-    return result
+    try:
+        result = await loop.run_in_executor(executor, _polish_sync, text, gemini_key)
+        return result
+    except Exception as e:
+        print(f"[Polish Async] Error: {str(e)}")
+        raise
