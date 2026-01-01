@@ -268,12 +268,21 @@ export default function Home() {
 
   // Step 5 (Full AI): Generate Slides automatically
   const handleGenerateSlides = async () => {
+    if (!hasAPIKeys()) {
+      setShowSettings(true);
+      updateState({ error: "APIキーを設定してください" });
+      return;
+    }
+
     updateState({ isProcessing: true });
 
     try {
       const res = await fetch(`${API_URL}/api/generate-slides/${state.jobId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAPIHeaders()
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Slide generation failed");

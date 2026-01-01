@@ -341,8 +341,11 @@ async def export_outline(job_id: str, format: str = "json"):
 # ========== STEP 7 (Full AI): Generate Slides ==========
 
 @app.post("/api/generate-slides/{job_id}")
-async def generate_slides_endpoint(job_id: str):
-    """Step 7 (Full AI Mode): AI generates slides from outline"""
+async def generate_slides_endpoint(
+    job_id: str,
+    x_gemini_key: Optional[str] = Header(None)
+):
+    """Step 7 (Full AI Mode): AI generates slides from outline with dynamic design"""
     pipeline = get_or_create_pipeline(job_id)
     
     jobs[job_id]["step"] = 7
@@ -354,30 +357,67 @@ async def generate_slides_endpoint(job_id: str):
         raise HTTPException(400, "アウトラインが見つかりません。先にアウトラインを生成してください。")
     
     try:
-        from services.slide_designer import generate_slides_from_outline
+        from services.slide_design_ai import analyze_slide_design, generate_background_image
+        from services.html_slide_renderer import generate_html_slides
         
-        result = await generate_slides_from_outline(
-            outline=outline,
+        slides = outline.get("slides", [])
+        total_slides = len(slides)
+        
+        print(f"[Generate Slides] Processing {total_slides} slides...")
+        
+        # Step 1: Analyze design for each slide
+        designs = []
+        for i, slide in enumerate(slides):
+            design = await analyze_slide_design(
+                slide=slide,
+                slide_number=i + 1,
+                total_slides=total_slides,
+                gemini_key=x_gemini_key
+            )
+            designs.append(design)
+        
+        # Step 2: Generate background images (optional - can be slow)
+        background_images = []
+        for i, design in enumerate(designs):
+            try:
+                bg_image = await generate_background_image(
+                    prompt=design.get("background_prompt", ""),
+                    gemini_key=x_gemini_key
+                )
+                background_images.append(bg_image)
+            except Exception as e:
+                print(f"[Generate Slides] Background generation failed for slide {i+1}: {e}")
+                background_images.append(None)
+        
+        # Step 3: Render HTML slides to images
+        image_paths = await generate_html_slides(
+            slides=slides,
+            designs=designs,
             job_id=job_id,
-            template="modern_dark"
+            background_images=background_images
         )
         
         # パイプラインに保存
-        pipeline.slide_images = result["images"]
-        pipeline.slide_contents = result["contents"]
+        pipeline.slide_images = image_paths
+        pipeline.slide_contents = slides
+        
+        # スライドプレビューURLを生成
+        slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
         
         jobs[job_id]["status"] = "completed"
-        jobs[job_id]["slide_count"] = result["slide_count"]
+        jobs[job_id]["slide_count"] = len(image_paths)
         
         return {
             "job_id": job_id,
             "step": 7,
-            "slide_count": result["slide_count"],
-            "slide_previews": result["slide_previews"],
+            "slide_count": len(image_paths),
+            "slide_previews": slide_previews,
             "message": "AIがスライドを自動生成しました"
         }
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         jobs[job_id]["status"] = "error"
         raise HTTPException(500, f"スライド生成エラー: {str(e)}")
 

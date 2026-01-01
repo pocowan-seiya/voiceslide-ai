@@ -24,6 +24,9 @@ WORKDIR /app
 COPY backend/requirements.txt ./backend/
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
+# Playwright Chromiumをインストール（HTMLレンダリング用）
+RUN playwright install chromium --with-deps
+
 # Node.js依存関係をインストール
 COPY package*.json ./
 RUN npm ci
