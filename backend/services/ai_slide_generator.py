@@ -495,10 +495,19 @@ async def generate_all_custom_slides(
         for i, slide in enumerate(slides):
             slide_number = i + 1
             
+            # Step 3a: Generate initial HTML
             html = await generate_slide_html(
                 slide=slide,
                 slide_number=slide_number,
                 total_slides=total_slides,
+                strategy=strategy,
+                gemini_key=gemini_key
+            )
+            
+            # Step 3b: AI Self-Review (auto-improve before showing to user)
+            print(f"[Design Architect] Self-reviewing slide {slide_number}...")
+            html = await self_review_slide(
+                html=html,
                 strategy=strategy,
                 gemini_key=gemini_key
             )
@@ -562,6 +571,122 @@ def update_html_content(job_id: str, slide_number: int, html: str):
         idx = slide_number - 1
         if 0 <= idx < len(_slide_data_cache[job_id]["html_contents"]):
             _slide_data_cache[job_id]["html_contents"][idx] = html
+
+
+# =============================================================================
+# AI Self-Review (Automatic improvement before showing to user)
+# =============================================================================
+
+AI_SELF_REVIEW_PROMPT = """# Role
+あなたは世界クラスのプレゼンテーションデザイナーであり、厳格なクオリティレビュアーです。
+生成されたスライドを批評的に評価し、改善してください。
+
+# 現在のスライドHTML
+```html
+{current_html}
+```
+
+# デザイン戦略
+コンセプト: {concept_name}
+感情トーン: {emotional_tone}
+カラーパレット: Primary={primary}, Secondary={secondary}, Accent={accent}
+
+# レビュー観点
+
+## 1. コピー（テキスト）
+- タイトルは簡潔でインパクトがあるか？
+- ポイントは具体的で理解しやすいか？
+- 冗長な表現はないか？
+- キーメッセージは心に残るか？
+
+## 2. レイアウト
+- 視覚的階層は明確か？
+- 余白は適切か（詰め込みすぎ/スカスカ）？
+- 視線の流れは自然か？
+- 要素のバランスは良いか？
+
+## 3. ビジュアル
+- 色使いはブランドに合っているか？
+- コントラストは十分か（読みやすさ）？
+- アイコンは内容に合っているか？
+- 装飾は適度か（過剰/不足）？
+
+## 4. プロフェッショナリズム
+- プレゼンの場で使えるクオリティか？
+- 洗練された印象を与えるか？
+- 細部まで完成されているか？
+
+# 指示
+
+1. 上記の観点でスライドを厳しく評価してください
+2. 改善点を特定してください
+3. 改善を反映した新しいHTMLを生成してください
+
+**必ず何かを改善してください。** 完璧なスライドは存在しません。
+コピーの言い回し、フォントサイズ、余白、色のトーン、アイコンなど、
+何か1つでも良くできる点を見つけて改善してください。
+
+# 出力
+改善されたHTMLを出力してください（<!DOCTYPE html>から</html>まで）。
+説明は不要です。HTMLのみ。
+"""
+
+
+async def self_review_slide(
+    html: str,
+    strategy: Dict[str, Any],
+    gemini_key: Optional[str] = None
+) -> str:
+    """
+    AI self-reviews and improves a slide before showing to user
+    """
+    key = gemini_key or GEMINI_API_KEY
+    if not key:
+        return html  # Return original if no key
+    
+    genai.configure(api_key=key)
+    
+    style = strategy.get("design_style", {})
+    analysis = strategy.get("content_analysis", {})
+    colors = style.get("color_palette", {})
+    
+    prompt = AI_SELF_REVIEW_PROMPT.format(
+        current_html=html,
+        concept_name=style.get("concept_name", ""),
+        emotional_tone=analysis.get("emotional_tone", ""),
+        primary=colors.get("primary", "#F59E0B"),
+        secondary=colors.get("secondary", "#8B5CF6"),
+        accent=colors.get("accent", "#06B6D4")
+    )
+    
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=4096
+            )
+        )
+        
+        improved_html = response.text.strip()
+        
+        # Extract HTML from markdown code block if present
+        if "```html" in improved_html:
+            improved_html = improved_html.split("```html")[1].split("```")[0].strip()
+        elif "```" in improved_html:
+            improved_html = improved_html.split("```")[1].split("```")[0].strip()
+        
+        if improved_html.startswith("<!DOCTYPE") or improved_html.startswith("<html"):
+            print("[Self-Review] ✓ Slide improved")
+            return improved_html
+        else:
+            print("[Self-Review] Invalid HTML, keeping original")
+            return html
+            
+    except Exception as e:
+        print(f"[Self-Review] Error: {e}, keeping original")
+        return html
 
 
 # =============================================================================
