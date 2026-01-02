@@ -216,7 +216,8 @@ async def transcribe(
     x_gemini_key: Optional[str] = Header(None)
 ):
     """Step 2: Transcribe audio (with optional cleanup)"""
-    pipeline = get_or_create_pipeline(job_id)
+    audio_path = jobs.get(job_id, {}).get("audio_path")
+    pipeline = get_or_create_pipeline(job_id, audio_path)
     
     # Store API keys in job for later use
     if x_openai_key:
