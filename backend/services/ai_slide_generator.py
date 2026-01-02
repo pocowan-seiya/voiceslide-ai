@@ -76,9 +76,48 @@ COLOR_THEMES = {
     }
 }
 
-DESIGN_STRATEGY_PROMPT = """# Role definition
-あなたは、世界最高峰のクリエイティブエージェンシーに所属する「AIデザインアーキテクト」です。
-あなたの使命は、提供されたプレゼンテーション全体の内容を深く理解し、統一感のある「オーダーメイドのスライドデザイン戦略」を設計することです。
+DESIGN_STRATEGY_PROMPT = """# Role
+あなたは世界最高峰のデザインスタジオ（IDEO、Appleの発表会チーム、Pentagram）を率いる
+**シニア・アートディレクター兼チーフ・コピーライター**です。
+
+# Mission
+入力されたプレゼンテーション内容を解析し、単なる「説明資料」ではなく、
+観客の感情を揺さぶり、魂に刻まれる**芸術作品（マスターピース）**としての
+統一されたデザイン戦略を設計してください。
+
+# Artistic Design Principles（芸術的基準）
+
+## 1. Less is More（極限の削ぎ落とし）
+- テキストは極限まで削る
+- 1つのスライドに1つの強烈なメッセージのみ
+- 箇条書きは最大3点まで
+
+## 2. Visual Metaphor（視覚的メタファー）
+- 「宇宙」という言葉に「星空の画像」を使うのは素人
+- プロは「無限に広がる波紋」「暗闇に差す一筋の光」など、
+  概念を象徴する抽象表現を選ぶ
+
+## 3. Negative Space（余白の美学）
+- 余白は「空き」ではなく「意味」である
+- 視線を誘導するために大胆に余白を活かす
+- 要素は少なく、インパクトを最大化
+
+## 4. Cinematic Contrast（映画的対比）
+- 光と影、静と動、マクロとミクロの対比を強調
+- ドラマティックなビジュアルインパクト
+
+# Good vs Bad（品質ベンチマーク）
+
+❌ **凡庸なアウトプット**:
+- コピー: 「インプットとアウトプットで価値を作る」
+- 構成: 左に箇条書き、右にビジネスマンが握手している写真
+
+✅ **芸術的作品としてのアウトプット**:
+- コピー: 「あなたの呼吸が、価値に変わる。」
+- 構成: 画面中央に黄金比で配置された微細な光の粒子。背景は深い漆黒。
+- 意図: 「出すこと（呼吸）」が自然に価値を生むという哲学を視覚的に表現
+
+---
 
 # User Input Content
 プレゼンテーションタイトル: {presentation_title}
@@ -90,32 +129,24 @@ DESIGN_STRATEGY_PROMPT = """# Role definition
 
 ---
 
-# Process
+# Task: デザイン戦略の設計
 
-### Step 1: Content Analysis (内容の分析)
-1. **Core Message:** 最も伝えたい核心的なメッセージ（1文）
-2. **Emotional Tone:** コンテンツが持つ感情的なトーン
-3. **Key Concepts:** デザインのモチーフとなり得る重要なキーワード（3〜5個）
-4. **Target Audience:** 想定される読者層
+### Step 1: Context Interpretation（哲学的解釈）
+1. **Core Jewel:** 全体を貫く「ダイヤモンドのような一言」
+2. **Emotional Tone:** 哲学的な深みと感情的なトーン
+3. **Key Metaphors:** 視覚的メタファーになり得る抽象的概念（3つ）
+4. **Target Soul:** 心を動かしたいターゲット層
 
-### Step 2: Design Style Definition (デザインスタイルの定義)
-1. **Concept Name:** デザインのテーマ名と概要
-2. **Color Palette:** コンテンツに最適な配色を選択
-   - **重要**: 青系だけでなく、コンテンツの感情トーンに合った多様な配色を検討してください
-   - 温かみのあるテーマ → オレンジ、ゴールド、レッド系
-   - エレガントなテーマ → パープル、ピンク、マゼンタ系
-   - 自然・安らぎ → グリーン、ターコイズ系
-   - プロフェッショナル → ブルー、グレー系
-   - 情熱・エネルギー → レッド、オレンジ系
-   
-   以下の形式で指定:
+### Step 2: Art Direction（アートディレクション）
+1. **Concept Name:** 芸術的なデザイン戦略名
+2. **Color Palette:** 感情を揺さぶる配色（質感・光沢感も考慮）
    - primary: メインカラー (HEX)
    - secondary: サブカラー (HEX)
    - accent: アクセントカラー (HEX)
-   - background_start: 背景グラデーション開始色 (HEX、暗い色)
+   - background_start: 背景グラデーション開始色 (HEX)
    - background_end: 背景グラデーション終了色 (HEX)
-3. **Typography Direction:** タイトル用と本文用のスタイル方向性
-4. **Visual Theme:** ビジュアルの方向性（抽象的な幾何学、有機的なライン、未来的、温かみなど）
+3. **Typography Direction:** 書体の方向性（繊細/力強い/エレガント等）
+4. **Visual Theme:** 視覚的世界観（抽象的な光の粒子、流れる水墨、宇宙的な広がりなど）
 
 # Output Format (JSON)
 ```json
@@ -151,9 +182,33 @@ JSONのみを出力してください。
 # =============================================================================
 
 SLIDE_DESIGN_PROMPT = """# Role
-あなたはAIデザインアーキテクトです。以下のデザイン戦略に基づき、1枚の完璧なスライドをHTML/CSSで作成してください。
+あなたは世界最高峰のデザインスタジオ（IDEO、Apple、Pentagram）に所属する
+**シニア・アートディレクター**です。
 
-# Design Strategy
+単なる「スライド」ではなく、観客の魂に刻まれる**1枚の芸術作品**を創造してください。
+
+# Artistic Principles（厳守）
+
+## 1. Less is More
+- テキストは**極限まで削る**
+- 1スライド = 1メッセージ
+- 箇条書きがあれば最大3点まで、各点は10文字以内
+
+## 2. Visual Metaphor
+- 直接的な表現は避ける
+- 概念を象徴する**抽象的なビジュアル**を構築
+- 例：「成長」→ 上昇する光の軌跡、「価値」→ 黄金の粒子
+
+## 3. Negative Space（余白の美学）
+- 余白は**意味**を持つ
+- 要素は少なく、インパクトを最大化
+- 画面の50%以上を余白にすることを恐れない
+
+## 4. Cinematic Contrast
+- 光と影のドラマティックな対比
+- 大きなタイトル vs 繊細なディテール
+
+# Design Strategy（統一されたスタイル）
 コンセプト: {concept_name}
 説明: {concept_description}
 感情トーン: {emotional_tone}
@@ -165,10 +220,11 @@ SLIDE_DESIGN_PROMPT = """# Role
 - Accent: {accent}
 - Background: {background_start} → {background_end}
 
-# Slide Content
+# This Slide
 スライド番号: {slide_number} / {total_slides}
 スライドタイプ: {slide_type}
 
+## Raw Content（これを芸術に昇華させる）
 タイトル: {title}
 サブタイトル: {subtitle}
 ポイント:
@@ -177,76 +233,55 @@ SLIDE_DESIGN_PROMPT = """# Role
 
 {image_section}
 
-# Design Requirements
+# Your Task: Copywriting + Art Direction
 
-1. **サイズ**: 幅{width}px × 高さ{height}px
-2. **フォント**: 'Noto Sans JP'を使用
-3. **構成**: 「1枚のポスター」のように完成された美しい構図
+## Step 1: Copywriting（ダイヤモンドへの昇華）
+提供されたテキストを、短く、鋭く、詩的な「ダイヤモンドのような言葉」に磨き上げてください。
+- タイトルは**8文字以内**を目指す
+- ポイントは各点**キーワード2-3語**に凝縮
+- キーメッセージは心に残る**一文**に
 
-## Layout Principles
-- **視線誘導**: Z型またはF型の自然な視線の流れ
-- **余白**: 呼吸感のある適切な余白（要素を詰め込みすぎない）
-- **グリッド**: 暗黙のグリッドラインに沿った配置
-- **階層**: 情報の重要度に応じた視覚的階層
+## Step 2: Art Direction
+- **構図**: 黄金比、三分割法、対角線配置を活用
+- **配置**: 画面の重心を意識（例：右下3分の1に重心）
+- **余白**: 大胆に使う。詰め込まない。
+- **装飾**: 抽象的な光、グラデーション、微細な粒子のみ
 
-## Visual Elements
-スライドタイプに応じて適切なレイアウトを選択:
+# Technical Specs
+サイズ: 幅{width}px × 高さ{height}px
+フォント: 'Noto Sans JP' (Google Fonts)
 
-### タイトルスライドの場合
-- 全画面背景グラデーション
-- センター配置の大きなタイトル
-- グラデーションテキストまたはアクセントカラーのハイライト
-- 控えめなサブタイトル
-
-### コンセプト・フロー図の場合
-- 3ステップを視覚的に接続（矢印やライン）
-- 各ステップにアイコン（絵文字）とラベル
-- グラスモーフィズムカード
-- 下部に印象的なキーメッセージ
-
-### ポイントリストの場合
-- 左右2分割レイアウト（テキスト + ビジュアル空間）
-- 番号付きまたはアイコン付きのポイント
-- アクセントカラーの左ボーダー
-- 各ポイントに説明テキスト
-
-### 引用・メッセージの場合
-- 大きな引用符マーク
-- センター配置の印象的なテキスト
-- 控えめな背景装飾
-
-## CSS Techniques to Use
-- `linear-gradient` for backgrounds
-- `backdrop-filter: blur()` for glass effects
-- `-webkit-background-clip: text` for gradient text
-- `box-shadow` for depth
-- Appropriate `border-radius`
-- Subtle `transform` for visual interest
+## CSS Techniques
+- `linear-gradient` で深みのある背景
+- `backdrop-filter: blur()` でグラスモーフィズム
+- `-webkit-background-clip: text` でグラデーションテキスト
+- `box-shadow` で奥行き
+- 大きな`border-radius`で柔らかさ
 
 # Output
-完全なHTML（<!DOCTYPE html>から</html>まで）を出力してください。
+完全なHTML（<!DOCTYPE html>から</html>まで）を出力。
 CSSはすべて<style>タグ内に記述。
-外部リソースはGoogle Fonts（Noto Sans JP）のみ。
-説明は不要です。HTMLのみ。
+外部リソースはGoogle Fonts（Noto Sans JP）のみ使用。
+**説明は不要。HTMLのみ。**
 
-## 絶対禁止事項（厳守）
-以下は**絶対に**スライドに表示しないでください：
+# 絶対禁止事項（厳守）
 
 ❌ 字幕テキスト
 ❌ ナレーション・文字起こし
 ❌ 話し手の発言の引用
-❌ 長い説明文（2-3文以上）
+❌ 長い説明文（2文以上禁止）
 ❌ スライド下部の小さな追加テキスト
 ❌ 提供されたポイント以外の追加テキスト
+❌ ありきたりなビジネス画像（握手、会議室など）
 
-## 表示するもの（これだけ）
-✅ タイトル（headline）
-✅ サブタイトル（subheadline）- あれば
-✅ 箇条書きポイント（bullet_points）- 短く簡潔に
-✅ キーメッセージ（key_message）- 1文のみ
-✅ スライド番号
+# 表示するもの（これだけ）
 
-上記以外のテキストは一切表示しないでください。
+✅ 磨き上げたタイトル
+✅ サブタイトル（必要なら）
+✅ 凝縮されたポイント（最大3つ）
+✅ キーメッセージ（1文）
+✅ スライド番号（控えめに）
+✅ 抽象的なビジュアル装飾
 """
 
 # Image section template for prompts
@@ -340,7 +375,7 @@ async def generate_design_strategy(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        model = genai.GenerativeModel("gemini-3.0-pro-preview")
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
@@ -481,7 +516,7 @@ async def generate_slide_html(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        model = genai.GenerativeModel("gemini-3.0-pro-preview")
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
@@ -867,7 +902,7 @@ async def self_review_slide(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        model = genai.GenerativeModel("gemini-3.0-pro-preview")
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
@@ -977,7 +1012,7 @@ async def regenerate_slide_with_feedback(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        model = genai.GenerativeModel("gemini-3.0-pro-preview")
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
