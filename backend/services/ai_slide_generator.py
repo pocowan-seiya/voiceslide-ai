@@ -229,11 +229,24 @@ CSSはすべて<style>タグ内に記述。
 外部リソースはGoogle Fonts（Noto Sans JP）のみ。
 説明は不要です。HTMLのみ。
 
-## 重要な注意事項
-- **字幕やナレーションテキストは絶対に含めないでください**
-- スライドには上記の「タイトル」「サブタイトル」「ポイント」「キーメッセージ」のみを表示
-- 話し手の言葉の引用や文字起こしテキストは表示しないでください
-- スライド下部に小さな文字でテキストを追加しないでください
+## 絶対禁止事項（厳守）
+以下は**絶対に**スライドに表示しないでください：
+
+❌ 字幕テキスト
+❌ ナレーション・文字起こし
+❌ 話し手の発言の引用
+❌ 長い説明文（2-3文以上）
+❌ スライド下部の小さな追加テキスト
+❌ 提供されたポイント以外の追加テキスト
+
+## 表示するもの（これだけ）
+✅ タイトル（headline）
+✅ サブタイトル（subheadline）- あれば
+✅ 箇条書きポイント（bullet_points）- 短く簡潔に
+✅ キーメッセージ（key_message）- 1文のみ
+✅ スライド番号
+
+上記以外のテキストは一切表示しないでください。
 """
 
 # Image section template for prompts
@@ -413,14 +426,20 @@ async def generate_slide_html(
     
     genai.configure(api_key=key)
     
-    # Extract slide content
+    # Extract slide content (explicitly exclude transcript/speakers_words data)
     slide_copy = slide.get("slide_copy", {})
     title = slide_copy.get("headline") or slide.get("title", "")
     subtitle = slide_copy.get("subheadline") or slide.get("subtitle", "")
     raw_points = slide_copy.get("bullet_points") or slide.get("points", [])
     key_message = slide_copy.get("key_message") or ""
     
-    # Format points
+    # IMPORTANT: Explicitly exclude these fields - they should NOT appear on slides
+    # - speakers_words (transcript text)
+    # - call_to_action (not needed for display)
+    # - note_for_designer (internal note)
+    # - keywords (metadata only)
+    
+    # Format points (only clean bullet points, no transcript)
     points_str = "\n".join([f"- {p}" if isinstance(p, str) else f"- {p}" for p in raw_points]) if raw_points else "(なし)"
     
     # Extract strategy
