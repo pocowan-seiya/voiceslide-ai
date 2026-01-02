@@ -686,14 +686,14 @@ async def generate_all_custom_slides(
                 image_info=image_info
             )
             
-            # Step 3c: Self-review only for first and last slide (faster)
-            if slide_number == 1 or slide_number == total_slides:
-                print(f"[Design Architect] Self-reviewing slide {slide_number}...")
-                html = await self_review_slide(
-                    html=html,
-                    strategy=strategy,
-                    gemini_key=gemini_key
-                )
+            # Step 3c: Self-review to check for transcript text and improve quality
+            # Now runs on ALL slides to ensure no transcript/subtitle text remains
+            print(f"[Design Architect] Self-reviewing slide {slide_number}...")
+            html = await self_review_slide(
+                html=html,
+                strategy=strategy,
+                gemini_key=gemini_key
+            )
             
             html_contents.append(html)
             
@@ -781,6 +781,25 @@ AI_SELF_REVIEW_PROMPT = """# Role
 
 # レビュー観点
 
+## 0. 字幕・ナレーションテキストの削除（最優先）
+**まず最初に**以下をチェックし、存在すれば**必ず削除**してください：
+
+❌ スライド下部の小さなテキスト（字幕のように見えるもの）
+❌ 長い説明文や話し言葉のテキスト
+❌ 文字起こし・ナレーションのような文章
+❌ 「〜と思います」「〜ですね」のような話し言葉
+❌ 2-3文以上続く長いテキストブロック
+❌ 提供されたポイント以外の追加テキスト
+
+**許可されるテキストのみ残す：**
+✅ タイトル（大きく目立つ）
+✅ サブタイトル（あれば）
+✅ 箇条書きポイント（短く簡潔に）
+✅ キーメッセージ（1文のみ）
+✅ スライド番号
+
+もし不要なテキストがあれば、**そのHTML要素を完全に削除**してください。
+
 ## 1. コピー（テキスト）
 - タイトルは簡潔でインパクトがあるか？
 - ポイントは具体的で理解しやすいか？
@@ -806,8 +825,8 @@ AI_SELF_REVIEW_PROMPT = """# Role
 
 # 指示
 
-1. 上記の観点でスライドを厳しく評価してください
-2. 改善点を特定してください
+1. **まず字幕・ナレーションテキストがないかチェック。あれば削除！**
+2. 上記の観点でスライドを厳しく評価してください
 3. 改善を反映した新しいHTMLを生成してください
 
 **必ず何かを改善してください。** 完璧なスライドは存在しません。
