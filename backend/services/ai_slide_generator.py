@@ -76,6 +76,169 @@ COLOR_THEMES = {
     }
 }
 
+# =============================================================================
+# Layout Variation System - 8 Different Layout Types
+# =============================================================================
+
+LAYOUT_TYPES = {
+    "center_hero": {
+        "name": "Center Hero",
+        "description": "中央配置の大きなタイトル、最小限の要素",
+        "css_hints": """
+            - タイトルを画面中央にどーんと配置
+            - 余白たっぷり、要素は最小限
+            - サブテキストはタイトル下に小さく
+            - 背景にsubtle装飾（光の粒子やグラデーション円）
+        """,
+        "best_for": ["title", "closing", "quote"]
+    },
+    "left_heavy": {
+        "name": "Left Heavy",
+        "description": "左側にメインコンテンツ、右側に余白やビジュアル",
+        "css_hints": """
+            - 左60%にテキストコンテンツ
+            - 右40%は余白または抽象的装飾
+            - 左揃えのテキスト
+            - 垂直方向は中央寄せ
+        """,
+        "best_for": ["points", "concept"]
+    },
+    "right_heavy": {
+        "name": "Right Heavy",
+        "description": "右側にメインコンテンツ、左側に余白",
+        "css_hints": """
+            - 右60%にテキストコンテンツ
+            - 左40%は余白または抽象的装飾
+            - 右揃えまたは左揃えのテキスト
+            - 背景に左から流れるグラデーション
+        """,
+        "best_for": ["points", "data"]
+    },
+    "split_horizontal": {
+        "name": "Split Horizontal",
+        "description": "上下2分割、上にタイトル、下にコンテンツ",
+        "css_hints": """
+            - 上部30%にタイトルエリア
+            - 下部70%にコンテンツエリア
+            - 横長のレイアウト感
+            - 水平線やグラデーション境界
+        """,
+        "best_for": ["transition", "overview"]
+    },
+    "split_vertical": {
+        "name": "Split Vertical",
+        "description": "左右2分割、均等配置",
+        "css_hints": """
+            - 左右50-50に分割
+            - 片側にタイトル、片側にポイント
+            - 垂直の区切り線やグラデーション
+            - 対比を強調
+        """,
+        "best_for": ["comparison", "flow"]
+    },
+    "diagonal": {
+        "name": "Diagonal",
+        "description": "対角線配置、動的なレイアウト",
+        "css_hints": """
+            - 左上から右下への対角線を意識
+            - タイトルは左上
+            - コンテンツは右下方向に流れる
+            - transform: skewで傾斜装飾
+        """,
+        "best_for": ["process", "flow"]
+    },
+    "minimal": {
+        "name": "Minimal",
+        "description": "極限までシンプル、1-2要素のみ",
+        "css_hints": """
+            - 画面の80%を余白に
+            - 1つの強力なメッセージのみ
+            - フォントサイズを大きく
+            - 装飾なし、純粋なタイポグラフィ
+        """,
+        "best_for": ["quote", "key_message", "transition"]
+    },
+    "cards": {
+        "name": "Cards Layout",
+        "description": "カード型のコンテンツ配置",
+        "css_hints": """
+            - glassmorphismカードを使用
+            - 2-3枚のカードを横並び
+            - 各カードにアイコンとテキスト
+            - hover効果的なshadow
+        """,
+        "best_for": ["points", "steps", "features"]
+    }
+}
+
+# Track used layouts to avoid repetition
+_used_layouts_cache: Dict[str, List[str]] = {}
+
+def select_layout_for_slide(
+    job_id: str,
+    slide_number: int,
+    total_slides: int,
+    content_type: str,
+    num_points: int = 0
+) -> Dict[str, Any]:
+    """
+    Select an appropriate layout for each slide, ensuring variety.
+    Avoids using the same layout consecutively.
+    """
+    # Initialize cache for this job
+    if job_id not in _used_layouts_cache:
+        _used_layouts_cache[job_id] = []
+    
+    used = _used_layouts_cache[job_id]
+    
+    # Title slide - always center_hero
+    if slide_number == 1:
+        layout_key = "center_hero"
+    # Closing slide - center_hero or minimal
+    elif slide_number == total_slides:
+        layout_key = "minimal" if len(used) > 0 and used[-1] == "center_hero" else "center_hero"
+    else:
+        # Get suitable layouts for this content type
+        suitable = []
+        for key, layout in LAYOUT_TYPES.items():
+            if content_type in layout.get("best_for", []):
+                suitable.append(key)
+        
+        # If no suitable layouts, use all except center_hero
+        if not suitable:
+            suitable = ["left_heavy", "right_heavy", "split_horizontal", 
+                       "split_vertical", "diagonal", "cards"]
+        
+        # Add minimal for slides with few points
+        if num_points <= 2:
+            suitable.append("minimal")
+        
+        # Remove the last used layout to avoid repetition
+        if used:
+            last_used = used[-1]
+            suitable = [l for l in suitable if l != last_used]
+        
+        # Also try to avoid the second-to-last to increase variety
+        if len(used) >= 2:
+            second_last = used[-2]
+            suitable = [l for l in suitable if l != second_last] or suitable
+        
+        # Select based on slide position for more variety
+        if suitable:
+            # Use slide_number to cycle through suitable layouts
+            layout_key = suitable[(slide_number - 2) % len(suitable)]
+        else:
+            layout_key = "left_heavy"
+    
+    # Track usage
+    used.append(layout_key)
+    _used_layouts_cache[job_id] = used[-10:]  # Keep only last 10
+    
+    return {
+        "key": layout_key,
+        **LAYOUT_TYPES[layout_key]
+    }
+
 DESIGN_STRATEGY_PROMPT = """# Role definition
 あなたは、世界最高峰のクリエイティブエージェンシーに所属する「AIデザインアーキテクト」です。
 あなたの使命は、提供されたプレゼンテーション全体の内容を深く理解し、統一感のある「オーダーメイドのスライドデザイン戦略」を設計することです。
@@ -174,6 +337,9 @@ SLIDE_DESIGN_PROMPT = """# Role
 ポイント:
 {points}
 キーメッセージ: {key_message}
+
+# 指定レイアウト（必ず従ってください）
+{layout_instruction}
 
 {image_section}
 
@@ -414,6 +580,7 @@ async def generate_slide_html(
     slide_number: int,
     total_slides: int,
     strategy: Dict[str, Any],
+    job_id: str,  # Added for layout tracking
     gemini_key: Optional[str] = None,
     image_info: Optional[Dict[str, str]] = None
 ) -> str:
@@ -449,6 +616,28 @@ async def generate_slide_html(
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
     
+    # Select layout for variety (NEW)
+    layout = select_layout_for_slide(
+        job_id=job_id,
+        slide_number=slide_number,
+        total_slides=total_slides,
+        content_type=slide_type,
+        num_points=len(raw_points)
+    )
+    
+    # Build layout instruction
+    layout_instruction = f"""
+**レイアウト: {layout['name']}**
+{layout['description']}
+
+**配置のヒント:**
+{layout['css_hints']}
+
+このレイアウトに**必ず従って**デザインしてください。前のスライドとは異なる配置になります。
+"""
+    
+    print(f"[Design Architect] Slide {slide_number}: Using layout '{layout['name']}'")
+    
     # Build image section if image provided
     if image_info:
         image_section = IMAGE_SECTION_TEMPLATE.format(
@@ -475,6 +664,7 @@ async def generate_slide_html(
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
+        layout_instruction=layout_instruction,  # NEW
         image_section=image_section,
         width=VIDEO_WIDTH,
         height=VIDEO_HEIGHT
@@ -682,6 +872,7 @@ async def generate_all_custom_slides(
                 slide_number=slide_number,
                 total_slides=total_slides,
                 strategy=strategy,
+                job_id=job_id,  # Added for layout tracking
                 gemini_key=gemini_key,
                 image_info=image_info
             )
@@ -694,6 +885,10 @@ async def generate_all_custom_slides(
                 strategy=strategy,
                 gemini_key=gemini_key
             )
+            
+            # Step 3d: Post-processing - forcibly remove any remaining caption text
+            print(f"[Design Architect] Post-processing slide {slide_number} (removing captions)...")
+            html = remove_caption_text(html)
             
             html_contents.append(html)
             
@@ -720,6 +915,83 @@ async def generate_all_custom_slides(
     
     print(f"[Design Architect] Generated {len(image_paths)} slides with unified design strategy")
     return image_paths
+
+
+# =============================================================================
+# HTML Post-Processing - Forcibly Remove Caption/Transcript Text
+# =============================================================================
+
+import re
+
+def remove_caption_text(html: str) -> str:
+    """
+    Post-process HTML to remove any caption-like text that shouldn't be on slides.
+    This is a safety net after AI generation and self-review.
+    
+    Removes:
+    - Small text at bottom of slides
+    - Long paragraph-like text
+    - Text that looks like subtitles/narration
+    """
+    # Pattern 1: Remove elements with very small font-size (caption-like)
+    # font-size: 10px, 11px, 12px, 13px, 14px patterns
+    html = re.sub(
+        r'<[^>]*style="[^"]*font-size:\s*1[0-4]px[^"]*"[^>]*>.*?</[^>]+>',
+        '',
+        html,
+        flags=re.DOTALL | re.IGNORECASE
+    )
+    
+    # Pattern 2: Remove elements positioned at absolute bottom with small text
+    html = re.sub(
+        r'<[^>]*style="[^"]*position:\s*absolute[^"]*bottom:\s*[0-2]0px[^"]*"[^>]*>.*?</[^>]+>',
+        '',
+        html,
+        flags=re.DOTALL | re.IGNORECASE
+    )
+    
+    # Pattern 3: Remove <p> tags with very long text (50+ characters, likely narration)
+    # But keep short text and bullet points
+    def filter_long_paragraphs(match):
+        content = match.group(1)
+        # If text is longer than 100 chars and doesn't look like a bullet point, remove it
+        if len(content) > 100 and not content.strip().startswith(('•', '-', '・', '●', '○')):
+            return ''
+        return match.group(0)
+    
+    html = re.sub(
+        r'<p[^>]*>([^<]+)</p>',
+        filter_long_paragraphs,
+        html,
+        flags=re.IGNORECASE
+    )
+    
+    # Pattern 4: Remove divs/spans with class containing "caption", "subtitle", "narration"
+    html = re.sub(
+        r'<[^>]*class="[^"]*(?:caption|subtitle|narration|transcript)[^"]*"[^>]*>.*?</[^>]+>',
+        '',
+        html,
+        flags=re.DOTALL | re.IGNORECASE
+    )
+    
+    # Pattern 5: Remove text that ends with conversational markers
+    conversational_patterns = [
+        r'と思います',
+        r'ですね',
+        r'ですよね',
+        r'なんですね',
+        r'じゃないですか',
+        r'ということで',
+    ]
+    for pattern in conversational_patterns:
+        html = re.sub(
+            rf'<[^>]+>[^<]*{pattern}[^<]*</[^>]+>',
+            '',
+            html,
+            flags=re.IGNORECASE
+        )
+    
+    return html
 
 
 # =============================================================================
