@@ -511,7 +511,7 @@ async def generate_design_strategy(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-3.0-pro-preview")
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
@@ -676,7 +676,7 @@ async def generate_slide_html(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-3.0-pro-preview")
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
@@ -1144,7 +1144,7 @@ async def self_review_slide(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-3.0-pro-preview")
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
@@ -1254,7 +1254,7 @@ async def regenerate_slide_with_feedback(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-3.0-pro-preview")
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
