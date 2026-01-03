@@ -101,7 +101,7 @@ LAYOUT_TYPES = {
             - 左揃えのテキスト
             - 垂直方向は中央寄せ
         """,
-        "best_for": ["points", "concept"]
+        "best_for": ["points", "concept", "closing"]
     },
     "right_heavy": {
         "name": "Right Heavy",
@@ -112,7 +112,7 @@ LAYOUT_TYPES = {
             - 右揃えまたは左揃えのテキスト
             - 背景に左から流れるグラデーション
         """,
-        "best_for": ["points", "data"]
+        "best_for": ["points", "concept", "quote"]
     },
     "split_horizontal": {
         "name": "Split Horizontal",
@@ -123,7 +123,7 @@ LAYOUT_TYPES = {
             - 横長のレイアウト感
             - 水平線やグラデーション境界
         """,
-        "best_for": ["transition", "overview"]
+        "best_for": ["points", "concept", "closing"]
     },
     "split_vertical": {
         "name": "Split Vertical",
@@ -145,7 +145,7 @@ LAYOUT_TYPES = {
             - コンテンツは右下方向に流れる
             - transform: skewで傾斜装飾
         """,
-        "best_for": ["process", "flow"]
+        "best_for": ["flow", "concept", "points"]
     },
     "minimal": {
         "name": "Minimal",
@@ -167,7 +167,7 @@ LAYOUT_TYPES = {
             - 各カードにアイコンとテキスト
             - hover効果的なshadow
         """,
-        "best_for": ["points", "steps", "features"]
+        "best_for": ["points", "concept", "flow", "comparison"]
     }
 }
 
@@ -439,19 +439,21 @@ def determine_slide_type(slide: Dict, slide_number: int, total_slides: int) -> s
     title = slide_copy.get("headline") or slide.get("title", "")
     
     if slide_number == 1:
-        return "表紙（タイトルスライド）"
+        return "title"  # Changed to English for LAYOUT_TYPES matching
     elif slide_number == total_slides:
-        return "まとめ・クロージング"
+        return "closing"  # Changed to English
     elif not points:
-        return "引用・メッセージ"
+        return "quote"  # Changed to English
     elif len(points) == 3:
-        if any(word in title for word in ["ステップ", "プロセス", "流れ", "→"]):
-            return "フロー・プロセス図"
-        return "3つのポイント・コンセプト提示"
+        if any(word in title for word in ["ステップ", "プロセス", "流れ", "→", "フロー"]):
+            return "flow"  # Changed to English
+        return "concept"  # Changed to English
     elif len(points) >= 4:
-        return "要点リスト"
+        return "points"  # Changed to English
+    elif len(points) == 2:
+        return "comparison"  # New: for 2-point slides
     else:
-        return "コンテンツスライド"
+        return "points"  # Default to points
 
 
 async def generate_design_strategy(
