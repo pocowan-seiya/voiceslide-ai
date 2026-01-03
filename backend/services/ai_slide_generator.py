@@ -316,6 +316,11 @@ JSONのみを出力してください。
 SLIDE_DESIGN_PROMPT = """# Role
 あなたはAIデザインアーキテクトです。以下のデザイン戦略に基づき、1枚の完璧なスライドをHTML/CSSで作成してください。
 
+# ⚠️ IMPORTANT: 使用するレイアウト（厳守）
+{layout_instruction}
+
+---
+
 # Design Strategy
 コンセプト: {concept_name}
 説明: {concept_description}
@@ -338,8 +343,6 @@ SLIDE_DESIGN_PROMPT = """# Role
 {points}
 キーメッセージ: {key_message}
 
-# 指定レイアウト（必ず従ってください）
-{layout_instruction}
 
 {image_section}
 
