@@ -407,6 +407,34 @@ CSSはすべて<style>タグ内に記述。
 ❌ 長い説明文（2-3文以上）
 ❌ スライド下部の小さな追加テキスト
 ❌ 提供されたポイント以外の追加テキスト
+❌ **画像のプレースホルダーテキスト**（例：「Image Here」「📷」「[画像]」など）
+❌ **img タグや外部画像URL**（画像は使用しない）
+❌ **画像生成プロンプトのテキスト表示**
+
+## ビジュアル表現の方法（重要）
+画像の代わりに**CSSのみで**抽象的なビジュアルを作成してください：
+
+✅ **グラデーション背景** - linear-gradient, radial-gradient
+✅ **グラスモーフィズムカード** - backdrop-filter: blur() + 半透明背景
+✅ **CSSで作る形状** - border-radius, transform で作る円・四角
+✅ **光のエフェクト** - box-shadow, グロー効果
+✅ **装飾的なボーダー** - 色付きボーダー、グラデーションボーダー
+✅ **抽象的パターン** - 繰り返しグラデーション
+
+例：右側に青いグラデーション円を配置
+```css
+.visual-element {
+  position: absolute;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #3B82F6 0%, transparent 70%);
+  filter: blur(40px);
+}
+```
 
 ## 表示するもの（これだけ）
 ✅ タイトル（headline）
@@ -414,6 +442,7 @@ CSSはすべて<style>タグ内に記述。
 ✅ 箇条書きポイント（bullet_points）- 短く簡潔に
 ✅ キーメッセージ（key_message）- 1文のみ
 ✅ スライド番号
+✅ CSS装飾（グラデーション、シェイプ、グロー効果）
 
 上記以外のテキストは一切表示しないでください。
 """
