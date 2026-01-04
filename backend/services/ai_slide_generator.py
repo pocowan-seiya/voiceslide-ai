@@ -427,7 +427,7 @@ CSSはすべて<style>タグ内に記述。
 
 例：右側に青いグラデーション円を配置
 ```css
-.visual-element {
+.visual-element {{
   position: absolute;
   right: 60px;
   top: 50%;
@@ -437,7 +437,7 @@ CSSはすべて<style>タグ内に記述。
   border-radius: 50%;
   background: radial-gradient(circle, #3B82F6 0%, transparent 70%);
   filter: blur(40px);
-}
+}}
 ```
 
 ## 表示するもの（これだけ）
