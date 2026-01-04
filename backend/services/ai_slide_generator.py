@@ -314,14 +314,20 @@ JSONのみを出力してください。
 # =============================================================================
 
 SLIDE_DESIGN_PROMPT = """# Role
-あなたはAIデザインアーキテクトです。以下のデザイン戦略に基づき、1枚の完璧なスライドをHTML/CSSで作成してください。
+あなたは世界トップクラスの**プレゼンテーションデザイナー兼アートディレクター**です。
+聴衆の心に一生残る「1枚の作品」としてのスライドを作成してください。
 
 # ⚠️ IMPORTANT: 使用するレイアウト（厳守）
 {layout_instruction}
 
 ---
 
-# Design Strategy
+# Goals（デザインゴール）
+1. **メッセージの昇華**: テキストをそのまま載せるのではなく、メッセージを象徴する「言葉」と「ビジュアル」へ昇華させる
+2. **視覚的インパクト**: 見た瞬間に心を掴む、強烈なファーストインプレッション
+3. **究極の両立**: インパクトと理解しやすさを極限まで両立
+
+# Design Strategy（統一デザイン戦略）
 コンセプト: {concept_name}
 説明: {concept_description}
 感情トーン: {emotional_tone}
@@ -333,7 +339,7 @@ SLIDE_DESIGN_PROMPT = """# Role
 - Accent: {accent}
 - Background: {background_start} → {background_end}
 
-# Slide Content
+# Slide Content（素材）
 スライド番号: {slide_number} / {total_slides}
 スライドタイプ: {slide_type}
 
@@ -343,54 +349,52 @@ SLIDE_DESIGN_PROMPT = """# Role
 {points}
 キーメッセージ: {key_message}
 
-
 {image_section}
 
-# Design Requirements
+---
+
+# Your Design Process
+
+## Step 1: The Core Message（核心メッセージ）
+提供されたテキストを見た瞬間に突き刺さる**究極まで削ぎ落としたコピー**に変換：
+- タイトルは**8文字以内**を目指す
+- 箇条書きは**キーワード2-3語**に凝縮
+- 冗長な説明は一切排除
+
+## Step 2: Design Philosophy（デザイン哲学）
+なぜその配置、その色、その余白にするのかを意識：
+- **感情トーン**に合わせた色温度
+- **メッセージの重み**に応じたフォントサイズ
+- **視線誘導**を計算した要素配置
+
+## Step 3: Visual Composition（視覚構成）
+- **黄金比・三分割法**を活用した配置
+- **大胆な余白**（画面の40-60%を余白に）
+- **視覚的階層**（タイトル > ポイント > 装飾）
+
+## Step 4: Graphic Detail（グラフィックディテール）
+CSSで表現する**質感と雰囲気**：
+- 背景の**深み**（グラデーションの角度・色数）
+- **光の当たり方**（グロー効果、ハイライト）
+- **影の使い方**（box-shadow の距離・ぼかし）
+- **質感**（ガラス効果、ノイズテクスチャ）
+
+---
+
+# Technical Specs
 
 1. **サイズ**: 幅{width}px × 高さ{height}px
-2. **フォント**: 'Noto Sans JP'を使用
-3. **構成**: 「1枚のポスター」のように完成された美しい構図
+2. **フォント**: 'Noto Sans JP' (Google Fonts)
+3. **完成度**: 「1枚のポスター」として額縁に入れられるクオリティ
 
-## Layout Principles
-- **視線誘導**: Z型またはF型の自然な視線の流れ
-- **余白**: 呼吸感のある適切な余白（要素を詰め込みすぎない）
-- **グリッド**: 暗黙のグリッドラインに沿った配置
-- **階層**: 情報の重要度に応じた視覚的階層
-
-## Visual Elements
-スライドタイプに応じて適切なレイアウトを選択:
-
-### タイトルスライドの場合
-- 全画面背景グラデーション
-- センター配置の大きなタイトル
-- グラデーションテキストまたはアクセントカラーのハイライト
-- 控えめなサブタイトル
-
-### コンセプト・フロー図の場合
-- 3ステップを視覚的に接続（矢印やライン）
-- 各ステップにアイコン（絵文字）とラベル
-- グラスモーフィズムカード
-- 下部に印象的なキーメッセージ
-
-### ポイントリストの場合
-- 左右2分割レイアウト（テキスト + ビジュアル空間）
-- 番号付きまたはアイコン付きのポイント
-- アクセントカラーの左ボーダー
-- 各ポイントに説明テキスト
-
-### 引用・メッセージの場合
-- 大きな引用符マーク
-- センター配置の印象的なテキスト
-- 控えめな背景装飾
-
-## CSS Techniques to Use
-- `linear-gradient` for backgrounds
-- `backdrop-filter: blur()` for glass effects
+## CSS Techniques
+- `linear-gradient`（多角度、多色）for depth
+- `radial-gradient` for light spots
+- `backdrop-filter: blur()` for glass morphism
 - `-webkit-background-clip: text` for gradient text
-- `box-shadow` for depth
-- Appropriate `border-radius`
-- Subtle `transform` for visual interest
+- `box-shadow`（複数レイヤー）for realistic depth
+- `border-radius`（大きめ）for softness
+- `transform: rotate/skew` for dynamic elements
 
 # Output
 完全なHTML（<!DOCTYPE html>から</html>まで）を出力してください。
