@@ -72,15 +72,29 @@ export async function POST(
             }
         }
 
+        // Add timeout for long-running requests (like AI slide generation)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
         const response = await fetch(targetUrl, {
             method: 'POST',
             headers,
             body,
+            signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         const data = await response.json();
         return NextResponse.json(data, { status: response.status });
     } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+            console.error('Proxy timeout: Request took too long');
+            return NextResponse.json(
+                { error: 'Request timeout - operation took too long' },
+                { status: 504 }
+            );
+        }
         console.error('Proxy error:', error);
         return NextResponse.json(
             { error: 'Backend connection failed' },
