@@ -915,7 +915,10 @@ async def generate_all_custom_slides(
     image_paths = []
     html_contents = []
     
-    # For batch mode, include existing paths for slides before start_slide
+    # For batch mode, include existing paths AND HTML contents for slides before start_slide
+    if start_slide > 1 and cached_data and "html_contents" in cached_data:
+        html_contents = cached_data["html_contents"][:start_slide - 1]
+    
     for i in range(1, start_slide):
         existing_path = os.path.join(slides_dir, f"slide_{i:03d}.png")
         if os.path.exists(existing_path):
