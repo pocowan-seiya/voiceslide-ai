@@ -1072,18 +1072,77 @@ export default function Home() {
 
               {/* Batch progress indicator and continue button */}
               {!batchState.isComplete && batchState.nextStart && (
-                <div className="mt-4">
-                  <div className="text-sm text-gray-400 mb-2">
+                <div className="mt-6 p-4 bg-zinc-800/50 rounded-xl border border-zinc-700">
+                  <div className="text-lg font-semibold text-amber-400 mb-3">
                     📊 進捗: {batchState.slidesCompleted}/{batchState.totalSlides}枚 生成完了
                   </div>
+
+                  {/* Slide preview grid for current batch */}
+                  {state.slidePreviews.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm text-gray-400 mb-2">生成済みスライド（クリックで選択してフィードバック）</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {state.slidePreviews.map((preview, i) => (
+                          <div
+                            key={i}
+                            onClick={() => setSelectedSlide(i + 1)}
+                            className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
+                                ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                                : 'border-zinc-700 hover:border-zinc-500'
+                              }`}
+                          >
+                            <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
+                            <div className="bg-zinc-800 text-center text-xs py-1">
+                              {i + 1}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Feedback input for selected slide */}
+                  {selectedSlide && (
+                    <div className="bg-zinc-900/50 rounded-lg p-3 mb-4 border border-zinc-600">
+                      <h4 className="font-semibold mb-2 text-amber-400">
+                        📝 スライド {selectedSlide} を修正
+                      </h4>
+                      <textarea
+                        value={slideFeedback}
+                        onChange={(e) => setSlideFeedback(e.target.value)}
+                        placeholder="例：タイトルを変更、背景をもっと明るく、ポイントを追加..."
+                        className="w-full h-20 bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-white resize-none mb-2 text-sm"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleSlideFeedback}
+                          disabled={isRegenerating || !slideFeedback.trim()}
+                          className="btn-primary text-sm py-2 flex-1"
+                        >
+                          {isRegenerating ? "再生成中..." : "🔄 修正適用"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedSlide(null);
+                            setSlideFeedback("");
+                          }}
+                          className="btn-secondary text-sm py-2"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Continue to next batch button */}
                   <button
                     onClick={() => handleGenerateSlides(batchState.nextStart!)}
                     disabled={state.isProcessing}
-                    className="btn-secondary"
+                    className="btn-primary w-full"
                   >
                     {state.isProcessing
                       ? "生成中..."
-                      : `🔄 続けて生成（${batchState.nextStart}-${Math.min(batchState.nextStart + 4, batchState.totalSlides)}枚目）`}
+                      : `➡️ 次のバッチへ（${batchState.nextStart}-${Math.min(batchState.nextStart + 4, batchState.totalSlides)}枚目を生成）`}
                   </button>
                 </div>
               )}
