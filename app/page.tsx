@@ -99,6 +99,14 @@ export default function Home() {
   // Progress tracking
   const [progress, setProgress] = useState<{ percent: number, message: string }>({ percent: 0, message: "" });
 
+  // Batch slide generation tracking
+  const [batchState, setBatchState] = useState<{
+    isComplete: boolean;
+    nextStart: number | null;
+    slidesCompleted: number;
+    totalSlides: number;
+  }>({ isComplete: true, nextStart: null, slidesCompleted: 0, totalSlides: 0 });
+
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -277,8 +285,8 @@ export default function Home() {
     }
   };
 
-  // Step 5 (Full AI): Generate Slides automatically
-  const handleGenerateSlides = async () => {
+  // Step 5 (Full AI): Generate Slides in batches (5 at a time) to avoid timeout
+  const handleGenerateSlides = async (startSlide: number = 1) => {
     if (!hasAPIKeys()) {
       setShowSettings(true);
       updateState({ error: "APIキーを設定してください" });
@@ -286,7 +294,7 @@ export default function Home() {
     }
 
     updateState({ isProcessing: true });
-    setProgress({ percent: 0, message: "開始中..." });
+    setProgress({ percent: 0, message: startSlide === 1 ? "デザイン戦略を生成中..." : `スライド ${startSlide} から生成中...` });
 
     // Start progress polling
     const progressInterval = setInterval(async () => {
@@ -310,9 +318,14 @@ export default function Home() {
         (headers as Record<string, string>)["x-color-theme"] = selectedColorTheme;
       }
 
-      const res = await fetch(`${API_URL}/api/generate-slides/${state.jobId}`, {
+      // Use batch endpoint (5 slides at a time)
+      const res = await fetch(`${API_URL}/api/generate-slides-batch/${state.jobId}`, {
         method: "POST",
         headers,
+        body: JSON.stringify({
+          start_slide: startSlide,
+          batch_size: 5
+        })
       });
 
       clearInterval(progressInterval);
@@ -320,12 +333,23 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Slide generation failed");
 
-      setProgress({ percent: 100, message: "完了!" });
+      // Update batch state
+      setBatchState({
+        isComplete: data.is_complete,
+        nextStart: data.next_start,
+        slidesCompleted: data.slides_completed,
+        totalSlides: data.total_slides
+      });
+
+      setProgress({
+        percent: (data.slides_completed / data.total_slides) * 100,
+        message: data.message
+      });
 
       updateState({
-        slideCount: data.slide_count,
+        slideCount: data.slides_completed,
         slidePreviews: data.slide_previews.map((p: string) => `${API_URL}${p}`),
-        step: 6 as Step, // フルAIモードのステップ6は動画生成
+        step: data.is_complete ? 6 as Step : 5 as Step, // Stay on step 5 if more batches needed
         isProcessing: false,
       });
       setSelectedSlide(null);
@@ -1039,12 +1063,30 @@ export default function Home() {
               </div>
 
               <button
-                onClick={handleGenerateSlides}
+                onClick={() => handleGenerateSlides(1)}
                 disabled={state.isProcessing}
                 className="btn-primary"
               >
-                {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成"}
+                {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成（5枚ずつ）"}
               </button>
+
+              {/* Batch progress indicator and continue button */}
+              {!batchState.isComplete && batchState.nextStart && (
+                <div className="mt-4">
+                  <div className="text-sm text-gray-400 mb-2">
+                    📊 進捗: {batchState.slidesCompleted}/{batchState.totalSlides}枚 生成完了
+                  </div>
+                  <button
+                    onClick={() => handleGenerateSlides(batchState.nextStart!)}
+                    disabled={state.isProcessing}
+                    className="btn-secondary"
+                  >
+                    {state.isProcessing
+                      ? "生成中..."
+                      : `🔄 続けて生成（${batchState.nextStart}-${Math.min(batchState.nextStart + 4, batchState.totalSlides)}枚目）`}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

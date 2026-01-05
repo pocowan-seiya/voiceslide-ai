@@ -465,6 +465,93 @@ async def generate_slides_endpoint(
         raise HTTPException(500, f"スライド生成エラー: {str(e)}")
 
 
+class BatchGenerateRequest(BaseModel):
+    start_slide: int = 1  # 1-indexed
+    batch_size: int = 5   # Number of slides per batch
+
+
+@app.post("/api/generate-slides-batch/{job_id}")
+async def generate_slides_batch_endpoint(
+    job_id: str,
+    request: BatchGenerateRequest,
+    x_gemini_key: Optional[str] = Header(None),
+    x_color_theme: Optional[str] = Header(None)
+):
+    """Batch slide generation: generates slides in batches to avoid timeout"""
+    pipeline = get_or_create_pipeline(job_id)
+    
+    # アウトラインを取得
+    outline = pipeline.polished_outline or pipeline.raw_outline
+    if not outline:
+        raise HTTPException(400, "アウトラインが見つかりません。先にアウトラインを生成してください。")
+    
+    slides = outline.get("slides", [])
+    total_slides = len(slides)
+    
+    start = request.start_slide
+    end = min(start + request.batch_size - 1, total_slides)
+    
+    print(f"[Batch Generate] Generating slides {start}-{end} of {total_slides}")
+    
+    try:
+        from services.ai_slide_generator import generate_all_custom_slides
+        
+        # Initialize progress for this batch
+        slide_progress[job_id] = {
+            "current": 0,
+            "total": end - start + 2,
+            "message": f"バッチ生成中 ({start}-{end})..."
+        }
+        
+        def update_progress(current: int, total: int, message: str):
+            slide_progress[job_id] = {
+                "current": current,
+                "total": total,
+                "message": message
+            }
+        
+        # Generate batch of slides
+        image_paths = await generate_all_custom_slides(
+            slides=slides,
+            job_id=job_id,
+            gemini_key=x_gemini_key,
+            outline=outline,
+            color_theme=x_color_theme,
+            progress_callback=update_progress,
+            start_slide=start,
+            end_slide=end
+        )
+        
+        # パイプラインに保存
+        pipeline.slide_images = image_paths
+        pipeline.slide_contents = slides
+        
+        # スライドプレビューURLを生成
+        slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
+        
+        # Calculate next batch
+        next_start = end + 1
+        is_complete = next_start > total_slides
+        
+        return {
+            "job_id": job_id,
+            "batch_start": start,
+            "batch_end": end,
+            "slides_generated": end - start + 1,
+            "total_slides": total_slides,
+            "slides_completed": end,
+            "is_complete": is_complete,
+            "next_start": next_start if not is_complete else None,
+            "slide_previews": slide_previews,
+            "message": f"スライド {start}-{end} を生成しました" + ("（完了）" if is_complete else f"（残り {total_slides - end}枚）")
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"バッチ生成エラー: {str(e)}")
+
+
 # ========== Slide Feedback & Editing ==========
 
 class SlideFeedbackRequest(BaseModel):

@@ -709,6 +709,7 @@ async def generate_slide_html(
     )
     
     try:
+        # Gemini 3 Flash for high-quality slide generation
         model = genai.GenerativeModel("gemini-3-flash-preview")
         response = model.generate_content(
             prompt,
@@ -858,7 +859,9 @@ async def generate_all_custom_slides(
     gemini_key: Optional[str] = None,
     outline: Optional[Dict[str, Any]] = None,
     color_theme: Optional[str] = None,  # User-selected color theme
-    progress_callback: Optional[callable] = None  # Progress callback(current, total, message)
+    progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)
+    start_slide: int = 1,  # Batch: start from this slide (1-indexed)
+    end_slide: Optional[int] = None  # Batch: end at this slide (inclusive), None = all
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -872,32 +875,56 @@ async def generate_all_custom_slides(
     
     total_slides = len(slides)
     
-    # Step 1 & 2: Generate design strategy for the entire presentation
+    # Batch processing: determine actual end slide
+    if end_slide is None:
+        end_slide = total_slides
+    end_slide = min(end_slide, total_slides)
+    
+    # Step 1 & 2: Generate or retrieve design strategy
     if outline is None:
         outline = {"slides": slides}
     
-    print("[Design Architect] Analyzing content and defining design strategy...")
+    # Check if we have cached strategy (for batch continuation)
+    cached_data = get_slide_data(job_id)
+    
+    if start_slide == 1 or cached_data is None:
+        # First batch: generate new strategy
+        print("[Design Architect] Analyzing content and defining design strategy...")
+        if progress_callback:
+            progress_callback(0, end_slide - start_slide + 2, "デザイン戦略を生成中...")
+        
+        strategy = await generate_design_strategy(outline, gemini_key, color_theme)
+        
+        # Save strategy and slide data for later batches
+        save_slide_data(job_id, slides, strategy)
+    else:
+        # Subsequent batches: use cached strategy
+        print(f"[Design Architect] Using cached strategy for batch {start_slide}-{end_slide}")
+        strategy = cached_data.get("strategy", {})
+    
     if progress_callback:
-        progress_callback(0, total_slides + 1, "デザイン戦略を生成中...")
+        progress_callback(1, end_slide - start_slide + 2, f"スライド生成中 ({start_slide-1}/{total_slides})")
     
-    strategy = await generate_design_strategy(outline, gemini_key, color_theme)
-    
-    if progress_callback:
-        progress_callback(1, total_slides + 1, f"スライド生成中 (0/{total_slides})")
-    
-    # Save strategy and slide data for later use (feedback editing)
-    save_slide_data(job_id, slides, strategy)
-    
-    # Step 3: Generate each slide with consistent strategy
+    # Step 3: Generate slides in the specified range
     image_paths = []
     html_contents = []
-    total_slides = len(slides)
+    
+    # For batch mode, include existing paths for slides before start_slide
+    for i in range(1, start_slide):
+        existing_path = os.path.join(slides_dir, f"slide_{i:03d}.png")
+        if os.path.exists(existing_path):
+            image_paths.append(existing_path)
     
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         
         for i, slide in enumerate(slides):
             slide_number = i + 1
+            
+            # Batch mode: skip slides outside the specified range
+            if slide_number < start_slide or slide_number > end_slide:
+                continue
+            
             slide_type = determine_slide_type(slide, slide_number, total_slides)
             
             # Step 3a: Image generation temporarily disabled (API version compatibility)
@@ -942,9 +969,10 @@ async def generate_all_custom_slides(
             image_paths.append(output_path)
             print(f"[Design Architect] Completed slide {slide_number}/{total_slides}")
             
-            # Update progress
+            # Update progress (for batch mode)
+            slides_in_batch = slide_number - start_slide + 1
             if progress_callback:
-                progress_callback(slide_number + 1, total_slides + 1, f"スライド生成中 ({slide_number}/{total_slides})")
+                progress_callback(slides_in_batch + 1, end_slide - start_slide + 2, f"スライド生成中 ({slide_number}/{total_slides})")
         
         await browser.close()
     
@@ -1177,6 +1205,7 @@ async def self_review_slide(
     )
     
     try:
+        # Gemini 3 Flash for self-review
         model = genai.GenerativeModel("gemini-3-flash-preview")
         response = model.generate_content(
             prompt,
@@ -1287,6 +1316,7 @@ async def regenerate_slide_with_feedback(
     )
     
     try:
+        # Gemini 3 Flash for regeneration
         model = genai.GenerativeModel("gemini-3-flash-preview")
         response = model.generate_content(
             prompt,
