@@ -501,11 +501,13 @@ def determine_slide_type(slide: Dict, slide_number: int, total_slides: int) -> s
 async def generate_design_strategy(
     outline: Dict[str, Any],
     gemini_key: Optional[str] = None,
-    color_theme: Optional[str] = None  # 'cosmic', 'warm', 'elegant', 'nature', 'ocean', 'mono', or None for AI
+    color_theme: Optional[str] = None,  # 'cosmic', 'warm', 'elegant', 'nature', 'ocean', 'mono', or None for AI
+    design_preference: Optional[str] = None  # User design requirements (e.g., "white background")
 ) -> Dict[str, Any]:
     """
     Step 1 & 2: Analyze content and define design strategy
     color_theme: If specified, use preset. If None, AI will choose appropriate colors.
+    design_preference: Free-form user requirements to incorporate into design.
     """
     key = gemini_key or GEMINI_API_KEY
     if not key:
@@ -543,10 +545,21 @@ async def generate_design_strategy(
     else:
         color_theme_instruction = ""
     
+    # Build design preference instruction
+    design_preference_instruction = ""
+    if design_preference:
+        design_preference_instruction = f"""
+# ユーザーからのデザイン要望
+以下のユーザーからの要望を**必ず**反映してください：
+「{design_preference}」
+
+この要望を最優先で取り入れたデザインを生成してください。
+"""
+    
     prompt = DESIGN_STRATEGY_PROMPT.format(
         presentation_title=outline.get("presentation_title", "プレゼンテーション"),
         slides_content=slides_content,
-        color_theme_instruction=color_theme_instruction
+        color_theme_instruction=color_theme_instruction + design_preference_instruction
     )
     
     try:
@@ -865,6 +878,7 @@ async def generate_all_custom_slides(
     gemini_key: Optional[str] = None,
     outline: Optional[Dict[str, Any]] = None,
     color_theme: Optional[str] = None,  # User-selected color theme
+    design_preference: Optional[str] = None,  # User design requirements (e.g., "white background")
     progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)
     start_slide: int = 1,  # Batch: start from this slide (1-indexed)
     end_slide: Optional[int] = None  # Batch: end at this slide (inclusive), None = all
@@ -896,10 +910,12 @@ async def generate_all_custom_slides(
     if start_slide == 1 or cached_data is None:
         # First batch: generate new strategy
         print("[Design Architect] Analyzing content and defining design strategy...")
+        if design_preference:
+            print(f"[Design Architect] User preference: {design_preference}")
         if progress_callback:
             progress_callback(0, end_slide - start_slide + 2, "デザイン戦略を生成中...")
         
-        strategy = await generate_design_strategy(outline, gemini_key, color_theme)
+        strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference)
         
         # Save strategy and slide data for later batches
         save_slide_data(job_id, slides, strategy)

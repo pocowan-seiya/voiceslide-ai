@@ -271,7 +271,13 @@ POLISH_PROMPT = """# タスク
 """
 
 
-async def generate_outline(transcript: str, segments: List[Dict[str, Any]], gemini_key: str = None) -> Dict[str, Any]:
+async def generate_outline(
+    transcript: str, 
+    segments: List[Dict[str, Any]], 
+    gemini_key: str = None,
+    slide_count_mode: str = "auto",
+    custom_slide_count: int = 10
+) -> Dict[str, Any]:
     """
     高精度タイムスタンプ同期のスライドアウトラインを生成
     
@@ -279,6 +285,8 @@ async def generate_outline(transcript: str, segments: List[Dict[str, Any]], gemi
         transcript: ユーザーが編集した可能性のある文字起こし（これを優先）
         segments: 元のタイムスタンプ情報（タイミング用）
         gemini_key: Optional Gemini API key from user
+        slide_count_mode: "auto", "fewer", "more", or "custom"
+        custom_slide_count: Target slide count when mode is "custom"
     """
     
     # Configure Gemini with provided key or default
@@ -298,9 +306,18 @@ async def generate_outline(transcript: str, segments: List[Dict[str, Any]], gemi
     # 音声の総時間
     total_duration = segments[-1].get("end", 0)
     
+    # スライド枚数の指示を生成
+    slide_count_instruction = ""
+    if slide_count_mode == "fewer":
+        slide_count_instruction = "\n\n⚠️ スライド枚数の指示: **少なめ（5-7枚）** でまとめてください。トピックを大きくグループ化し、簡潔なスライドにしてください。\n"
+    elif slide_count_mode == "more":
+        slide_count_instruction = "\n\n⚠️ スライド枚数の指示: **多め（15枚以上）** で細かく分割してください。各ポイントを個別のスライドにし、詳細な説明を含めてください。\n"
+    elif slide_count_mode == "custom":
+        slide_count_instruction = f"\n\n⚠️ スライド枚数の指示: **ちょうど{custom_slide_count}枚** になるように調整してください。\n"
+    
     # 編集されたトランスクリプトを追加（ユーザー編集を反映）
     edited_transcript_section = f"""
-
+{slide_count_instruction}
 # ユーザー編集後のトランスクリプト（最新版）
 
 以下はユーザーが編集した可能性のあるトランスクリプトです。

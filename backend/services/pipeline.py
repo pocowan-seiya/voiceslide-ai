@@ -81,11 +81,23 @@ class HybridPipeline:
         }
     
     # Step 4: Outline Generation
-    async def step_generate_outline(self, edited_transcript: Optional[str] = None, gemini_key: Optional[str] = None) -> Dict[str, Any]:
+    async def step_generate_outline(
+        self, 
+        edited_transcript: Optional[str] = None, 
+        gemini_key: Optional[str] = None,
+        slide_count_mode: str = "auto",
+        custom_slide_count: int = 10
+    ) -> Dict[str, Any]:
         """Generate slide outline from transcript"""
         transcript = edited_transcript or self.polished_transcript or self.raw_transcript
         
-        self.raw_outline = await generate_outline(transcript, self.segments, gemini_key=gemini_key)
+        self.raw_outline = await generate_outline(
+            transcript, 
+            self.segments, 
+            gemini_key=gemini_key,
+            slide_count_mode=slide_count_mode,
+            custom_slide_count=custom_slide_count
+        )
         
         return {
             "step": 4,

@@ -107,6 +107,22 @@ export default function Home() {
     totalSlides: number;
   }>({ isComplete: true, nextStart: null, slidesCompleted: 0, totalSlides: 0 });
 
+  // ===== User Preference Settings =====
+  // Audio cleanup settings
+  const [audioSettings, setAudioSettings] = useState<{
+    cleanupEnabled: boolean;
+    silenceThreshold: number; // seconds (0.3 - 1.0)
+  }>({ cleanupEnabled: true, silenceThreshold: 0.5 });
+
+  // Slide count settings
+  const [slideSettings, setSlideSettings] = useState<{
+    mode: "auto" | "fewer" | "more" | "custom";
+    customCount: number;
+  }>({ mode: "auto", customCount: 10 });
+
+  // Design preference (free-form text)
+  const [designPreference, setDesignPreference] = useState<string>("");
+
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -169,7 +185,13 @@ export default function Home() {
     updateState({ isProcessing: true, error: null });
 
     try {
-      const res = await fetch(`${API_URL}/api/transcribe/${state.jobId}`, {
+      // Build URL with audio cleanup settings
+      const params = new URLSearchParams({
+        cleanup_audio: audioSettings.cleanupEnabled.toString(),
+        silence_threshold: audioSettings.silenceThreshold.toString(),
+      });
+
+      const res = await fetch(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
         method: "POST",
         headers: getAPIHeaders(),
       });
@@ -178,6 +200,7 @@ export default function Home() {
 
       updateState({
         transcript: data.transcript,
+        cleanupInfo: data.cleanup || null,
         isProcessing: false,
       });
       setEditText(data.transcript);
@@ -236,7 +259,11 @@ export default function Home() {
           "Content-Type": "application/json",
           ...getAPIHeaders()
         },
-        body: JSON.stringify({ transcript: editText }),
+        body: JSON.stringify({
+          transcript: editText,
+          slide_count_mode: slideSettings.mode,
+          custom_slide_count: slideSettings.customCount,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || data.error || "Outline generation failed");
@@ -324,7 +351,8 @@ export default function Home() {
         headers,
         body: JSON.stringify({
           start_slide: startSlide,
-          batch_size: 5
+          batch_size: 5,
+          design_preference: designPreference || undefined,
         })
       });
 
@@ -751,15 +779,54 @@ export default function Home() {
           {state.step === 2 && !state.transcript && (
             <div className="text-center">
               <h2 className="text-2xl font-bold mb-6 gradient-text">文字起こし</h2>
+
+              {/* Audio Cleanup Settings */}
+              <div className="bg-zinc-800/50 rounded-xl p-4 mb-6 max-w-md mx-auto text-left">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium">🔇 無音・フィラー除去</span>
+                  <button
+                    onClick={() => setAudioSettings(prev => ({ ...prev, cleanupEnabled: !prev.cleanupEnabled }))}
+                    className={`w-12 h-6 rounded-full transition-all relative ${audioSettings.cleanupEnabled ? 'bg-cyan-500' : 'bg-zinc-600'
+                      }`}
+                  >
+                    <span className={`absolute w-5 h-5 bg-white rounded-full top-0.5 transition-all ${audioSettings.cleanupEnabled ? 'left-6' : 'left-0.5'
+                      }`} />
+                  </button>
+                </div>
+
+                {audioSettings.cleanupEnabled && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-zinc-400 mb-1">
+                      <span>無音判定: {audioSettings.silenceThreshold.toFixed(1)}秒以上</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.3"
+                      max="1.0"
+                      step="0.1"
+                      value={audioSettings.silenceThreshold}
+                      onChange={(e) => setAudioSettings(prev => ({ ...prev, silenceThreshold: parseFloat(e.target.value) }))}
+                      className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                    />
+                    <div className="flex justify-between text-xs text-zinc-500 mt-1">
+                      <span>敏感（0.3秒）</span>
+                      <span>鈍感（1.0秒）</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={handleTranscribe}
                 disabled={state.isProcessing}
                 className="btn-primary"
               >
-                {state.isProcessing ? "処理中...（無音・フィラー除去含む）" : "📝 文字起こし開始"}
+                {state.isProcessing ? "処理中..." : "📝 文字起こし開始"}
               </button>
               <p className="text-xs text-zinc-500 mt-3">
-                ✨ 自動で無音区間と「えっと」などのフィラーを除去します
+                {audioSettings.cleanupEnabled
+                  ? "✨ 無音区間と「えっと」などのフィラーを自動除去します"
+                  : "⚠️ クリーンアップなしで文字起こしします"}
               </p>
             </div>
           )}
@@ -827,9 +894,32 @@ export default function Home() {
                     </button>
                   )}
                   {state.step === 3 && (
-                    <button onClick={handleGenerateOutline} disabled={state.isProcessing} className="btn-primary">
-                      {state.isProcessing ? "処理中..." : "📋 アウトライン生成"}
-                    </button>
+                    <div className="flex items-center gap-4">
+                      {/* Slide count selector */}
+                      <select
+                        value={slideSettings.mode}
+                        onChange={(e) => setSlideSettings(prev => ({ ...prev, mode: e.target.value as any }))}
+                        className="bg-zinc-800 text-white px-3 py-2 rounded-lg border border-zinc-600 text-sm"
+                      >
+                        <option value="auto">📊 自動</option>
+                        <option value="fewer">📉 少なめ（5-7枚）</option>
+                        <option value="more">📈 多め（15枚以上）</option>
+                        <option value="custom">🎯 指定</option>
+                      </select>
+                      {slideSettings.mode === "custom" && (
+                        <input
+                          type="number"
+                          min="3"
+                          max="30"
+                          value={slideSettings.customCount}
+                          onChange={(e) => setSlideSettings(prev => ({ ...prev, customCount: parseInt(e.target.value) || 10 }))}
+                          className="w-16 bg-zinc-800 text-white px-2 py-2 rounded-lg border border-zinc-600 text-sm"
+                        />
+                      )}
+                      <button onClick={handleGenerateOutline} disabled={state.isProcessing} className="btn-primary">
+                        {state.isProcessing ? "処理中..." : "📋 アウトライン生成"}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1062,6 +1152,23 @@ export default function Home() {
                 </select>
               </div>
 
+              {/* Design Preference Input */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-zinc-400 mb-2">
+                  📝 デザイン要望（任意）
+                </label>
+                <textarea
+                  value={designPreference}
+                  onChange={(e) => setDesignPreference(e.target.value)}
+                  placeholder="例: 背景は白で、シンプルでミニマルなデザイン"
+                  className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white resize-none"
+                  rows={2}
+                />
+                <p className="text-xs text-zinc-500 mt-1 max-w-md mx-auto">
+                  背景色、スタイル、フォントなどの希望を入力できます
+                </p>
+              </div>
+
               <button
                 onClick={() => handleGenerateSlides(1)}
                 disabled={state.isProcessing}
@@ -1087,8 +1194,8 @@ export default function Home() {
                             key={i}
                             onClick={() => setSelectedSlide(i + 1)}
                             className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
-                                ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
-                                : 'border-zinc-700 hover:border-zinc-500'
+                              ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                              : 'border-zinc-700 hover:border-zinc-500'
                               }`}
                           >
                             <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />

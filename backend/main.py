@@ -58,7 +58,9 @@ slide_progress: Dict[str, Dict[str, Any]] = {}
 
 # Request models
 class TranscriptUpdate(BaseModel):
-    transcript: str
+    transcript: Optional[str] = None
+    slide_count_mode: Optional[str] = "auto"  # auto, fewer, more, custom
+    custom_slide_count: Optional[int] = 10
 
 class OutlineUpdate(BaseModel):
     outline: Dict[str, Any]
@@ -212,6 +214,7 @@ async def upload_audio(file: UploadFile = File(...)):
 async def transcribe(
     job_id: str, 
     cleanup_audio: bool = True,
+    silence_threshold: float = 0.5,  # seconds
     x_openai_key: Optional[str] = Header(None),
     x_gemini_key: Optional[str] = Header(None)
 ):
@@ -240,7 +243,8 @@ async def transcribe(
             if audio_path:
                 cleanup_result = await do_cleanup(
                     audio_path,
-                    result["segments"]
+                    result["segments"],
+                    silence_threshold=silence_threshold  # Pass user-specified threshold
                 )
                 # クリーンアップ後の音声パスを更新
                 if cleanup_result and cleanup_result.get("cleaned_audio_path"):
@@ -331,7 +335,15 @@ async def generate_outline(
     jobs[job_id]["status"] = "processing"
     
     edited = update.transcript if update else None
-    result = await pipeline.step_generate_outline(edited, gemini_key=x_gemini_key)
+    slide_count_mode = update.slide_count_mode if update else "auto"
+    custom_slide_count = update.custom_slide_count if update else 10
+    
+    result = await pipeline.step_generate_outline(
+        edited, 
+        gemini_key=x_gemini_key,
+        slide_count_mode=slide_count_mode,
+        custom_slide_count=custom_slide_count
+    )
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["outline"] = result["outline"]
@@ -473,6 +485,7 @@ async def generate_slides_endpoint(
 class BatchGenerateRequest(BaseModel):
     start_slide: int = 1  # 1-indexed
     batch_size: int = 5   # Number of slides per batch
+    design_preference: Optional[str] = None  # User design requirements
 
 
 @app.post("/api/generate-slides-batch/{job_id}")
@@ -522,6 +535,7 @@ async def generate_slides_batch_endpoint(
             gemini_key=x_gemini_key,
             outline=outline,
             color_theme=x_color_theme,
+            design_preference=request.design_preference,  # Pass user design preference
             progress_callback=update_progress,
             start_slide=start,
             end_slide=end

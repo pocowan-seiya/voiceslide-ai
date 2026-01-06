@@ -26,7 +26,8 @@ SILENCE_MIN_DURATION = 0.5   # 秒
 async def cleanup_audio(
     audio_path: str,
     segments: List[Dict[str, Any]],
-    output_path: str = None
+    output_path: str = None,
+    silence_threshold: float = 0.5  # User-adjustable threshold in seconds
 ) -> Dict[str, Any]:
     """
     音声ファイルから無音区間とフィラーを除去
@@ -35,6 +36,7 @@ async def cleanup_audio(
         audio_path: 入力音声ファイルパス
         segments: Whisperからのセグメントデータ（タイムスタンプ付き）
         output_path: 出力ファイルパス（Noneの場合自動生成）
+        silence_threshold: 無音と判定する最小時間（秒）
     
     Returns:
         クリーンアップ結果（新しい音声パス、変更点など）
@@ -43,8 +45,8 @@ async def cleanup_audio(
         base, ext = os.path.splitext(audio_path)
         output_path = f"{base}_clean{ext}"
     
-    # 1. 無音区間を検出
-    silences = detect_silences(audio_path)
+    # 1. 無音区間を検出（ユーザー指定の閾値を使用）
+    silences = detect_silences(audio_path, min_duration=silence_threshold)
     
     # 2. フィラーワードを含むセグメントを特定
     filler_segments = detect_filler_segments(segments)
@@ -79,13 +81,17 @@ async def cleanup_audio(
     }
 
 
-def detect_silences(audio_path: str) -> List[Tuple[float, float]]:
+def detect_silences(audio_path: str, min_duration: float = 0.5) -> List[Tuple[float, float]]:
     """
     FFmpegのsilencedetectフィルタを使用して無音区間を検出
+    
+    Args:
+        audio_path: 音声ファイルパス
+        min_duration: 無音と判定する最小時間（秒）
     """
     cmd = [
         "ffmpeg", "-i", audio_path, "-af",
-        f"silencedetect=noise={SILENCE_THRESHOLD_DB}dB:d={SILENCE_MIN_DURATION}",
+        f"silencedetect=noise={SILENCE_THRESHOLD_DB}dB:d={min_duration}",
         "-f", "null", "-"
     ]
     
