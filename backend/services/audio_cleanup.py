@@ -227,23 +227,30 @@ def assemble_audio(
 ) -> str:
     """
     保持区間のみを結合して新しい音声ファイルを作成
+    ※ 再エンコードして音声フォーマットを正規化
     """
-    # 一時ファイルリスト
     temp_files = []
     
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            # 各区間を抽出
+            # 各区間を抽出（再エンコードで正規化）
             for i, (start, end) in enumerate(keep_regions):
-                temp_file = os.path.join(temp_dir, f"part_{i:03d}.wav")
+                temp_file = os.path.join(temp_dir, f"part_{i:03d}.aac")
                 
                 cmd = [
                     "ffmpeg", "-y", "-i", audio_path,
                     "-ss", str(start), "-to", str(end),
-                    "-c", "copy", temp_file
+                    "-ac", "2",  # ステレオに正規化
+                    "-ar", "48000",  # サンプルレートを統一
+                    "-c:a", "aac", "-b:a", "128k",  # 再エンコード
+                    temp_file
                 ]
                 subprocess.run(cmd, capture_output=True, timeout=60)
-                temp_files.append(temp_file)
+                if os.path.exists(temp_file):
+                    temp_files.append(temp_file)
+            
+            if not temp_files:
+                raise Exception("No audio parts extracted")
             
             # ファイルリストを作成
             list_file = os.path.join(temp_dir, "files.txt")
@@ -251,13 +258,18 @@ def assemble_audio(
                 for temp_file in temp_files:
                     f.write(f"file '{temp_file}'\n")
             
-            # 結合
+            # 結合（同じフォーマットなのでcopyでOK）
             cmd = [
                 "ffmpeg", "-y", "-f", "concat", "-safe", "0",
                 "-i", list_file, "-c", "copy", output_path
             ]
-            subprocess.run(cmd, capture_output=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True, timeout=120)
+            
+            if result.returncode != 0:
+                print(f"Concat failed: {result.stderr[:200]}")
+                raise Exception("Concat failed")
         
+        print(f"[Cleanup] Audio assembled: {len(keep_regions)} parts → {output_path}")
         return output_path
     
     except Exception as e:
