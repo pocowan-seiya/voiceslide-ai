@@ -195,17 +195,30 @@ def adjust_timing_durations(
     # スライド番号でソート
     sorted_timing = sorted(timing_map, key=lambda x: x.get("slide_number", 0))
     
+    # デバッグ: タイミング情報を表示
+    print(f"[VideoComposer] Adjusting timing for {len(sorted_timing)} slides (audio: {audio_duration:.1f}s)")
+    
     result = []
     for i, timing in enumerate(sorted_timing):
         start = timing.get("start_time", 0)
         end = timing.get("end_time", 0)
         duration = end - start
         
+        # Safeguard: 最小1秒を確保
+        if duration <= 0:
+            # duration が 0 以下の場合、均等分配にフォールバック
+            duration = audio_duration / len(sorted_timing)
+            start = i * duration
+            end = (i + 1) * duration
+            print(f"  ⚠️ Slide {timing.get('slide_number', i+1)}: duration was {end-start:.1f}s, using fallback {duration:.1f}s")
+        
+        print(f"  📝 Slide {timing.get('slide_number', i+1)}: {start:.1f}s - {end:.1f}s ({duration:.1f}s)")
+        
         result.append({
             "slide_number": timing.get("slide_number", i + 1),
             "start_time": start,
             "end_time": end,
-            "duration": duration,
+            "duration": max(duration, 1.0),  # 最低1秒を保証
             "match_reason": timing.get("match_reason") or timing.get("reason", "")
         })
     
