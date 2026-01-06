@@ -136,9 +136,39 @@ class HybridPipeline:
             "slide_contents": self.slide_contents
         }
     
-    # Step 9: AI Auto-Mapping
+    # Step 9: AI Auto-Mapping (or use outline timestamps if available)
     async def step_map_slides(self) -> Dict[str, Any]:
-        """AI maps slides to audio segments"""
+        """Map slides to audio - uses outline timestamps if available, otherwise AI mapping"""
+        
+        # First, try to use timing from the outline (already determined during outline generation)
+        outline = self.polished_outline or self.raw_outline
+        
+        if outline and "slides" in outline:
+            slides_with_timing = outline.get("slides", [])
+            
+            # Check if outline has timestamp info
+            if slides_with_timing and "timestamp_start" in slides_with_timing[0]:
+                print("[Mapping] Using timestamps from outline (accurate to transcript)")
+                
+                self.timing_map = []
+                for slide in slides_with_timing:
+                    self.timing_map.append({
+                        "slide_number": slide.get("number", len(self.timing_map) + 1),
+                        "start_time": slide.get("timestamp_start", 0),
+                        "end_time": slide.get("timestamp_end", 0),
+                        "matched_segments": slide.get("segment_ids", []),
+                        "match_reason": slide.get("timing_reason", "アウトラインから取得")
+                    })
+                
+                return {
+                    "step": 9,
+                    "status": "completed",
+                    "timing_map": self.timing_map,
+                    "source": "outline_timestamps"
+                }
+        
+        # Fallback: AI mapping (for uploaded slides without outline)
+        print("[Mapping] Using AI mapping (outline has no timestamps)")
         self.timing_map = await map_slides_to_audio(
             slides=self.slide_contents,
             segments=self.segments,
@@ -148,7 +178,8 @@ class HybridPipeline:
         return {
             "step": 9,
             "status": "completed",
-            "timing_map": self.timing_map
+            "timing_map": self.timing_map,
+            "source": "ai_mapping"
         }
     
     # Step 10: Video Generation

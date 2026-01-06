@@ -687,6 +687,11 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     jobs[job_id]["step"] = 10
     jobs[job_id]["status"] = "processing"
     
+    # If no timing provided and no timing_map exists, generate it from outline
+    if not update and not pipeline.timing_map:
+        print("[Video] Generating timing map from outline...")
+        await pipeline.step_map_slides()
+    
     edited = update.timing_map if update else None
     result = await pipeline.step_generate_video(edited)
     
