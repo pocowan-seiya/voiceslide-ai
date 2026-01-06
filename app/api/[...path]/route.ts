@@ -28,6 +28,26 @@ export async function GET(
 
         const response = await fetch(targetUrl, { headers });
 
+        // Check content type for binary files (video, audio, download)
+        const contentType = response.headers.get('content-type') || '';
+        const isBinary = contentType.includes('video/') ||
+            contentType.includes('audio/') ||
+            contentType.includes('application/octet-stream') ||
+            pathString.includes('download');
+
+        if (isBinary) {
+            // Stream binary file directly
+            const responseHeaders = new Headers();
+            response.headers.forEach((value, key) => {
+                responseHeaders.set(key, value);
+            });
+
+            return new NextResponse(response.body, {
+                status: response.status,
+                headers: responseHeaders
+            });
+        }
+
         const data = await response.json();
         return NextResponse.json(data, { status: response.status });
     } catch (error) {
