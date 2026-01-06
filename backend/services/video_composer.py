@@ -38,6 +38,17 @@ async def compose_video(
     # timing_mapにないスライドも含める
     full_timing = ensure_all_slides_used(slide_images, timing_map, audio_duration)
     
+    # デバッグ: 入力タイミングと最終タイミングを比較
+    print(f"[VideoComposer] ===== TIMING DEBUG =====")
+    print(f"[VideoComposer] Audio duration: {audio_duration:.1f}s")
+    print(f"[VideoComposer] Input timing_map ({len(timing_map)} items):")
+    for t in timing_map[:5]:  # 最初の5つを表示
+        print(f"  IN:  Slide {t.get('slide_number')}: {t.get('start_time', 0):.1f}s - {t.get('end_time', 0):.1f}s")
+    print(f"[VideoComposer] Final full_timing ({len(full_timing)} items):")
+    for t in full_timing[:5]:  # 最初の5つを表示
+        print(f"  OUT: Slide {t.get('slide_number')}: {t.get('start_time', 0):.1f}s - {t.get('end_time', 0):.1f}s, duration={t.get('duration', 0):.1f}s")
+    print(f"[VideoComposer] ==========================")
+    
     # 連結ファイルを作成
     concat_file = output_path.replace(".mp4", "_concat.txt")
     
@@ -55,6 +66,7 @@ async def compose_video(
             if image_path and os.path.exists(image_path):
                 f.write(f"file '{os.path.abspath(image_path)}'\n")
                 f.write(f"duration {duration:.3f}\n")
+                print(f"[Concat] Slide {slide_num}: duration {duration:.3f}s")
         
         # FFmpegの要件: 最後の画像をもう一度追加
         if slide_images:
