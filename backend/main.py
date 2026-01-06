@@ -246,10 +246,15 @@ async def transcribe(
                 if cleanup_result and cleanup_result.get("cleaned_audio_path"):
                     jobs[job_id]["audio_path"] = cleanup_result["cleaned_audio_path"]
                     jobs[job_id]["original_audio_path"] = audio_path
-                    # セグメントも更新
+                    # ⚠️ パイプラインの音声パスも更新（動画生成で使用）
+                    pipeline.audio_path = cleanup_result["cleaned_audio_path"]
+                    print(f"[Cleanup] Updated audio path: {audio_path} → {cleanup_result['cleaned_audio_path']}")
+                    print(f"[Cleanup] Duration: {cleanup_result.get('original_duration', 0):.1f}s → {cleanup_result.get('new_duration', 0):.1f}s")
+                    # セグメントも更新（調整済みタイムスタンプ）
                     if cleanup_result.get("new_segments"):
                         result["segments"] = cleanup_result["new_segments"]
                         pipeline.segments = cleanup_result["new_segments"]
+                        print(f"[Cleanup] Updated segments with adjusted timestamps")
         except Exception as e:
             print(f"Audio cleanup skipped: {e}")
             cleanup_result = {"error": str(e)}
