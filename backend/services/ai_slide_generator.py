@@ -655,7 +655,8 @@ async def generate_slide_html(
     strategy: Dict[str, Any],
     job_id: str,  # Added for layout tracking
     gemini_key: Optional[str] = None,
-    image_info: Optional[Dict[str, str]] = None
+    image_info: Optional[Dict[str, str]] = None,
+    text_density: str = "standard"  # "simple" (title+headline) or "standard" (full)
 ) -> str:
     """
     Step 3: Generate individual slide HTML based on strategy
@@ -670,8 +671,15 @@ async def generate_slide_html(
     slide_copy = slide.get("slide_copy", {})
     title = slide_copy.get("headline") or slide.get("title", "")
     subtitle = slide_copy.get("subheadline") or slide.get("subtitle", "")
-    raw_points = slide_copy.get("bullet_points") or slide.get("points", [])
-    key_message = slide_copy.get("key_message") or ""
+    
+    # For "simple" mode, omit bullet points
+    if text_density == "simple":
+        raw_points = []  # No bullet points in simple mode
+        key_message = ""  # No key message either
+        print(f"[Design Architect] Slide {slide_number}: Simple mode (title + headline only)")
+    else:
+        raw_points = slide_copy.get("bullet_points") or slide.get("points", [])
+        key_message = slide_copy.get("key_message") or ""
     
     # IMPORTANT: Explicitly exclude these fields - they should NOT appear on slides
     # - speakers_words (transcript text)
@@ -895,6 +903,7 @@ async def generate_all_custom_slides(
     outline: Optional[Dict[str, Any]] = None,
     color_theme: Optional[str] = None,  # User-selected color theme
     design_preference: Optional[str] = None,  # User design requirements (e.g., "white background")
+    text_density: str = "standard",  # "simple" (title+headline) or "standard" (full)
     progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)
     start_slide: int = 1,  # Batch: start from this slide (1-indexed)
     end_slide: Optional[int] = None  # Batch: end at this slide (inclusive), None = all
@@ -980,7 +989,8 @@ async def generate_all_custom_slides(
                 strategy=strategy,
                 job_id=job_id,  # Added for layout tracking
                 gemini_key=gemini_key,
-                image_info=image_info
+                image_info=image_info,
+                text_density=text_density  # Pass text density setting
             )
             
             # Step 3c: Self-review to check for transcript text and improve quality

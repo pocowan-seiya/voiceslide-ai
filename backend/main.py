@@ -486,6 +486,7 @@ class BatchGenerateRequest(BaseModel):
     start_slide: int = 1  # 1-indexed
     batch_size: int = 5   # Number of slides per batch
     design_preference: Optional[str] = None  # User design requirements
+    text_density: str = "standard"  # "simple" (title+headline) or "standard" (full)
 
 
 @app.post("/api/generate-slides-batch/{job_id}")
@@ -536,6 +537,7 @@ async def generate_slides_batch_endpoint(
             outline=outline,
             color_theme=x_color_theme,
             design_preference=request.design_preference,  # Pass user design preference
+            text_density=request.text_density,  # Pass text density setting
             progress_callback=update_progress,
             start_slide=start,
             end_slide=end

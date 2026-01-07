@@ -124,6 +124,9 @@ export default function Home() {
   // Design preference (free-form text)
   const [designPreference, setDesignPreference] = useState<string>("");
 
+  // Text density setting: simple (title+headline) or standard (title+headline+points)
+  const [textDensity, setTextDensity] = useState<"simple" | "standard">("standard");
+
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -355,6 +358,7 @@ export default function Home() {
           start_slide: startSlide,
           batch_size: 5,
           design_preference: designPreference || undefined,
+          text_density: textDensity,
         })
       });
 
@@ -1233,6 +1237,37 @@ export default function Home() {
                 <p className="text-xs text-zinc-500 mt-1 max-w-md mx-auto">
                   背景色、スタイル、フォントなどの希望を入力できます
                 </p>
+              </div>
+
+              {/* Text Density Selector */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-zinc-400 mb-2">
+                  📋 テキスト量
+                </label>
+                <div className="flex justify-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setTextDensity("simple")}
+                    className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "simple"
+                        ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                      }`}
+                  >
+                    📌 シンプル
+                    <span className="block text-xs mt-1 opacity-70">タイトル + 見出し</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTextDensity("standard")}
+                    className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "standard"
+                        ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                      }`}
+                  >
+                    📝 標準
+                    <span className="block text-xs mt-1 opacity-70">タイトル + 見出し + ポイント</span>
+                  </button>
+                </div>
               </div>
 
               <button
