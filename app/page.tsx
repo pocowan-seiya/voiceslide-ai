@@ -314,6 +314,7 @@ export default function Home() {
   };
 
   // Step 5 (Full AI): Generate Slides in batches (5 at a time) to avoid timeout
+  // Auto-continues to next batch until all slides are complete
   const handleGenerateSlides = async (startSlide: number = 1) => {
     if (!hasAPIKeys()) {
       setShowSettings(true);
@@ -378,11 +379,20 @@ export default function Home() {
       updateState({
         slideCount: data.slides_completed,
         slidePreviews: data.slide_previews.map((p: string) => `${API_URL}${p}`),
-        step: data.is_complete ? 6 as Step : 5 as Step, // Stay on step 5 if more batches needed
-        isProcessing: false,
+        step: data.is_complete ? 6 as Step : 5 as Step,
+        isProcessing: !data.is_complete, // Keep processing if not complete
       });
       setSelectedSlide(null);
       setSlideFeedback("");
+
+      // 🔄 Auto-continue to next batch if not complete
+      if (!data.is_complete && data.next_start) {
+        console.log(`[AutoBatch] Continuing to batch starting at slide ${data.next_start}`);
+        // Small delay to avoid overwhelming the server
+        setTimeout(() => {
+          handleGenerateSlides(data.next_start);
+        }, 1000);
+      }
     } catch (err: any) {
       clearInterval(progressInterval);
       updateState({ error: err.message, isProcessing: false });
