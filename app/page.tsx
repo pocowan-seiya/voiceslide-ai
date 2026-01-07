@@ -1119,25 +1119,38 @@ export default function Home() {
                     AIが{state.slideCount}枚のスライドを自動生成しました。
                   </p>
 
-                  {/* スライドプレビュー（クリックで選択） */}
+                  {/* スライドプレビュー（クリックで選択、ダブルクリックで拡大） */}
                   {state.slidePreviews.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      {state.slidePreviews.map((preview, i) => (
-                        <div
-                          key={i}
-                          onClick={() => setSelectedSlide(i + 1)}
-                          className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
-                            ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
-                            : 'border-zinc-700 hover:border-zinc-500'
-                            }`}
-                        >
-                          <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
-                          <div className="bg-zinc-800 text-center text-xs py-1">
-                            スライド {i + 1}
+                    <>
+                      <p className="text-sm text-zinc-500 mb-2">
+                        クリックで選択、ダブルクリックまたは🔍で拡大表示
+                      </p>
+                      <div className="grid grid-cols-3 gap-4 mb-6">
+                        {state.slidePreviews.map((preview, i) => (
+                          <div
+                            key={i}
+                            onClick={() => setSelectedSlide(i + 1)}
+                            onDoubleClick={() => setZoomedSlide(i)}
+                            className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all relative group ${selectedSlide === i + 1
+                              ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                              : 'border-zinc-700 hover:border-zinc-500'
+                              }`}
+                          >
+                            <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
+                            <div className="bg-zinc-800 text-center text-xs py-1">
+                              スライド {i + 1}
+                            </div>
+                            {/* Zoom button */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setZoomedSlide(i); }}
+                              className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-sm px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              🔍
+                            </button>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    </>
                   )}
 
                   {/* フィードバック入力 */}
