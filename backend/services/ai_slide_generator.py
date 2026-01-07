@@ -1328,8 +1328,11 @@ async def regenerate_slide_with_feedback(
     style = strategy.get("design_style", {})
     colors = style.get("color_palette", {})
     
-    # Handle image upload - save to disk and get data URL
+    # Handle image upload - save to disk and prepare for embedding
     image_instruction = ""
+    image_data_url = None  # Store for post-processing
+    IMAGE_PLACEHOLDER = "USER_IMAGE_PLACEHOLDER_URL"
+    
     if image_base64 and image_filename:
         try:
             # Decode and save image
@@ -1347,21 +1350,24 @@ async def regenerate_slide_with_feedback(
             with open(saved_path, "wb") as f:
                 f.write(image_bytes)
             
-            # Create data URL for embedding
+            # Create data URL for later embedding (NOT in prompt)
             import mimetypes
             mime_type = mimetypes.guess_type(saved_path)[0] or "image/png"
-            data_url = f"data:{mime_type};base64,{image_base64}"
+            image_data_url = f"data:{mime_type};base64,{image_base64}"
             
-            # Add image instruction to feedback
+            # Add image instruction with PLACEHOLDER (not actual data URL)
             image_instruction = f"""
 
 ## 🖼️ ユーザーがアップロードした画像
-以下の画像をスライドに追加してください。
-- 画像のData URL: {data_url[:100]}... (省略)
-- 画像をスライドの適切な位置に配置してください
-- スライドのレイアウトを調整して画像が自然に見えるようにしてください
-- img要素には以下のsrcを使用してください: 
-  src="{data_url}"
+ユーザーが画像をアップロードしました。以下のようにスライドに追加してください：
+
+1. スライドの適切な位置に画像を配置してください（中央やメインコンテンツの横など）
+2. 画像サイズは適切に調整（max-width: 300px～500px程度）
+3. 以下のプレースホルダーをimg要素のsrcに使用してください：
+   <img src="{IMAGE_PLACEHOLDER}" style="..." />
+
+例：
+<img src="{IMAGE_PLACEHOLDER}" style="max-width: 400px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
 
 """
             print(f"[Feedback] User image saved: {saved_path}")
@@ -1401,6 +1407,11 @@ async def regenerate_slide_with_feedback(
             new_html = new_html.split("```html")[1].split("```")[0].strip()
         elif "```" in new_html:
             new_html = new_html.split("```")[1].split("```")[0].strip()
+        
+        # Replace image placeholder with actual data URL
+        if image_data_url and IMAGE_PLACEHOLDER in new_html:
+            new_html = new_html.replace(IMAGE_PLACEHOLDER, image_data_url)
+            print(f"[Feedback] Replaced image placeholder with data URL ({len(image_data_url)} chars)")
         
         if not new_html.startswith("<!DOCTYPE") and not new_html.startswith("<html"):
             raise ValueError("Invalid HTML generated")
