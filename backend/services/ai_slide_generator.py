@@ -991,7 +991,27 @@ async def generate_all_custom_slides(
             await page.screenshot(path=output_path, type="png")
             await page.close()
             
+            # Step 3e: Validate and auto-fix if needed
+            print(f"[Design Architect] Validating slide {slide_number}...")
+            html, output_path, was_fixed = await validate_and_regenerate_slide(
+                slide_number=slide_number,
+                current_html=html,
+                image_path=output_path,
+                slide=slide,
+                strategy=strategy,
+                job_id=job_id,
+                browser=browser,
+                slides_dir=slides_dir,
+                gemini_key=gemini_key,
+                max_retries=2
+            )
+            
+            # Update html_contents with potentially fixed version
+            html_contents[-1] = html
+            
             image_paths.append(output_path)
+            if was_fixed:
+                print(f"[Design Architect] ✅ Slide {slide_number} was auto-fixed")
             print(f"[Design Architect] Completed slide {slide_number}/{total_slides}")
             
             # Update progress (for batch mode)
@@ -1006,6 +1026,155 @@ async def generate_all_custom_slides(
     
     print(f"[Design Architect] Generated {len(image_paths)} slides with unified design strategy")
     return image_paths
+
+
+# =============================================================================
+# Slide Validation - Auto-detect and fix layout issues
+# =============================================================================
+
+VALIDATION_PROMPT = """あなたはスライドの品質検証担当者です。
+このスライド画像を分析し、以下の問題がないかチェックしてください。
+
+## チェック項目
+
+1. **空白・コンテンツ不足**
+   - スライドがほぼ空白、または意味のあるコンテンツがほとんどない
+   - タイトルだけで他に何もない
+
+2. **レイアウト崩れ**
+   - テキストがスライドの外にはみ出している
+   - テキストや要素が重なって読めない
+   - 要素の配置がおかしい
+
+3. **読みにくさ**
+   - テキストが小さすぎて読めない
+   - 背景とテキストのコントラストが低すぎる
+
+## 回答形式
+
+以下のJSONで回答してください：
+```json
+{
+  "is_valid": true/false,
+  "issues": ["問題1の説明", "問題2の説明"],
+  "fix_suggestion": "修正の提案（is_validがfalseの場合）"
+}
+```
+
+問題がなければ:
+```json
+{"is_valid": true, "issues": [], "fix_suggestion": ""}
+```
+"""
+
+
+async def validate_slide_screenshot(
+    image_path: str,
+    gemini_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Validate a slide screenshot using Gemini Vision
+    Returns: {"is_valid": bool, "issues": list, "fix_suggestion": str}
+    """
+    import os
+    
+    key = gemini_key or GEMINI_API_KEY
+    if not key:
+        return {"is_valid": True, "issues": [], "fix_suggestion": ""}
+    
+    try:
+        genai.configure(api_key=key)
+        
+        # Load image
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+        
+        image_part = {
+            "mime_type": "image/png",
+            "data": base64.b64encode(image_data).decode("utf-8")
+        }
+        
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        response = model.generate_content(
+            [VALIDATION_PROMPT, image_part],
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.1
+            )
+        )
+        
+        result = json.loads(response.text)
+        return result
+        
+    except Exception as e:
+        print(f"[Validation] Error validating slide: {e}")
+        return {"is_valid": True, "issues": [], "fix_suggestion": ""}
+
+
+async def validate_and_regenerate_slide(
+    slide_number: int,
+    current_html: str,
+    image_path: str,
+    slide: Dict[str, Any],
+    strategy: Dict[str, Any],
+    job_id: str,
+    browser,
+    slides_dir: str,
+    gemini_key: Optional[str] = None,
+    max_retries: int = 2
+) -> tuple:
+    """
+    Validate a slide and regenerate if needed.
+    Returns: (final_html, final_image_path, was_regenerated)
+    """
+    from playwright.async_api import async_playwright
+    
+    html = current_html
+    path = image_path
+    
+    for attempt in range(max_retries):
+        # Validate the current screenshot
+        validation = await validate_slide_screenshot(path, gemini_key)
+        
+        if validation.get("is_valid", True):
+            if attempt > 0:
+                print(f"  [Validation] ✅ Slide {slide_number} fixed after {attempt} retries")
+            return html, path, attempt > 0
+        
+        issues = validation.get("issues", [])
+        fix_suggestion = validation.get("fix_suggestion", "")
+        print(f"  [Validation] ⚠️ Slide {slide_number} has issues: {issues}")
+        
+        # Regenerate with fix suggestion
+        feedback = f"以下の問題を修正してください:\n"
+        for issue in issues:
+            feedback += f"- {issue}\n"
+        if fix_suggestion:
+            feedback += f"\n修正の方向性: {fix_suggestion}"
+        
+        try:
+            # Use self_review with specific fix instructions
+            html = await self_review_slide(
+                html=html,
+                strategy=strategy,
+                gemini_key=gemini_key,
+                additional_feedback=feedback
+            )
+            
+            # Re-render
+            page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+            await page.set_content(html)
+            await page.wait_for_timeout(1000)
+            await page.screenshot(path=path, type="png")
+            await page.close()
+            
+            print(f"  [Validation] Regenerated slide {slide_number} (attempt {attempt + 1}/{max_retries})")
+            
+        except Exception as e:
+            print(f"  [Validation] Failed to regenerate slide {slide_number}: {e}")
+            break
+    
+    return html, path, True
 
 
 # =============================================================================
@@ -1205,7 +1374,8 @@ AI_SELF_REVIEW_PROMPT = """# Role
 async def self_review_slide(
     html: str,
     strategy: Dict[str, Any],
-    gemini_key: Optional[str] = None
+    gemini_key: Optional[str] = None,
+    additional_feedback: Optional[str] = None  # Additional fix instructions from validation
 ) -> str:
     """
     AI self-reviews and improves a slide before showing to user
@@ -1228,6 +1398,17 @@ async def self_review_slide(
         secondary=colors.get("secondary", "#8B5CF6"),
         accent=colors.get("accent", "#06B6D4")
     )
+    
+    # Add validation feedback if provided
+    if additional_feedback:
+        prompt += f"""
+
+## 🔧 追加の修正指示（検証からのフィードバック）
+
+{additional_feedback}
+
+上記の問題を優先的に修正してください。
+"""
     
     try:
         # Gemini 3 Flash for self-review
