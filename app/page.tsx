@@ -94,6 +94,9 @@ export default function Home() {
   const [slideImage, setSlideImage] = useState<{ file: File | null; preview: string | null }>({ file: null, preview: null });
   const [isRegenerating, setIsRegenerating] = useState(false);
 
+  // Slide zoom modal
+  const [zoomedSlide, setZoomedSlide] = useState<number | null>(null);
+
   // Color theme selection
   const [selectedColorTheme, setSelectedColorTheme] = useState<string>(""); // empty = AI chooses
 
@@ -645,6 +648,69 @@ export default function Home() {
 
       {/* API Keys Settings Modal */}
       {showSettings && <APIKeysSettings onClose={() => setShowSettings(false)} />}
+
+      {/* Slide Zoom Modal */}
+      {zoomedSlide !== null && state.slidePreviews.length > 0 && (
+        <div
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          onClick={() => setZoomedSlide(null)}
+        >
+          {/* Close button */}
+          <button
+            className="absolute top-4 right-4 text-white/80 hover:text-white text-3xl"
+            onClick={() => setZoomedSlide(null)}
+          >
+            ✕
+          </button>
+
+          {/* Slide counter */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/80 text-lg">
+            スライド {zoomedSlide + 1} / {state.slidePreviews.length}
+          </div>
+
+          {/* Previous button */}
+          {zoomedSlide > 0 && (
+            <button
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-white/60 hover:text-white text-5xl transition-colors"
+              onClick={(e) => { e.stopPropagation(); setZoomedSlide(zoomedSlide - 1); }}
+            >
+              ‹
+            </button>
+          )}
+
+          {/* Slide image */}
+          <img
+            src={state.slidePreviews[zoomedSlide]}
+            alt={`Slide ${zoomedSlide + 1}`}
+            className="max-w-full max-h-[85vh] rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          {/* Next button */}
+          {zoomedSlide < state.slidePreviews.length - 1 && (
+            <button
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-white/60 hover:text-white text-5xl transition-colors"
+              onClick={(e) => { e.stopPropagation(); setZoomedSlide(zoomedSlide + 1); }}
+            >
+              ›
+            </button>
+          )}
+
+          {/* Thumbnail strip */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 max-w-full overflow-x-auto px-4">
+            {state.slidePreviews.map((preview, i) => (
+              <img
+                key={i}
+                src={preview}
+                alt={`Thumbnail ${i + 1}`}
+                onClick={(e) => { e.stopPropagation(); setZoomedSlide(i); }}
+                className={`h-16 rounded cursor-pointer transition-all ${i === zoomedSlide ? 'ring-2 ring-cyan-500 opacity-100' : 'opacity-50 hover:opacity-80'
+                  }`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 container mx-auto px-4 py-8 max-w-5xl">
         {/* Settings Button */}
@@ -1249,8 +1315,8 @@ export default function Home() {
                     type="button"
                     onClick={() => setTextDensity("simple")}
                     className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "simple"
-                        ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                      ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
                       }`}
                   >
                     📌 シンプル
@@ -1260,8 +1326,8 @@ export default function Home() {
                     type="button"
                     onClick={() => setTextDensity("standard")}
                     className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "standard"
-                        ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                      ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
                       }`}
                   >
                     📝 標準
@@ -1524,23 +1590,36 @@ export default function Home() {
 
                 {/* Slide Previews for Feedback */}
                 {state.slidePreviews.length > 0 && (
-                  <div className="grid grid-cols-4 gap-3 mb-6">
-                    {state.slidePreviews.map((preview, i) => (
-                      <div
-                        key={i}
-                        onClick={() => setSelectedSlide(i + 1)}
-                        className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
-                          ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
-                          : 'border-zinc-700 hover:border-zinc-500'
-                          }`}
-                      >
-                        <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
-                        <div className="bg-zinc-800 text-center text-xs py-1">
-                          {i + 1}
+                  <>
+                    <p className="text-sm text-zinc-500 mb-2">
+                      クリックで選択、ダブルクリックまたは🔍で拡大表示
+                    </p>
+                    <div className="grid grid-cols-4 gap-3 mb-6">
+                      {state.slidePreviews.map((preview, i) => (
+                        <div
+                          key={i}
+                          onClick={() => setSelectedSlide(i + 1)}
+                          onDoubleClick={() => setZoomedSlide(i)}
+                          className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all relative group ${selectedSlide === i + 1
+                            ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                            : 'border-zinc-700 hover:border-zinc-500'
+                            }`}
+                        >
+                          <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
+                          <div className="bg-zinc-800 text-center text-xs py-1">
+                            {i + 1}
+                          </div>
+                          {/* Zoom button */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setZoomedSlide(i); }}
+                            className="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            🔍
+                          </button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </>
                 )}
 
                 {/* Feedback Input */}
