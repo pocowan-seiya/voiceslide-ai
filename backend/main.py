@@ -576,7 +576,9 @@ async def generate_slides_batch_endpoint(
 class SlideFeedbackRequest(BaseModel):
     slide_number: int
     feedback: str
-    feedback_type: str = "general"  # copy, layout, visual, general
+    feedback_type: str = "general"  # copy, layout, visual, general, add_image
+    image_base64: Optional[str] = None  # Base64 encoded image data
+    image_filename: Optional[str] = None  # Original filename
 
 
 @app.post("/api/slides/{job_id}/feedback")
@@ -597,7 +599,9 @@ async def slide_feedback_endpoint(
             slide_number=request.slide_number,
             feedback=request.feedback,
             feedback_type=request.feedback_type,
-            gemini_key=x_gemini_key
+            gemini_key=x_gemini_key,
+            image_base64=request.image_base64,
+            image_filename=request.image_filename
         )
         
         if not result["success"]:

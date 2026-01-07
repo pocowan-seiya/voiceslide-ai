@@ -91,6 +91,7 @@ export default function Home() {
   // Slide feedback editing
   const [selectedSlide, setSelectedSlide] = useState<number | null>(null);
   const [slideFeedback, setSlideFeedback] = useState("");
+  const [slideImage, setSlideImage] = useState<{ file: File | null; preview: string | null }>({ file: null, preview: null });
   const [isRegenerating, setIsRegenerating] = useState(false);
 
   // Color theme selection
@@ -390,11 +391,21 @@ export default function Home() {
 
   // Slide Feedback: Regenerate a slide based on user feedback
   const handleSlideFeedback = async () => {
-    if (!selectedSlide || !slideFeedback.trim()) return;
+    if (!selectedSlide || (!slideFeedback.trim() && !slideImage.file)) return;
 
     setIsRegenerating(true);
 
     try {
+      // Convert image to base64 if present
+      let imageBase64: string | null = null;
+      if (slideImage.file) {
+        const buffer = await slideImage.file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        bytes.forEach(byte => binary += String.fromCharCode(byte));
+        imageBase64 = btoa(binary);
+      }
+
       const res = await fetch(`${API_URL}/api/slides/${state.jobId}/feedback`, {
         method: "POST",
         headers: {
@@ -403,8 +414,10 @@ export default function Home() {
         },
         body: JSON.stringify({
           slide_number: selectedSlide,
-          feedback: slideFeedback,
-          feedback_type: "general"
+          feedback: slideFeedback || "この画像を追加してください",
+          feedback_type: slideImage.file ? "add_image" : "general",
+          image_base64: imageBase64,
+          image_filename: slideImage.file?.name || null,
         })
       });
       const data = await res.json();
@@ -416,6 +429,7 @@ export default function Home() {
       updateState({ slidePreviews: newPreviews });
 
       setSlideFeedback("");
+      setSlideImage({ file: null, preview: null });
     } catch (err: any) {
       updateState({ error: err.message });
     } finally {
@@ -1058,18 +1072,60 @@ export default function Home() {
                         placeholder="例：タイトルを「価値の創造」に変更。背景をもっと暗く。ポイントを3つに減らして..."
                         className="w-full h-24 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
                       />
+
+                      {/* 画像アップロード */}
+                      <div className="mb-3">
+                        <label className="block text-sm text-zinc-400 mb-2">🖼️ 画像を追加（任意）</label>
+                        <div className="flex items-center gap-3">
+                          <label className="flex-1 cursor-pointer">
+                            <div className={`border-2 border-dashed rounded-lg p-3 text-center transition-all ${slideImage.preview ? 'border-cyan-500 bg-cyan-500/10' : 'border-zinc-600 hover:border-zinc-500'
+                              }`}>
+                              {slideImage.preview ? (
+                                <div className="flex items-center gap-3">
+                                  <img src={slideImage.preview} alt="Preview" className="w-16 h-12 object-cover rounded" />
+                                  <span className="text-sm text-cyan-400">{slideImage.file?.name}</span>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-zinc-500">📎 クリックして画像を選択</span>
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const preview = URL.createObjectURL(file);
+                                  setSlideImage({ file, preview });
+                                }
+                              }}
+                            />
+                          </label>
+                          {slideImage.preview && (
+                            <button
+                              onClick={() => setSlideImage({ file: null, preview: null })}
+                              className="text-red-400 hover:text-red-300 text-sm"
+                            >
+                              ✕ 削除
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="flex gap-3">
                         <button
                           onClick={handleSlideFeedback}
-                          disabled={isRegenerating || !slideFeedback.trim()}
+                          disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
                           className="btn-primary flex-1"
                         >
-                          {isRegenerating ? "再生成中..." : "🔄 フィードバックを適用"}
+                          {isRegenerating ? "再生成中..." : slideImage.file ? "🖼️ 画像を追加して再生成" : "🔄 フィードバックを適用"}
                         </button>
                         <button
                           onClick={() => {
                             setSelectedSlide(null);
                             setSlideFeedback("");
+                            setSlideImage({ file: null, preview: null });
                           }}
                           className="btn-secondary"
                         >

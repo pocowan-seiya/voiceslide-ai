@@ -1298,13 +1298,16 @@ async def regenerate_slide_with_feedback(
     job_id: str,
     slide_number: int,
     feedback: str,
-    feedback_type: str = "general",  # copy, layout, visual, general
-    gemini_key: Optional[str] = None
+    feedback_type: str = "general",  # copy, layout, visual, general, add_image
+    gemini_key: Optional[str] = None,
+    image_base64: Optional[str] = None,
+    image_filename: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Regenerate a single slide based on user feedback
+    Regenerate a single slide based on user feedback (supports image uploads)
     """
     import os
+    import base64
     from playwright.async_api import async_playwright
     from config import OUTPUT_DIR
     
@@ -1325,6 +1328,46 @@ async def regenerate_slide_with_feedback(
     style = strategy.get("design_style", {})
     colors = style.get("color_palette", {})
     
+    # Handle image upload - save to disk and get data URL
+    image_instruction = ""
+    if image_base64 and image_filename:
+        try:
+            # Decode and save image
+            slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+            os.makedirs(slides_dir, exist_ok=True)
+            
+            # Generate unique filename
+            import time
+            ext = os.path.splitext(image_filename)[1] or ".png"
+            saved_filename = f"user_image_{slide_number}_{int(time.time())}{ext}"
+            saved_path = os.path.join(slides_dir, saved_filename)
+            
+            # Save image
+            image_bytes = base64.b64decode(image_base64)
+            with open(saved_path, "wb") as f:
+                f.write(image_bytes)
+            
+            # Create data URL for embedding
+            import mimetypes
+            mime_type = mimetypes.guess_type(saved_path)[0] or "image/png"
+            data_url = f"data:{mime_type};base64,{image_base64}"
+            
+            # Add image instruction to feedback
+            image_instruction = f"""
+
+## 🖼️ ユーザーがアップロードした画像
+以下の画像をスライドに追加してください。
+- 画像のData URL: {data_url[:100]}... (省略)
+- 画像をスライドの適切な位置に配置してください
+- スライドのレイアウトを調整して画像が自然に見えるようにしてください
+- img要素には以下のsrcを使用してください: 
+  src="{data_url}"
+
+"""
+            print(f"[Feedback] User image saved: {saved_path}")
+        except Exception as e:
+            print(f"[Feedback] Failed to process image: {e}")
+    
     # Generate improved HTML based on feedback
     genai.configure(api_key=key)
     
@@ -1334,7 +1377,7 @@ async def regenerate_slide_with_feedback(
         primary=colors.get("primary", "#F59E0B"),
         secondary=colors.get("secondary", "#8B5CF6"),
         accent=colors.get("accent", "#06B6D4"),
-        feedback=feedback,
+        feedback=feedback + image_instruction,
         feedback_type=feedback_type,
         width=VIDEO_WIDTH,
         height=VIDEO_HEIGHT
