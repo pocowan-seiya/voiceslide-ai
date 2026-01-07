@@ -35,9 +35,9 @@ interface JobState {
   isProcessing: boolean;
   error: string | null;
   cleanupInfo: {
-    removedSilences: number;
-    removedFillers: number;
-    totalRemovedSeconds: number;
+    removed_silences: number;
+    removed_fillers: number;
+    total_removed_seconds: number;
   } | null;
 }
 
@@ -857,9 +857,9 @@ export default function Home() {
                 <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-sm">
                   <span className="text-green-400">✨ クリーンアップ完了:</span>
                   <span className="text-zinc-300 ml-2">
-                    無音{state.cleanupInfo.removedSilences}箇所、
-                    フィラー{state.cleanupInfo.removedFillers}箇所を除去
-                    （計{state.cleanupInfo.totalRemovedSeconds.toFixed(1)}秒短縮）
+                    無音{state.cleanupInfo.removed_silences || 0}箇所、
+                    フィラー{state.cleanupInfo.removed_fillers || 0}箇所を除去
+                    （計{(state.cleanupInfo.total_removed_seconds || 0).toFixed(1)}秒短縮）
                   </span>
                 </div>
               )}
