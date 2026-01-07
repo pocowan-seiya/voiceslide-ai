@@ -27,16 +27,18 @@ async def cleanup_audio(
     audio_path: str,
     segments: List[Dict[str, Any]],
     output_path: str = None,
-    silence_threshold: float = 0.5  # User-adjustable threshold in seconds
+    silence_threshold: float = 0.5,  # User-adjustable threshold in seconds
+    preserve_natural_pauses: bool = True  # Keep pauses at sentence boundaries
 ) -> Dict[str, Any]:
     """
-    音声ファイルから無音区間とフィラーを除去
+    音声ファイルから無音区間とフィラーを除去（自然な間は保持）
     
     Args:
         audio_path: 入力音声ファイルパス
         segments: Whisperからのセグメントデータ（タイムスタンプ付き）
         output_path: 出力ファイルパス（Noneの場合自動生成）
         silence_threshold: 無音と判定する最小時間（秒）
+        preserve_natural_pauses: 文末の自然な間を保持するか
     
     Returns:
         クリーンアップ結果（新しい音声パス、変更点など）
@@ -48,17 +50,22 @@ async def cleanup_audio(
     # 1. 無音区間を検出（ユーザー指定の閾値を使用）
     silences = detect_silences(audio_path, min_duration=silence_threshold)
     
-    # 2. フィラーワードを含むセグメントを特定
+    # 2. 自然な間を保持するフィルタリング
+    if preserve_natural_pauses and segments:
+        silences = filter_meaningful_silences(silences, segments)
+        print(f"[Cleanup] Preserved natural pauses: {len(silences)} silences to remove")
+    
+    # 3. フィラーワードを含むセグメントを特定
     filler_segments = detect_filler_segments(segments)
     
-    # 3. カットすべき区間を決定（無音 + フィラー）
+    # 4. カットすべき区間を決定（無音 + フィラー）
     cut_regions = merge_cut_regions(silences, filler_segments)
     
-    # 4. カットしない区間（保持する区間）を計算
+    # 5. カットしない区間（保持する区間）を計算
     audio_duration = get_audio_duration(audio_path)
     keep_regions = invert_regions(cut_regions, audio_duration)
     
-    # 5. FFmpegで音声を再構成
+    # 6. FFmpegで音声を再構成
     if keep_regions:
         cleaned_path = assemble_audio(audio_path, keep_regions, output_path)
     else:
@@ -67,7 +74,7 @@ async def cleanup_audio(
         shutil.copy(audio_path, output_path)
         cleaned_path = output_path
     
-    # 6. 新しいセグメント情報を更新
+    # 7. 新しいセグメント情報を更新
     new_segments = adjust_segment_timestamps(segments, cut_regions)
     
     return {
@@ -79,6 +86,52 @@ async def cleanup_audio(
         "total_removed_seconds": sum((r[1] - r[0]) for r in cut_regions),
         "new_segments": new_segments
     }
+
+
+def filter_meaningful_silences(
+    silences: List[Tuple[float, float]], 
+    segments: List[Dict[str, Any]]
+) -> List[Tuple[float, float]]:
+    """
+    意味のある無音（文末の間）を除外し、不要な無音のみを返す
+    
+    保持されるパターン:
+    - セグメント間の無音（文と文の間の自然な間）
+    - 1秒未満の短い間（話し手のリズム）
+    
+    除去されるパターン:
+    - セグメント内の長い無音（言い淀み）
+    - 3秒以上の無音は別ロジックで既に保持されている
+    """
+    if not segments:
+        return silences
+    
+    # セグメント境界を収集（文の区切り時間）
+    segment_boundaries = set()
+    for seg in segments:
+        segment_boundaries.add(round(seg.get("end", 0), 1))
+    
+    filtered = []
+    for silence_start, silence_end in silences:
+        duration = silence_end - silence_start
+        
+        # 短い無音（0.8秒未満）は自然な間として保持
+        if duration < 0.8:
+            continue
+        
+        # セグメント境界付近の無音は保持（±0.5秒の余裕）
+        is_at_boundary = any(
+            abs(round(silence_start, 1) - bound) < 0.5 
+            for bound in segment_boundaries
+        )
+        if is_at_boundary:
+            print(f"  [Pause] Keeping natural pause at {silence_start:.1f}s (sentence boundary)")
+            continue
+        
+        # その他の無音は除去対象
+        filtered.append((silence_start, silence_end))
+    
+    return filtered
 
 
 def detect_silences(audio_path: str, min_duration: float = 0.5) -> List[Tuple[float, float]]:
