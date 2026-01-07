@@ -84,7 +84,7 @@ export default function LoginPage() {
         <div className="min-h-screen flex items-center justify-center bg-zinc-950">
             <div className="glass rounded-2xl p-8 w-full max-w-md">
                 <div className="text-center mb-8">
-                    <h1 className="text-3xl font-bold gradient-text mb-2">VoiceSlide AI</h1>
+                    <h1 className="text-3xl font-bold gradient-text mb-2">VoiSlide</h1>
                     <p className="text-zinc-400">音声から動画を自動生成</p>
                 </div>
 

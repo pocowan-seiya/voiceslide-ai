@@ -58,7 +58,7 @@ export function VideoPreview({ jobId, apiUrl }: VideoPreviewProps) {
             {/* Video Info */}
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                 <div className="flex items-center justify-between text-sm text-white/80">
-                    <span>VoiceSlide AI で生成</span>
+                    <span>VoiSlide で生成</span>
                     <span>720p HD</span>
                 </div>
             </div>

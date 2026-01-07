@@ -6,7 +6,7 @@ export function Header() {
             <div className="container mx-auto px-4 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <span className="text-2xl">🎬</span>
-                    <span className="font-bold text-xl gradient-text">VoiceSlide AI</span>
+                    <span className="font-bold text-xl gradient-text">VoiSlide</span>
                 </div>
 
                 <nav className="flex items-center gap-6">
