@@ -1089,9 +1089,11 @@ export default function Home() {
                     {/* ヘッダー：番号とタイトル */}
                     <div className="flex items-center gap-3 mb-3">
                       <span className="w-8 h-8 bg-cyan-500 rounded-full flex items-center justify-center text-sm font-bold">
-                        {slide.number}
+                        {slide.number || i + 1}
                       </span>
-                      <span className="font-semibold text-lg">{slide.title}</span>
+                      <span className="font-semibold text-lg">
+                        {slide.slide_copy?.headline || slide.title || `スライド ${i + 1}`}
+                      </span>
                       {slide.energy_level && (
                         <span className="text-lg">
                           {slide.energy_level === 'high' ? '🔥' : slide.energy_level === 'medium' ? '⚡' : '🌊'}
