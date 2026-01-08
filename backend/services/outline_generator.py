@@ -4,6 +4,7 @@ VoiceSlide AI v3 - 高精度音声同期アウトラインジェネレーター
 """
 
 import json
+import re
 from typing import List, Dict, Any
 from openai import OpenAI
 import google.generativeai as genai
@@ -14,6 +15,90 @@ from config import OPENAI_API_KEY, GEMINI_API_KEY
 # Initialize clients
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 genai.configure(api_key=GEMINI_API_KEY)
+
+
+def repair_and_parse_json(text: str, source: str = "API") -> Dict[str, Any]:
+    """
+    JSONを修復してパースする
+    長い音声でGeminiが返す壊れたJSONを修復
+    """
+    # まず直接パースを試みる
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        print(f"[{source}] JSON parse failed at char {e.pos}, attempting repair...")
+    
+    # Step 1: markdownのコードブロックからJSONを抽出
+    if "```json" in text:
+        match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        if match:
+            text = match.group(1)
+    elif "```" in text:
+        match = re.search(r'```\s*(.*?)\s*```', text, re.DOTALL)
+        if match:
+            text = match.group(1)
+    
+    # Step 2: 末尾の不完全な部分を除去して閉じる
+    # 最後の有効な } または ] を見つける
+    text = text.strip()
+    
+    # トレイリングカンマを除去
+    text = re.sub(r',\s*}', '}', text)
+    text = re.sub(r',\s*]', ']', text)
+    
+    # Step 3: 括弧のバランスを確認して修正
+    open_braces = text.count('{')
+    close_braces = text.count('}')
+    open_brackets = text.count('[')
+    close_brackets = text.count(']')
+    
+    # 足りない閉じ括弧を追加
+    if close_brackets < open_brackets:
+        text = text.rstrip()
+        if text.endswith(','):
+            text = text[:-1]
+        text += ']' * (open_brackets - close_brackets)
+    
+    if close_braces < open_braces:
+        text = text.rstrip()
+        if text.endswith(','):
+            text = text[:-1]
+        text += '}' * (open_braces - close_braces)
+    
+    # Step 4: もう一度パースを試みる
+    try:
+        result = json.loads(text)
+        print(f"[{source}] JSON repaired successfully!")
+        return result
+    except json.JSONDecodeError as e:
+        print(f"[{source}] JSON repair failed at pos {e.pos}: {str(e)[:100]}")
+        
+        # Step 5: 最後の手段 - 有効なJSONの範囲を見つける
+        # 最後の有効な閉じ括弧の位置を見つけて切り詰める
+        for end_pos in range(len(text), 0, -1):
+            try:
+                truncated = text[:end_pos]
+                # バランスを調整
+                truncated = truncated.rstrip()
+                if truncated.endswith(','):
+                    truncated = truncated[:-1]
+                
+                ob = truncated.count('{')
+                cb = truncated.count('}')
+                ob2 = truncated.count('[')
+                cb2 = truncated.count(']')
+                
+                truncated += ']' * max(0, ob2 - cb2)
+                truncated += '}' * max(0, ob - cb)
+                
+                result = json.loads(truncated)
+                print(f"[{source}] JSON truncated and repaired at position {end_pos}")
+                return result
+            except:
+                continue
+        
+        raise ValueError(f"Could not repair JSON from {source}")
+
 
 
 # ============================================================
@@ -396,10 +481,10 @@ async def generate_outline(
         if response is None:
             raise ValueError("All Gemini models failed")
         
-        result = json.loads(response.text)
+        result = repair_and_parse_json(response.text, "Gemini")
         
     except Exception as e:
-        print(f"Gemini Pro outline failed: {e}, falling back to GPT-4o")
+        print(f"Gemini outline failed: {e}, falling back to GPT-4o")
         
         try:
             response = openai_client.chat.completions.create(
@@ -414,7 +499,7 @@ async def generate_outline(
                 response_format={"type": "json_object"},
                 temperature=0.1
             )
-            result = json.loads(response.choices[0].message.content)
+            result = repair_and_parse_json(response.choices[0].message.content, "GPT-4o")
             
         except Exception as e2:
             print(f"GPT-4o also failed: {e2}")
