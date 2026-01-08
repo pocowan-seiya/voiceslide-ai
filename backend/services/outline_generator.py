@@ -167,11 +167,11 @@ TEDトークやAppleの基調講演の演出を手がけてきたスライド同
 
 | スライドタイプ | 最小時間 | 最適時間 | 最大時間 |
 |---------------|---------|---------|---------|
-| タイトル | 15秒 | 20-30秒 | 45秒 |
-| 内容（テキスト中心） | 15秒 | 30-45秒 | 60秒 |
-| データ・グラフ | 20秒 | 45-60秒 | 90秒 |
-| 画像・ビジュアル | 8秒 | 15-20秒 | 30秒 |
-| 区切り・セクション移行 | 5秒 | 8-10秒 | 15秒 |
+| タイトル | 30秒 | 45-60秒 | 90秒 |
+| 内容（テキスト中心） | 40秒 | 60-90秒 | 120秒 |
+| データ・グラフ | 45秒 | 60-90秒 | 120秒 |
+| 画像・ビジュアル | 30秒 | 45-60秒 | 90秒 |
+| 区切り・セクション移行 | 20秒 | 30-45秒 | 60秒 |
 
 ---
 
@@ -254,12 +254,24 @@ TEDトークやAppleの基調講演の演出を手がけてきたスライド同
 
 # 重要なルール
 
+## スライド枚数の制限（最重要）
+- **目安**: 音声1分あたり1枚程度（45-60秒に1スライド）
+- **例**: 10分の音声 → 10-12枚程度、13分の音声 → 12-15枚程度
+- **NG**: 13分の音声で18枚以上はスライドが細切れ過ぎ
+
+## タイミングのバランス
+- **各スライドの時間差は2倍以内**に抑える
+- 例: 30秒のスライドがあれば、最長でも60秒程度
+- **最後のスライドだけ極端に長い**のはNG（均等に分配）
+
+## 基本ルール
 1. **最初のスライドは 0.0秒 から開始**
 2. **最後のスライドは {total_duration}秒 で終了**
 3. **スライド間に隙間なし**
-4. **最小表示時間: 10秒**（視聴者が内容を消化する時間）
-5. **トピック導入句の後に2-4秒待ってから切り替え**
-6. **話題の転換シグナル（さて、では等）の後で分割する**
+4. **最小表示時間: 30秒**（ゆったりとした視聴体験）
+5. **最大表示時間: 120秒**（飽きさせない）
+6. **トピック導入句の後に2-4秒待ってから切り替え**
+7. **話題の転換シグナル（さて、では等）の後で分割する**
 
 ---
 
@@ -626,7 +638,50 @@ def validate_and_fix_outline_timestamps(
     # 3. 最後のスライドは総時間で終了
     slides[-1]["timestamp_end"] = total_duration
     
-    # 4. 最小時間（10秒）の確保 - プロフェッショナル基準
+    # 4. 最後のスライドが極端に長い場合は分割（JSONが途中で切れた場合の対策）
+    max_slide_duration = 120.0  # 最大2分
+    last_slide_duration = slides[-1]["timestamp_end"] - slides[-1]["timestamp_start"]
+    
+    if last_slide_duration > max_slide_duration:
+        print(f"[Outline] Warning: Last slide is {last_slide_duration:.1f}s, splitting...")
+        
+        # 残りの時間を適切な数のスライドに分割
+        extra_time = last_slide_duration - max_slide_duration
+        extra_slides_needed = int(extra_time / 60) + 1  # 60秒ごとに1スライド追加
+        
+        # 最後のスライドの開始時刻を調整
+        original_start = slides[-1]["timestamp_start"]
+        segment_duration = (total_duration - original_start) / (extra_slides_needed + 1)
+        
+        # 最後のスライドを短くして、追加スライドを作成
+        slides[-1]["timestamp_end"] = original_start + segment_duration
+        
+        # 追加スライドを生成（残りの時間をカバー）
+        for j in range(extra_slides_needed):
+            new_start = original_start + segment_duration * (j + 1)
+            new_end = original_start + segment_duration * (j + 2)
+            
+            new_slide = {
+                "number": len(slides) + 1,
+                "title": f"続き（自動生成）",
+                "timestamp_start": round(new_start, 1),
+                "timestamp_end": round(new_end, 1),
+                "segment_ids": [],
+                "speakers_words": "（この区間の話者の言葉）",
+                "keywords": [],
+                "visual_role": "内容を視覚的に補強",
+                "main_visual": "テキストとアイコン",
+                "energy_level": "medium",
+                "_auto_generated": True  # 自動生成フラグ
+            }
+            slides.append(new_slide)
+        
+        # 最後のスライドを総時間に合わせる
+        slides[-1]["timestamp_end"] = total_duration
+        
+        print(f"[Outline] Split into {extra_slides_needed + 1} slides")
+    
+    # 5. 最小時間（10秒）の確保 - プロフェッショナル基準
     min_duration = 10.0
     for i in range(len(slides) - 1):
         duration = slides[i]["timestamp_end"] - slides[i]["timestamp_start"]
@@ -636,7 +691,7 @@ def validate_and_fix_outline_timestamps(
             slides[i]["timestamp_end"] += needed
             slides[i + 1]["timestamp_start"] = slides[i]["timestamp_end"]
     
-    # 5. 小数点1桁に丸める
+    # 6. 小数点1桁に丸める
     for slide in slides:
         slide["timestamp_start"] = round(slide["timestamp_start"], 1)
         slide["timestamp_end"] = round(slide["timestamp_end"], 1)
