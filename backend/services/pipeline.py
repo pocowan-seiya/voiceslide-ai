@@ -50,6 +50,8 @@ class HybridPipeline:
         self.slide_contents = []
         self.timing_map = []
         self.video_path = None
+        self.final_video = None  # Main generated video
+        self.final_video_with_oped = None  # Video with OP/ED
     
     # Step 2: Transcription
     async def step_transcribe(self, openai_key: Optional[str] = None) -> Dict[str, Any]:

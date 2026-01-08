@@ -252,3 +252,150 @@ def get_audio_duration(audio_path: str) -> float:
         return float(result.stdout.strip())
     except ValueError:
         return 60.0  # デフォルト
+
+
+# =============================================================================
+# Opening/Ending Video Concatenation (OP/ED結合)
+# =============================================================================
+
+async def concatenate_with_intro_outro(
+    main_video_path: str,
+    output_path: str,
+    intro_video_path: Optional[str] = None,
+    outro_video_path: Optional[str] = None
+) -> str:
+    """
+    メイン動画にオープニング・エンディング動画を結合
+    
+    Args:
+        main_video_path: メインスライド動画のパス
+        output_path: 出力動画のパス
+        intro_video_path: オープニング動画（任意）
+        outro_video_path: エンディング動画（任意）
+    
+    Returns:
+        結合された動画のパス
+    """
+    import tempfile
+    
+    if not intro_video_path and not outro_video_path:
+        # OP/EDがない場合はメイン動画をそのままコピー
+        import shutil
+        shutil.copy(main_video_path, output_path)
+        print("[VideoComposer] No OP/ED provided, copying main video")
+        return output_path
+    
+    # 結合する動画のリストを作成
+    videos_to_concat = []
+    
+    if intro_video_path and os.path.exists(intro_video_path):
+        videos_to_concat.append(intro_video_path)
+        print(f"[VideoComposer] OP video: {intro_video_path}")
+    
+    videos_to_concat.append(main_video_path)
+    print(f"[VideoComposer] Main video: {main_video_path}")
+    
+    if outro_video_path and os.path.exists(outro_video_path):
+        videos_to_concat.append(outro_video_path)
+        print(f"[VideoComposer] ED video: {outro_video_path}")
+    
+    if len(videos_to_concat) == 1:
+        # 結合する動画が1つだけ（メインのみ）
+        import shutil
+        shutil.copy(main_video_path, output_path)
+        return output_path
+    
+    # Step 1: すべての動画を同じフォーマットに変換（解像度・フレームレート統一）
+    print(f"[VideoComposer] Normalizing {len(videos_to_concat)} videos...")
+    
+    normalized_videos = []
+    temp_dir = os.path.dirname(output_path)
+    
+    for i, video_path in enumerate(videos_to_concat):
+        normalized_path = os.path.join(temp_dir, f"_normalized_{i}.mp4")
+        
+        # 動画を1920x1080、30fps、同じコーデックに変換
+        cmd_normalize = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black",
+            "-r", "30",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "23",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-ar", "44100",
+            "-ac", "2",
+            normalized_path
+        ]
+        
+        result = subprocess.run(cmd_normalize, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"[VideoComposer] Normalize error for {video_path}: {result.stderr[:200]}")
+            # エラーの場合はオリジナルを使用
+            normalized_videos.append(video_path)
+        else:
+            normalized_videos.append(normalized_path)
+            print(f"[VideoComposer] Normalized: {video_path} -> {normalized_path}")
+    
+    # Step 2: 連結ファイルを作成
+    concat_file = os.path.join(temp_dir, "_concat_oped.txt")
+    
+    with open(concat_file, "w") as f:
+        for video_path in normalized_videos:
+            f.write(f"file '{os.path.abspath(video_path)}'\n")
+    
+    # Step 3: FFmpegで結合
+    print(f"[VideoComposer] Concatenating {len(normalized_videos)} videos...")
+    
+    cmd_concat = [
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concat_file,
+        "-c", "copy",
+        "-movflags", "+faststart",
+        output_path
+    ]
+    
+    result = subprocess.run(cmd_concat, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"[VideoComposer] Concat error: {result.stderr}")
+        raise Exception(f"動画結合エラー: {result.stderr[:200]}")
+    
+    # クリーンアップ
+    for normalized_path in normalized_videos:
+        if "_normalized_" in normalized_path and os.path.exists(normalized_path):
+            os.remove(normalized_path)
+    if os.path.exists(concat_file):
+        os.remove(concat_file)
+    
+    print(f"[VideoComposer] ✅ Concatenated video saved: {output_path}")
+    return output_path
+
+
+def get_video_info(video_path: str) -> Dict[str, Any]:
+    """動画の情報を取得（解像度、長さなど）"""
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,duration",
+        "-of", "json",
+        video_path
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        import json
+        data = json.loads(result.stdout)
+        stream = data.get("streams", [{}])[0]
+        return {
+            "width": stream.get("width", 1920),
+            "height": stream.get("height", 1080),
+            "duration": float(stream.get("duration", 0))
+        }
+    except:
+        return {"width": 1920, "height": 1080, "duration": 0}
+

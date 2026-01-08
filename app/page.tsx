@@ -130,6 +130,12 @@ export default function Home() {
   // Text density setting: simple (title+headline) or standard (title+headline+points)
   const [textDensity, setTextDensity] = useState<"simple" | "standard">("standard");
 
+  // OP/ED video for YouTube
+  const [introVideo, setIntroVideo] = useState<File | null>(null);
+  const [outroVideo, setOutroVideo] = useState<File | null>(null);
+  const [concatVideoUrl, setConcatVideoUrl] = useState<string | null>(null);
+  const [isConcatenating, setIsConcatenating] = useState(false);
+
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -640,6 +646,43 @@ export default function Home() {
       text += `---\n\n`;
     });
     return text;
+  };
+
+  // OP/ED video concatenation
+  const handleConcatVideo = async () => {
+    if (!introVideo && !outroVideo) {
+      alert("オープニングまたはエンディング動画を選択してください");
+      return;
+    }
+
+    setIsConcatenating(true);
+    setConcatVideoUrl(null);
+
+    try {
+      const formData = new FormData();
+      if (introVideo) {
+        formData.append("intro_video", introVideo);
+      }
+      if (outroVideo) {
+        formData.append("outro_video", outroVideo);
+      }
+
+      const res = await fetch(`${API_URL}/api/concat-video/${state.jobId}`, {
+        method: "POST",
+        headers: getAPIHeaders(),
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "動画結合エラー");
+
+      setConcatVideoUrl(`${API_URL}${data.video_url}`);
+      alert("OP/ED動画を結合しました！");
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
+    } finally {
+      setIsConcatenating(false);
+    }
   };
 
   return (
@@ -1679,6 +1722,71 @@ export default function Home() {
                 >
                   🎬 動画を再生成
                 </button>
+
+                {/* OP/ED Video Section */}
+                <div className="border-t border-zinc-700 pt-4 mt-4">
+                  <h4 className="font-semibold mb-3 text-lg">📽️ YouTube用 OP/ED追加</h4>
+                  <p className="text-zinc-500 text-sm mb-3">
+                    オープニング・エンディング動画をアップロードして結合できます
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    {/* Intro Video */}
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-1">🎬 オープニング</label>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={(e) => setIntroVideo(e.target.files?.[0] || null)}
+                        className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-zinc-700 file:text-white"
+                      />
+                      {introVideo && (
+                        <p className="text-xs text-cyan-400 mt-1 truncate">{introVideo.name}</p>
+                      )}
+                    </div>
+
+                    {/* Outro Video */}
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-1">🎬 エンディング</label>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={(e) => setOutroVideo(e.target.files?.[0] || null)}
+                        className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-zinc-700 file:text-white"
+                      />
+                      {outroVideo && (
+                        <p className="text-xs text-cyan-400 mt-1 truncate">{outroVideo.name}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleConcatVideo}
+                    disabled={isConcatenating || (!introVideo && !outroVideo)}
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white py-2 px-4 rounded-lg transition-all"
+                  >
+                    {isConcatenating ? "⏳ 結合中..." : "🎞️ OP/EDを結合"}
+                  </button>
+
+                  {/* Concatenated Video Preview */}
+                  {concatVideoUrl && (
+                    <div className="mt-4 p-3 bg-zinc-800/50 rounded-lg">
+                      <p className="text-sm text-green-400 mb-2">✅ 結合完了！</p>
+                      <video
+                        src={concatVideoUrl}
+                        controls
+                        className="w-full rounded-lg"
+                      />
+                      <a
+                        href={concatVideoUrl}
+                        download="voiceslide_youtube.mp4"
+                        className="block mt-2 text-center bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg"
+                      >
+                        📥 YouTube用動画をダウンロード
+                      </a>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

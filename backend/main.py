@@ -780,8 +780,77 @@ async def delete_job(job_id: str):
     return {"message": "Deleted"}
 
 
+# =============================================================================
+# Opening/Ending Video Concatenation API
+# =============================================================================
+
+@app.post("/api/concat-video/{job_id}")
+async def concat_video_endpoint(
+    job_id: str,
+    intro_video: Optional[UploadFile] = File(None),
+    outro_video: Optional[UploadFile] = File(None)
+):
+    """
+    メイン動画にオープニング・エンディング動画を結合
+    
+    - intro_video: オープニング動画（任意）
+    - outro_video: エンディング動画（任意）
+    """
+    from services.video_composer import concatenate_with_intro_outro
+    
+    pipeline = get_or_create_pipeline(job_id)
+    
+    if not pipeline.final_video:
+        raise HTTPException(400, "動画がまだ生成されていません")
+    
+    # OP/ED動画を保存
+    intro_path = None
+    outro_path = None
+    
+    if intro_video and intro_video.filename:
+        intro_path = os.path.join(UPLOAD_DIR, f"{job_id}_intro_{intro_video.filename}")
+        with open(intro_path, "wb") as f:
+            content = await intro_video.read()
+            f.write(content)
+        print(f"[API] Saved intro video: {intro_path}")
+    
+    if outro_video and outro_video.filename:
+        outro_path = os.path.join(UPLOAD_DIR, f"{job_id}_outro_{outro_video.filename}")
+        with open(outro_path, "wb") as f:
+            content = await outro_video.read()
+            f.write(content)
+        print(f"[API] Saved outro video: {outro_path}")
+    
+    # 出力パス
+    output_path = os.path.join(OUTPUT_DIR, f"{job_id}_final_with_oped.mp4")
+    
+    try:
+        # 結合実行
+        result_path = await concatenate_with_intro_outro(
+            main_video_path=pipeline.final_video,
+            output_path=output_path,
+            intro_video_path=intro_path,
+            outro_video_path=outro_path
+        )
+        
+        # パイプラインに保存
+        pipeline.final_video_with_oped = result_path
+        
+        return {
+            "status": "success",
+            "message": "OP/ED動画を結合しました",
+            "video_url": f"/outputs/{os.path.basename(result_path)}",
+            "has_intro": intro_path is not None,
+            "has_outro": outro_path is not None
+        }
+        
+    except Exception as e:
+        raise HTTPException(500, f"動画結合エラー: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     from config import HOST, PORT
     print(f"Starting backend on {HOST}:{PORT}")
     uvicorn.run(app, host=HOST, port=PORT)
+
