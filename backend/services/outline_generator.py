@@ -383,7 +383,8 @@ async def generate_outline(
                     prompt,
                     generation_config=genai.GenerationConfig(
                         response_mime_type="application/json",
-                        temperature=0.1
+                        temperature=0.1,
+                        max_output_tokens=16384  # Support long audio (10+ minutes)
                     )
                 )
                 print(f"[Outline] Success with {model_name}!")
@@ -454,7 +455,8 @@ async def polish_outline(outline: Dict[str, Any]) -> Dict[str, Any]:
                 response = model.generate_content(
                     prompt,
                     generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json"
+                        response_mime_type="application/json",
+                        max_output_tokens=16384  # Support long audio
                     )
                 )
                 break
