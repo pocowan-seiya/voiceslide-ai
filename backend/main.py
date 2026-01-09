@@ -3,7 +3,7 @@ VoiceSlide AI v3 - FastAPI Backend
 10-Step Hybrid Workflow with AI Auto-Sync
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
