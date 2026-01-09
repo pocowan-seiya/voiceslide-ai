@@ -1008,34 +1008,53 @@ async def generate_all_custom_slides(
             html = remove_caption_text(html)
             html_contents.append(html)
             
-            # Render to image with retry logic for Railway memory issues
-            page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
-            await page.set_content(html)
-            await page.wait_for_timeout(1000)
-            
+            # Render to image with browser restart on crash
             output_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
             
-            # Screenshot with retry on crash
-            for screenshot_attempt in range(3):
+            render_success = False
+            for render_attempt in range(3):
                 try:
-                    await page.screenshot(path=output_path, type="png")
-                    break
-                except Exception as screenshot_error:
-                    print(f"[Screenshot] Attempt {screenshot_attempt + 1} failed: {str(screenshot_error)[:100]}")
-                    if screenshot_attempt < 2:
-                        # Close and recreate page
+                    # Try to create new page (may fail if browser crashed)
+                    try:
+                        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+                    except Exception as page_error:
+                        print(f"[Browser] new_page failed, restarting browser... ({str(page_error)[:50]})")
                         try:
-                            await page.close()
+                            await browser.close()
                         except:
                             pass
                         await asyncio.sleep(1)
+                        browser = await p.chromium.launch()
                         page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
-                        await page.set_content(html)
-                        await page.wait_for_timeout(500)
-                    else:
-                        raise screenshot_error
+                    
+                    await page.set_content(html)
+                    await page.wait_for_timeout(800)
+                    
+                    # Screenshot
+                    await page.screenshot(path=output_path, type="png")
+                    await page.close()
+                    render_success = True
+                    break
+                    
+                except Exception as render_error:
+                    print(f"[Render] Attempt {render_attempt + 1} failed: {str(render_error)[:80]}")
+                    try:
+                        await page.close()
+                    except:
+                        pass
+                    if render_attempt < 2:
+                        # Restart browser
+                        try:
+                            await browser.close()
+                        except:
+                            pass
+                        await asyncio.sleep(1)
+                        browser = await p.chromium.launch()
+                        print(f"[Browser] Restarted for retry {render_attempt + 2}")
             
-            await page.close()
+            if not render_success:
+                print(f"[Design Architect] ⚠️ Slide {slide_number} rendering failed, skipping...")
+                continue
             
             # Step 3e: Validate and auto-fix if needed
             print(f"[Design Architect] Validating slide {slide_number}...")
