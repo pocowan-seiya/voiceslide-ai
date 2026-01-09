@@ -484,7 +484,7 @@ async def generate_slides_endpoint(
 
 class BatchGenerateRequest(BaseModel):
     start_slide: int = 1  # 1-indexed
-    batch_size: int = 5   # Number of slides per batch
+    batch_size: int = 3   # Reduced from 5 to prevent Railway timeout
     design_preference: Optional[str] = None  # User design requirements
     text_density: str = "standard"  # "simple" (title+headline) or "standard" (full)
 
