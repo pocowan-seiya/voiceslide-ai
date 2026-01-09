@@ -337,19 +337,6 @@ export default function Home() {
     updateState({ isProcessing: true });
     setProgress({ percent: 0, message: startSlide === 1 ? "デザイン戦略を生成中..." : `スライド ${startSlide} から生成中...` });
 
-    // Start progress polling
-    const progressInterval = setInterval(async () => {
-      try {
-        const progressRes = await fetch(`${API_URL}/api/progress/${state.jobId}`);
-        if (progressRes.ok) {
-          const progressData = await progressRes.json();
-          setProgress({ percent: progressData.percent, message: progressData.message });
-        }
-      } catch (e) {
-        // Ignore polling errors
-      }
-    }, 2000);
-
     try {
       const headers: HeadersInit = {
         "Content-Type": "application/json",
@@ -365,7 +352,7 @@ export default function Home() {
         headers,
         body: JSON.stringify({
           start_slide: startSlide,
-          batch_size: 5,  // Increased with upgraded Railway memory
+          batch_size: 5,
           design_preference: designPreference || undefined,
           text_density: textDensity,
         })
@@ -376,12 +363,18 @@ export default function Home() {
 
       console.log(`[Async] Started batch generation, polling for status...`);
 
-      // Poll for completion
+      // Single polling interval for batch status (5 seconds to avoid timeout)
       const pollInterval = setInterval(async () => {
         try {
           const statusRes = await fetch(`${API_URL}/api/batch-status/${state.jobId}`, {
             headers: getAPIHeaders()
           });
+
+          if (!statusRes.ok) {
+            console.log(`[Poll] Status check failed: ${statusRes.status}`);
+            return; // Skip this poll, try again next interval
+          }
+
           const statusData = await statusRes.json();
 
           // Update progress
@@ -395,7 +388,6 @@ export default function Home() {
           // Check if complete or error
           if (statusData.status === "complete") {
             clearInterval(pollInterval);
-            clearInterval(progressInterval);
 
             // Update batch state
             setBatchState({
@@ -424,23 +416,20 @@ export default function Home() {
               console.log(`[AutoBatch] Continuing to batch starting at slide ${statusData.next_start}`);
               setTimeout(() => {
                 handleGenerateSlides(statusData.next_start);
-              }, 1000);
+              }, 2000);
             }
           } else if (statusData.status === "error") {
             clearInterval(pollInterval);
-            clearInterval(progressInterval);
-            throw new Error(statusData.message || "Slide generation failed");
+            updateState({ error: statusData.message || "Slide generation failed", isProcessing: false });
           }
           // If still "processing", continue polling
         } catch (pollErr: any) {
-          clearInterval(pollInterval);
-          clearInterval(progressInterval);
-          updateState({ error: pollErr.message, isProcessing: false });
+          // Don't stop polling on fetch errors - just log and retry
+          console.log(`[Poll] Error: ${pollErr.message}, will retry...`);
         }
-      }, 2000); // Poll every 2 seconds
+      }, 5000); // Poll every 5 seconds (reduced from 2s to prevent timeout)
 
     } catch (err: any) {
-      clearInterval(progressInterval);
       updateState({ error: err.message, isProcessing: false });
     }
   };
