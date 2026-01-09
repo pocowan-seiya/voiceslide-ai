@@ -1029,7 +1029,7 @@ async def generate_all_custom_slides(
                 browser=browser,
                 slides_dir=slides_dir,
                 gemini_key=gemini_key,
-                max_retries=3  # Increased from 2 for more thorough fixing
+                max_retries=1  # Reduced to speed up Railway processing
             )
             
             # Update html_contents with potentially fixed version
