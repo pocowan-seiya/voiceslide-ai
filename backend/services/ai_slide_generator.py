@@ -1005,16 +1005,35 @@ async def generate_all_custom_slides(
             # Step 3d: Post-processing - forcibly remove any remaining caption text
             print(f"[Design Architect] Post-processing slide {slide_number} (removing captions)...")
             html = remove_caption_text(html)
-            
             html_contents.append(html)
             
-            # Render to image
+            # Render to image with retry logic for Railway memory issues
             page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
             await page.set_content(html)
             await page.wait_for_timeout(1000)
             
             output_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
-            await page.screenshot(path=output_path, type="png")
+            
+            # Screenshot with retry on crash
+            for screenshot_attempt in range(3):
+                try:
+                    await page.screenshot(path=output_path, type="png")
+                    break
+                except Exception as screenshot_error:
+                    print(f"[Screenshot] Attempt {screenshot_attempt + 1} failed: {str(screenshot_error)[:100]}")
+                    if screenshot_attempt < 2:
+                        # Close and recreate page
+                        try:
+                            await page.close()
+                        except:
+                            pass
+                        await asyncio.sleep(1)
+                        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+                        await page.set_content(html)
+                        await page.wait_for_timeout(500)
+                    else:
+                        raise screenshot_error
+            
             await page.close()
             
             # Step 3e: Validate and auto-fix if needed
