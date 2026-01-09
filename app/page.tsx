@@ -359,53 +359,86 @@ export default function Home() {
         (headers as Record<string, string>)["x-color-theme"] = selectedColorTheme;
       }
 
-      // Use batch endpoint (5 slides at a time)
+      // Use batch endpoint (returns immediately, runs in background)
       const res = await fetch(`${API_URL}/api/generate-slides-batch/${state.jobId}`, {
         method: "POST",
         headers,
         body: JSON.stringify({
           start_slide: startSlide,
-          batch_size: 5,
+          batch_size: 2,  // Small batch for faster response
           design_preference: designPreference || undefined,
           text_density: textDensity,
         })
       });
 
-      clearInterval(progressInterval);
+      const initData = await res.json();
+      if (!res.ok) throw new Error(initData.detail || "Failed to start slide generation");
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Slide generation failed");
+      console.log(`[Async] Started batch generation, polling for status...`);
 
-      // Update batch state
-      setBatchState({
-        isComplete: data.is_complete,
-        nextStart: data.next_start,
-        slidesCompleted: data.slides_completed,
-        totalSlides: data.total_slides
-      });
+      // Poll for completion
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`${API_URL}/api/batch-status/${state.jobId}`, {
+            headers: getAPIHeaders()
+          });
+          const statusData = await statusRes.json();
 
-      setProgress({
-        percent: (data.slides_completed / data.total_slides) * 100,
-        message: data.message
-      });
+          // Update progress
+          if (statusData.total > 0) {
+            setProgress({
+              percent: (statusData.current / statusData.total) * 100,
+              message: statusData.message
+            });
+          }
 
-      updateState({
-        slideCount: data.slides_completed,
-        slidePreviews: data.slide_previews.map((p: string) => `${API_URL}${p}`),
-        step: data.is_complete ? 6 as Step : 5 as Step,
-        isProcessing: !data.is_complete, // Keep processing if not complete
-      });
-      setSelectedSlide(null);
-      setSlideFeedback("");
+          // Check if complete or error
+          if (statusData.status === "complete") {
+            clearInterval(pollInterval);
+            clearInterval(progressInterval);
 
-      // 🔄 Auto-continue to next batch if not complete
-      if (!data.is_complete && data.next_start) {
-        console.log(`[AutoBatch] Continuing to batch starting at slide ${data.next_start}`);
-        // Small delay to avoid overwhelming the server
-        setTimeout(() => {
-          handleGenerateSlides(data.next_start);
-        }, 1000);
-      }
+            // Update batch state
+            setBatchState({
+              isComplete: statusData.is_complete,
+              nextStart: statusData.next_start,
+              slidesCompleted: statusData.batch_end,
+              totalSlides: statusData.total_slides
+            });
+
+            setProgress({
+              percent: (statusData.batch_end / statusData.total_slides) * 100,
+              message: `スライド ${statusData.batch_start}-${statusData.batch_end} 完了`
+            });
+
+            updateState({
+              slideCount: statusData.batch_end,
+              slidePreviews: statusData.slide_previews.map((p: string) => `${API_URL}${p}`),
+              step: statusData.is_complete ? 6 as Step : 5 as Step,
+              isProcessing: !statusData.is_complete,
+            });
+            setSelectedSlide(null);
+            setSlideFeedback("");
+
+            // Auto-continue to next batch if not complete
+            if (!statusData.is_complete && statusData.next_start) {
+              console.log(`[AutoBatch] Continuing to batch starting at slide ${statusData.next_start}`);
+              setTimeout(() => {
+                handleGenerateSlides(statusData.next_start);
+              }, 1000);
+            }
+          } else if (statusData.status === "error") {
+            clearInterval(pollInterval);
+            clearInterval(progressInterval);
+            throw new Error(statusData.message || "Slide generation failed");
+          }
+          // If still "processing", continue polling
+        } catch (pollErr: any) {
+          clearInterval(pollInterval);
+          clearInterval(progressInterval);
+          updateState({ error: pollErr.message, isProcessing: false });
+        }
+      }, 2000); // Poll every 2 seconds
+
     } catch (err: any) {
       clearInterval(progressInterval);
       updateState({ error: err.message, isProcessing: false });

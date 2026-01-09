@@ -493,10 +493,11 @@ class BatchGenerateRequest(BaseModel):
 async def generate_slides_batch_endpoint(
     job_id: str,
     request: BatchGenerateRequest,
+    background_tasks: BackgroundTasks,
     x_gemini_key: Optional[str] = Header(None),
     x_color_theme: Optional[str] = Header(None)
 ):
-    """Batch slide generation: generates slides in batches to avoid timeout"""
+    """Batch slide generation: runs in background to avoid timeout"""
     pipeline = get_or_create_pipeline(job_id)
     
     # アウトラインを取得
@@ -510,67 +511,115 @@ async def generate_slides_batch_endpoint(
     start = request.start_slide
     end = min(start + request.batch_size - 1, total_slides)
     
-    print(f"[Batch Generate] Generating slides {start}-{end} of {total_slides}")
+    print(f"[Batch Generate] Starting background task for slides {start}-{end} of {total_slides}")
     
-    try:
-        from services.ai_slide_generator import generate_all_custom_slides
-        
-        # Initialize progress for this batch
-        slide_progress[job_id] = {
-            "current": 0,
-            "total": end - start + 2,
-            "message": f"バッチ生成中 ({start}-{end})..."
-        }
-        
-        def update_progress(current: int, total: int, message: str):
+    # Initialize progress
+    slide_progress[job_id] = {
+        "current": 0,
+        "total": end - start + 2,
+        "message": f"バッチ生成開始 ({start}-{end})...",
+        "status": "processing",
+        "batch_start": start,
+        "batch_end": end,
+        "total_slides": total_slides
+    }
+    
+    # Define background task
+    async def generate_batch_async():
+        try:
+            from services.ai_slide_generator import generate_all_custom_slides
+            
+            def update_progress(current: int, total: int, message: str):
+                slide_progress[job_id] = {
+                    **slide_progress.get(job_id, {}),
+                    "current": current,
+                    "total": total,
+                    "message": message,
+                    "status": "processing"
+                }
+            
+            # Generate batch of slides
+            image_paths = await generate_all_custom_slides(
+                slides=slides,
+                job_id=job_id,
+                gemini_key=x_gemini_key,
+                outline=outline,
+                color_theme=x_color_theme,
+                design_preference=request.design_preference,
+                text_density=request.text_density,
+                progress_callback=update_progress,
+                start_slide=start,
+                end_slide=end
+            )
+            
+            # パイプラインに保存
+            pipeline.slide_images = image_paths
+            pipeline.slide_contents = slides
+            
+            # スライドプレビューURLを生成
+            slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
+            
+            # Calculate next batch
+            next_start = end + 1
+            is_complete = next_start > total_slides
+            
+            # Update progress with completion
             slide_progress[job_id] = {
-                "current": current,
-                "total": total,
-                "message": message
+                **slide_progress.get(job_id, {}),
+                "status": "complete",
+                "message": f"バッチ完了 ({start}-{end})",
+                "slide_previews": slide_previews,
+                "batch_start": start,
+                "batch_end": end,
+                "next_start": None if is_complete else next_start,
+                "is_complete": is_complete,
+                "total_slides": total_slides
             }
-        
-        # Generate batch of slides
-        image_paths = await generate_all_custom_slides(
-            slides=slides,
-            job_id=job_id,
-            gemini_key=x_gemini_key,
-            outline=outline,
-            color_theme=x_color_theme,
-            design_preference=request.design_preference,  # Pass user design preference
-            text_density=request.text_density,  # Pass text density setting
-            progress_callback=update_progress,
-            start_slide=start,
-            end_slide=end
-        )
-        
-        # パイプラインに保存
-        pipeline.slide_images = image_paths
-        pipeline.slide_contents = slides
-        
-        # スライドプレビューURLを生成
-        slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
-        
-        # Calculate next batch
-        next_start = end + 1
-        is_complete = next_start > total_slides
-        
-        return {
-            "job_id": job_id,
-            "batch_start": start,
-            "batch_end": end,
-            "slides_generated": end - start + 1,
-            "total_slides": total_slides,
-            "slides_completed": end,
-            "is_complete": is_complete,
-            "next_start": next_start if not is_complete else None,
-            "slide_previews": slide_previews,
-            "message": f"スライド {start}-{end} を生成しました" + ("（完了）" if is_complete else f"（残り {total_slides - end}枚）")
-        }
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(500, f"バッチ生成エラー: {str(e)}")
+            print(f"[Batch Generate] Completed slides {start}-{end}")
+            
+        except Exception as e:
+            print(f"[Batch Generate] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            slide_progress[job_id] = {
+                **slide_progress.get(job_id, {}),
+                "status": "error",
+                "message": f"エラー: {str(e)}"
+            }
+    
+    # Run in background using asyncio
+    import asyncio
+    asyncio.create_task(generate_batch_async())
+    
+    # Return immediately
+    return {
+        "job_id": job_id,
+        "status": "processing",
+        "message": f"バッチ生成開始 ({start}-{end})",
+        "batch_start": start,
+        "batch_end": end,
+        "total_slides": total_slides
+    }
+
+
+@app.get("/api/batch-status/{job_id}")
+async def get_batch_status(job_id: str):
+    """Get batch generation status for polling"""
+    progress = slide_progress.get(job_id, {})
+    return {
+        "job_id": job_id,
+        "status": progress.get("status", "unknown"),
+        "message": progress.get("message", ""),
+        "current": progress.get("current", 0),
+        "total": progress.get("total", 0),
+        "slide_previews": progress.get("slide_previews", []),
+        "batch_start": progress.get("batch_start"),
+        "batch_end": progress.get("batch_end"),
+        "next_start": progress.get("next_start"),
+        "is_complete": progress.get("is_complete", False),
+        "total_slides": progress.get("total_slides", 0)
+    }
+
 
 
 # ========== Slide Feedback & Editing ==========
