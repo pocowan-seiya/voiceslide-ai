@@ -365,7 +365,7 @@ export default function Home() {
         headers,
         body: JSON.stringify({
           start_slide: startSlide,
-          batch_size: 2,  // Small batch for faster response
+          batch_size: 5,  // Increased with upgraded Railway memory
           design_preference: designPreference || undefined,
           text_density: textDensity,
         })

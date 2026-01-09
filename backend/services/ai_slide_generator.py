@@ -8,6 +8,7 @@ Professional-grade slide design using 3-step process:
 
 import json
 import base64
+import asyncio
 from typing import Dict, Any, List, Optional
 import google.generativeai as genai
 
