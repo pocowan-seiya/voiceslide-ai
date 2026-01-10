@@ -346,6 +346,14 @@ SLIDE_DESIGN_PROMPT = """# Role
 - Accent: {accent}
 - Background: {background_start} → {background_end}
 
+# 🎭 話者のパーソナリティ（最重要）
+{personality_section}
+
+**パーソナリティを反映させる方法:**
+- **コピー**: 話者の口調・表現を維持、その人らしい言葉遣いで
+- **デザイン**: パーソナリティに合った雰囲気（カジュアルならポップに、真面目なら洗練に）
+- **バランス**: その人らしさを保ちながら、インパクトのあるデザインを実現
+
 # Slide Content（素材）
 スライド番号: {slide_number} / {total_slides}
 スライドタイプ: {slide_type}
@@ -604,6 +612,12 @@ async def generate_design_strategy(
                 "background_end": theme['background_end']
             }
         
+        # Include personality analysis from outline
+        personality = outline.get("personality_analysis", {})
+        if personality:
+            strategy["personality_analysis"] = personality
+            print(f"[Design Architect] Personality: {personality.get('tone', 'N/A')}")
+        
         return strategy
         
     except Exception as e:
@@ -729,6 +743,26 @@ async def generate_slide_html(
     else:
         image_section = ""
     
+    # Extract personality for personalized copy/design
+    personality = strategy.get("personality_analysis", {})
+    personality_section = ""
+    if personality:
+        tone = personality.get("tone", "")
+        expressions = personality.get("characteristic_expressions", [])
+        style_desc = personality.get("speaking_style", "")
+        values = personality.get("values", "")
+        design_hint = personality.get("design_hint", "")
+        
+        personality_section = f"""
+話者の口調: {tone}
+特徴的な表現: {', '.join(expressions) if expressions else '(分析中)'}
+話し方の特徴: {style_desc}
+大切にしていること: {values}
+デザインの方向性: {design_hint}
+"""
+    else:
+        personality_section = "(パーソナリティ分析は次回の生成から適用されます)"
+    
     prompt = SLIDE_DESIGN_PROMPT.format(
         concept_name=style.get("concept_name", "Modern Professional"),
         concept_description=style.get("concept_description", ""),
@@ -746,8 +780,9 @@ async def generate_slide_html(
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
-        layout_instruction=layout_instruction,  # NEW
+        layout_instruction=layout_instruction,
         image_section=image_section,
+        personality_section=personality_section,
         width=VIDEO_WIDTH,
         height=VIDEO_HEIGHT
     )
