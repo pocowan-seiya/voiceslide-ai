@@ -55,6 +55,8 @@ api_keys: Dict[str, Dict[str, str]] = {}
 # Slide generation progress storage
 slide_progress: Dict[str, Dict[str, Any]] = {}
 
+# Slide history for undo (job_id -> slide_number -> list of previous versions)
+slide_history: Dict[str, Dict[int, List[Dict[str, Any]]]] = {}
 
 # Request models
 class TranscriptUpdate(BaseModel):
@@ -643,7 +645,33 @@ async def slide_feedback_endpoint(
         raise HTTPException(404, "Job not found")
     
     try:
-        from services.ai_slide_generator import regenerate_slide_with_feedback
+        from services.ai_slide_generator import regenerate_slide_with_feedback, load_html_contents
+        
+        # Save current slide to history before regeneration
+        slide_num = request.slide_number
+        if job_id not in slide_history:
+            slide_history[job_id] = {}
+        if slide_num not in slide_history[job_id]:
+            slide_history[job_id][slide_num] = []
+        
+        # Get current HTML and image path
+        html_contents = load_html_contents(job_id)
+        slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        current_image_path = os.path.join(slides_dir, f"slide_{slide_num:03d}.png")
+        
+        if slide_num <= len(html_contents):
+            current_html = html_contents[slide_num - 1]
+            # Save backup of current image
+            backup_image_path = os.path.join(slides_dir, f"slide_{slide_num:03d}_v{len(slide_history[job_id][slide_num])}.png")
+            if os.path.exists(current_image_path):
+                shutil.copy(current_image_path, backup_image_path)
+            
+            slide_history[job_id][slide_num].append({
+                "html": current_html,
+                "image_path": backup_image_path,
+                "timestamp": datetime.now().isoformat()
+            })
+            print(f"[History] Saved slide {slide_num} version {len(slide_history[job_id][slide_num])}")
         
         result = await regenerate_slide_with_feedback(
             job_id=job_id,
@@ -658,14 +686,16 @@ async def slide_feedback_endpoint(
         if not result["success"]:
             raise HTTPException(500, result.get("error", "Regeneration failed"))
         
-        # Add cache buster to URL
+        # Add cache buster to URL and history count
         import time
         result["preview_url"] = f"{result['preview_url']}?t={int(time.time())}"
+        result["history_count"] = len(slide_history.get(job_id, {}).get(slide_num, []))
         
         return {
             "job_id": job_id,
             **result,
-            "message": f"スライド {request.slide_number} を更新しました"
+            "message": f"スライド {request.slide_number} を更新しました",
+            "can_undo": result["history_count"] > 0
         }
         
     except ValueError as e:
@@ -675,6 +705,64 @@ async def slide_feedback_endpoint(
         traceback.print_exc()
         raise HTTPException(500, f"フィードバック処理エラー: {str(e)}")
 
+
+@app.post("/api/slides/{job_id}/undo/{slide_number}")
+async def undo_slide_endpoint(
+    job_id: str,
+    slide_number: int
+):
+    """Undo last slide change - restore previous version"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    if job_id not in slide_history or slide_number not in slide_history[job_id]:
+        raise HTTPException(400, "履歴がありません")
+    
+    history_list = slide_history[job_id][slide_number]
+    if not history_list:
+        raise HTTPException(400, "履歴がありません")
+    
+    try:
+        from services.ai_slide_generator import load_html_contents, save_html_contents
+        
+        # Get last version from history
+        prev_version = history_list.pop()
+        prev_html = prev_version["html"]
+        prev_image_path = prev_version["image_path"]
+        
+        # Restore HTML contents
+        html_contents = load_html_contents(job_id)
+        if slide_number <= len(html_contents):
+            html_contents[slide_number - 1] = prev_html
+            save_html_contents(job_id, html_contents)
+        
+        # Restore image
+        slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        current_image_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
+        
+        if os.path.exists(prev_image_path):
+            shutil.copy(prev_image_path, current_image_path)
+            os.remove(prev_image_path)  # Clean up backup
+        
+        # Add cache buster
+        import time
+        preview_url = f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}"
+        
+        print(f"[History] Restored slide {slide_number} to version {len(history_list)}")
+        
+        return {
+            "job_id": job_id,
+            "slide_number": slide_number,
+            "preview_url": preview_url,
+            "can_undo": len(history_list) > 0,
+            "history_count": len(history_list),
+            "message": f"スライド {slide_number} を前のバージョンに戻しました"
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"元に戻す処理でエラー: {str(e)}")
 
 # ========== STEP 8: Upload Slides ==========
 
@@ -847,10 +935,21 @@ async def concat_video_endpoint(
     """
     from services.video_composer import concatenate_with_intro_outro
     
-    pipeline = get_or_create_pipeline(job_id)
+    # Find the main video file by pattern
+    main_video_path = None
+    potential_paths = [
+        os.path.join(OUTPUT_DIR, f"{job_id}.mp4"),
+        os.path.join(OUTPUT_DIR, f"{job_id}_video.mp4"),
+        os.path.join(OUTPUT_DIR, f"{job_id}_final.mp4"),
+    ]
     
-    if not pipeline.final_video:
-        raise HTTPException(400, "動画がまだ生成されていません")
+    for path in potential_paths:
+        if os.path.exists(path):
+            main_video_path = path
+            break
+    
+    if not main_video_path:
+        raise HTTPException(400, f"動画ファイルが見つかりません。先に動画を生成してください。")
     
     # OP/ED動画を保存
     intro_path = None
@@ -876,14 +975,13 @@ async def concat_video_endpoint(
     try:
         # 結合実行
         result_path = await concatenate_with_intro_outro(
-            main_video_path=pipeline.final_video,
+            main_video_path=main_video_path,
             output_path=output_path,
             intro_video_path=intro_path,
             outro_video_path=outro_path
         )
         
-        # パイプラインに保存
-        pipeline.final_video_with_oped = result_path
+        print(f"[API] Concatenated video saved to: {result_path}")
         
         return {
             "status": "success",
