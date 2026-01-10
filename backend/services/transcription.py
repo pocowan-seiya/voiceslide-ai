@@ -5,6 +5,8 @@ Transcription + Polishing with AI
 
 import os
 import asyncio
+import subprocess
+import re
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 import google.generativeai as genai
@@ -15,6 +17,86 @@ from config import OPENAI_API_KEY, GEMINI_API_KEY
 
 # Thread pool for blocking IO
 executor = ThreadPoolExecutor(max_workers=2)
+
+
+def trim_silence_from_audio(audio_path: str, output_path: str = None, threshold_db: int = -40, min_silence_duration: float = 0.5) -> str:
+    """
+    音声ファイルの冒頭と末尾の無音部分をカット
+    
+    Args:
+        audio_path: 入力音声ファイルパス
+        output_path: 出力パス（省略時は _trimmed を付加）
+        threshold_db: 無音とみなすdB閾値（デフォルト: -40dB）
+        min_silence_duration: 無音とみなす最小時間（秒）
+    
+    Returns:
+        トリミング済みファイルのパス
+    """
+    if output_path is None:
+        base, ext = os.path.splitext(audio_path)
+        output_path = f"{base}_trimmed{ext}"
+    
+    try:
+        # Step 1: 音声の長さを取得
+        duration_cmd = [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", audio_path
+        ]
+        duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
+        total_duration = float(duration_result.stdout.strip())
+        print(f"[AudioTrim] Total duration: {total_duration:.1f}s")
+        
+        # Step 2: 無音検出
+        silence_cmd = [
+            "ffmpeg", "-i", audio_path, "-af",
+            f"silencedetect=n={threshold_db}dB:d={min_silence_duration}",
+            "-f", "null", "-"
+        ]
+        result = subprocess.run(silence_cmd, capture_output=True, text=True)
+        stderr = result.stderr
+        
+        # 無音開始/終了を抽出
+        silence_starts = re.findall(r"silence_start: ([\d.]+)", stderr)
+        silence_ends = re.findall(r"silence_end: ([\d.]+)", stderr)
+        
+        # 冒頭の無音をカット: 最初の音声が始まる位置を見つける
+        start_time = 0.0
+        if silence_starts and float(silence_starts[0]) < 0.1:
+            # 冒頭に無音がある場合、最初の無音終了位置から開始
+            if silence_ends:
+                start_time = float(silence_ends[0])
+                print(f"[AudioTrim] Trimming {start_time:.1f}s from start")
+        
+        # 末尾の無音をカット: 最後の音声が終わる位置を見つける
+        end_time = total_duration
+        if silence_starts and float(silence_starts[-1]) > total_duration - 5:
+            # 末尾5秒以内に無音開始がある場合
+            end_time = float(silence_starts[-1])
+            print(f"[AudioTrim] Trimming {total_duration - end_time:.1f}s from end")
+        
+        # 変更がない場合は元のファイルを返す
+        if start_time < 0.1 and end_time >= total_duration - 0.1:
+            print("[AudioTrim] No significant silence detected, using original")
+            return audio_path
+        
+        # Step 3: トリミング実行
+        trim_duration = end_time - start_time
+        trim_cmd = [
+            "ffmpeg", "-y", "-i", audio_path,
+            "-ss", str(start_time),
+            "-t", str(trim_duration),
+            "-c", "copy",
+            output_path
+        ]
+        subprocess.run(trim_cmd, capture_output=True, check=True)
+        
+        print(f"[AudioTrim] Trimmed: {start_time:.1f}s - {end_time:.1f}s ({trim_duration:.1f}s)")
+        return output_path
+        
+    except Exception as e:
+        print(f"[AudioTrim] Error: {e}, using original file")
+        return audio_path
+
 
 
 def get_openai_client(api_key: Optional[str] = None) -> OpenAI:

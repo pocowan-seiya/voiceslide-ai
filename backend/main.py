@@ -233,7 +233,21 @@ async def transcribe(
     jobs[job_id]["step"] = 2
     jobs[job_id]["status"] = "processing"
     
-    # Pass API key to transcription
+    # Step 2a: 冒頭と末尾の無音をトリミング
+    try:
+        from services.transcription import trim_silence_from_audio
+        original_audio_path = jobs[job_id].get("audio_path")
+        if original_audio_path:
+            trimmed_path = trim_silence_from_audio(original_audio_path)
+            if trimmed_path != original_audio_path:
+                jobs[job_id]["audio_path"] = trimmed_path
+                jobs[job_id]["original_audio_path"] = original_audio_path
+                pipeline.audio_path = trimmed_path
+                print(f"[Transcribe] Audio trimmed: {original_audio_path} → {trimmed_path}")
+    except Exception as e:
+        print(f"[Transcribe] Silence trim failed: {e}")
+    
+    # Step 2b: Pass API key to transcription
     result = await pipeline.step_transcribe(openai_key=x_openai_key)
     
     # オプション: 無音・フィラーを除去
