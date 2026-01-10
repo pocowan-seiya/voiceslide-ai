@@ -234,6 +234,15 @@ def adjust_timing_durations(
             "match_reason": timing.get("match_reason") or timing.get("reason", "")
         })
     
+    # 最後のスライドの終了時刻を音声の長さに合わせる（黒画面防止）
+    if result:
+        last_slide = result[-1]
+        if last_slide["end_time"] < audio_duration:
+            extra_duration = audio_duration - last_slide["end_time"]
+            last_slide["end_time"] = audio_duration
+            last_slide["duration"] += extra_duration
+            print(f"  🔧 Extended last slide to match audio end ({audio_duration:.1f}s, added {extra_duration:.1f}s)")
+    
     return result
 
 
