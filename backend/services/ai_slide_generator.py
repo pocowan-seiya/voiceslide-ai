@@ -1343,6 +1343,13 @@ def save_html_contents(job_id: str, html_contents: List[str]):
     if job_id in _slide_data_cache:
         _slide_data_cache[job_id]["html_contents"] = html_contents
 
+def load_html_contents(job_id: str) -> List[str]:
+    """Load saved HTML contents for a job"""
+    data = _slide_data_cache.get(job_id)
+    if data and "html_contents" in data:
+        return data["html_contents"]
+    return []
+
 def get_html_content(job_id: str, slide_number: int) -> Optional[str]:
     """Get HTML content for a specific slide"""
     data = _slide_data_cache.get(job_id)
