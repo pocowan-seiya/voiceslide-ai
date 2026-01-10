@@ -590,7 +590,7 @@ export default function Home() {
       if (!res.ok) throw new Error(data.detail || "Video generation failed");
 
       updateState({
-        videoUrl: `${API_URL}${data.video_url}`,
+        videoUrl: `${API_URL}${data.video_url}?t=${Date.now()}`,
         step: 10,
         isProcessing: false,
       });
