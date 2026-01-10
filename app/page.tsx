@@ -136,6 +136,9 @@ export default function Home() {
   const [concatVideoUrl, setConcatVideoUrl] = useState<string | null>(null);
   const [isConcatenating, setIsConcatenating] = useState(false);
 
+  // Slide undo history
+  const [slideCanUndo, setSlideCanUndo] = useState<{ [key: number]: boolean }>({});
+  const [isUndoing, setIsUndoing] = useState(false);
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -473,12 +476,46 @@ export default function Home() {
       newPreviews[selectedSlide - 1] = `${API_URL}${data.preview_url}`;
       updateState({ slidePreviews: newPreviews });
 
+      // Update undo state
+      if (data.can_undo !== undefined) {
+        setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
+      }
+
       setSlideFeedback("");
       setSlideImage({ file: null, preview: null });
     } catch (err: any) {
       updateState({ error: err.message });
     } finally {
       setIsRegenerating(false);
+    }
+  };
+
+  // Slide Undo: Restore previous version
+  const handleSlideUndo = async () => {
+    if (!selectedSlide || !slideCanUndo[selectedSlide]) return;
+
+    setIsUndoing(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/undo/${selectedSlide}`, {
+        method: "POST",
+        headers: getAPIHeaders()
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Undo failed");
+
+      // Update the slide preview
+      const newPreviews = [...state.slidePreviews];
+      newPreviews[selectedSlide - 1] = `${API_URL}${data.preview_url}`;
+      updateState({ slidePreviews: newPreviews });
+
+      // Update undo state
+      setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
+
+    } catch (err: any) {
+      updateState({ error: err.message });
+    } finally {
+      setIsUndoing(false);
     }
   };
 
@@ -1281,6 +1318,15 @@ export default function Home() {
                         >
                           {isRegenerating ? "再生成中..." : slideImage.file ? "🖼️ 画像を追加して再生成" : "🔄 フィードバックを適用"}
                         </button>
+                        {selectedSlide && slideCanUndo[selectedSlide] && (
+                          <button
+                            onClick={handleSlideUndo}
+                            disabled={isUndoing || isRegenerating}
+                            className="btn-secondary bg-amber-600/20 border-amber-500/30 hover:bg-amber-600/30"
+                          >
+                            {isUndoing ? "戻し中..." : "↩️ 元に戻す"}
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setSelectedSlide(null);
