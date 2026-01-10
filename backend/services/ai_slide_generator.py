@@ -1056,27 +1056,8 @@ async def generate_all_custom_slides(
                 print(f"[Design Architect] ⚠️ Slide {slide_number} rendering failed, skipping...")
                 continue
             
-            # Step 3e: Validate and auto-fix if needed
-            print(f"[Design Architect] Validating slide {slide_number}...")
-            html, output_path, was_fixed = await validate_and_regenerate_slide(
-                slide_number=slide_number,
-                current_html=html,
-                image_path=output_path,
-                slide=slide,
-                strategy=strategy,
-                job_id=job_id,
-                browser=browser,
-                slides_dir=slides_dir,
-                gemini_key=gemini_key,
-                max_retries=1  # Reduced to speed up Railway processing
-            )
-            
-            # Update html_contents with potentially fixed version
-            html_contents[-1] = html
-            
+            # Validation is now integrated into self-review for speed
             image_paths.append(output_path)
-            if was_fixed:
-                print(f"[Design Architect] ✅ Slide {slide_number} was auto-fixed")
             print(f"[Design Architect] Completed slide {slide_number}/{total_slides}")
             
             # Update progress (for batch mode)
@@ -1424,17 +1405,30 @@ AI_SELF_REVIEW_PROMPT = """# Role
 - 冗長な表現はないか？
 - キーメッセージは心に残るか？
 
-## 2. レイアウト
-- 視覚的階層は明確か？
-- 余白は適切か（詰め込みすぎ/スカスカ）？
-- 視線の流れは自然か？
-- 要素のバランスは良いか？
+## 2. レイアウト（重要！）
+**レイアウトを厳しくチェックし、問題があれば必ず修正してください。**
+
+### 絶対NG（検出したら必ず修正）:
+❌ 左側または右側が空白で反対側にコンテンツ集中
+❌ カラム間のバランスが極端に悪い（片方30%、片方70%など）
+❌ 不必要な余白が多い（コンテンツがスカスカ）
+❌ 小さすぎるボックスやカード（画面の20%以下）
+❌ テキストが読みにくい配置（文字が小さい、コントラスト不足）
+
+### 修正すべきこと:
+✅ 余白を減らしてコンテンツを大きく表示
+✅ 2カラムを使う場合は均等に（50:50 または 60:40）
+✅ フォントサイズを大きめに（タイトル: 40px以上、本文: 20px以上）
+✅ パディングを適度に（過剰なpadding/marginを削減）
+✅ 情報を画面いっぱいに効率的に配置
+
+### 具体的なチェックポイント:
+- max-width: 80%以上のコンテナを使用しているか？
+- flexboxで均等配置されているか？
+- 無駄なpadding（100px以上）がないか？
+- 視聴者が遠くからでも読める文字サイズか？
 
 ## 3. ビジュアル
-- 色使いはブランドに合っているか？
-- コントラストは十分か（読みやすさ）？
-- アイコンは内容に合っているか？
-- 装飾は適度か（過剰/不足）？
 
 ## 4. プロフェッショナリズム
 - プレゼンの場で使えるクオリティか？
