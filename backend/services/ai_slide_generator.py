@@ -773,6 +773,36 @@ async def generate_slide_html(
     else:
         personality_section = "(パーソナリティ分析は次回の生成から適用されます)"
     
+    # Simple mode instruction for minimal design
+    simple_mode_instruction = ""
+    if text_density == "simple":
+        simple_mode_instruction = """
+# ⚠️ シンプルモード（最重要 - 必ず従う）
+
+このスライドは**シンプルモード**です。文字量を極限まで減らしてください。
+
+## 絶対ルール
+1. **タイトルのみ大きく表示**（画面の50%以上を占める大きさ）
+2. **サブテキストは1行のみ**（15文字以内）
+3. **箇条書き禁止**
+4. **長い文章禁止**
+5. **アイコンやカードで視覚表現**（テキストの代わりに図形・アイコンを使う）
+
+## デザイン例
+参考: 
+- 大きなタイトル
+- 小さな1行の説明
+- 2-3個のカードやアイコンで視覚的に表現
+- 余白を大きく取る（画面の60%以上が余白）
+
+## 文字量の目安
+- タイトル: 10文字以内
+- サブテキスト: 15文字以内
+- 合計: 30文字以内（これ以上は多すぎ）
+
+文字が多いと失格です。ビジュアルで伝えてください。
+"""
+    
     prompt = SLIDE_DESIGN_PROMPT.format(
         concept_name=style.get("concept_name", "Modern Professional"),
         concept_description=style.get("concept_description", ""),
@@ -790,7 +820,7 @@ async def generate_slide_html(
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
-        layout_instruction=layout_instruction,
+        layout_instruction=layout_instruction + simple_mode_instruction,
         image_section=image_section,
         personality_section=personality_section,
         width=VIDEO_WIDTH,

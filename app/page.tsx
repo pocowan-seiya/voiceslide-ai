@@ -144,6 +144,33 @@ export default function Home() {
     setHasKeys(hasAPIKeys());
   }, [showSettings]);
 
+  // Wake Lock to prevent sleep during processing
+  useEffect(() => {
+    let wakeLock: WakeLockSentinel | null = null;
+
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator && state.isProcessing) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          console.log('[WakeLock] Acquired - screen will stay on');
+        } catch (err) {
+          console.log('[WakeLock] Failed to acquire:', err);
+        }
+      }
+    };
+
+    if (state.isProcessing) {
+      requestWakeLock();
+    }
+
+    return () => {
+      if (wakeLock) {
+        wakeLock.release();
+        console.log('[WakeLock] Released');
+      }
+    };
+  }, [state.isProcessing]);
+
   const STEPS = state.workflowMode === "full-ai" ? FULL_AI_STEPS : HYBRID_STEPS;
 
   // Drag & Drop handlers
@@ -1229,117 +1256,128 @@ export default function Home() {
                       <p className="text-sm text-zinc-500 mb-2">
                         クリックで選択、ダブルクリックまたは🔍で拡大表示
                       </p>
-                      <div className="grid grid-cols-3 gap-4 mb-6">
-                        {state.slidePreviews.map((preview, i) => (
-                          <div
-                            key={i}
-                            onClick={() => setSelectedSlide(i + 1)}
-                            onDoubleClick={() => setZoomedSlide(i)}
-                            className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all relative group ${selectedSlide === i + 1
-                              ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
-                              : 'border-zinc-700 hover:border-zinc-500'
-                              }`}
-                          >
-                            <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
-                            <div className="bg-zinc-800 text-center text-xs py-1">
-                              スライド {i + 1}
+                      <div className="space-y-4 mb-6">
+                        {/* スライドを3つずつの行に分割 */}
+                        {Array.from({ length: Math.ceil(state.slidePreviews.length / 3) }, (_, rowIndex) => {
+                          const startIdx = rowIndex * 3;
+                          const rowSlides = state.slidePreviews.slice(startIdx, startIdx + 3);
+                          const rowContainsSelected = selectedSlide && selectedSlide >= startIdx + 1 && selectedSlide <= startIdx + 3;
+
+                          return (
+                            <div key={rowIndex}>
+                              {/* スライド行 */}
+                              <div className="grid grid-cols-3 gap-4">
+                                {rowSlides.map((preview, i) => {
+                                  const slideNum = startIdx + i + 1;
+                                  return (
+                                    <div
+                                      key={slideNum}
+                                      onClick={() => setSelectedSlide(slideNum)}
+                                      onDoubleClick={() => setZoomedSlide(startIdx + i)}
+                                      className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all relative group ${selectedSlide === slideNum
+                                        ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                                        : 'border-zinc-700 hover:border-zinc-500'
+                                        }`}
+                                    >
+                                      <img src={preview} alt={`Slide ${slideNum}`} className="w-full h-auto" />
+                                      <div className="bg-zinc-800 text-center text-xs py-1">
+                                        スライド {slideNum}
+                                      </div>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); setZoomedSlide(startIdx + i); }}
+                                        className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-sm px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                      >
+                                        🔍
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* この行に選択中のスライドがある場合、フィードバック入力を表示 */}
+                              {rowContainsSelected && selectedSlide && (
+                                <div className="mt-4 bg-zinc-800/50 rounded-xl p-4 border border-amber-500/50 animate-fadeIn">
+                                  <h4 className="font-semibold mb-2 text-amber-400">
+                                    📝 スライド {selectedSlide} を編集
+                                  </h4>
+                                  <textarea
+                                    value={slideFeedback}
+                                    onChange={(e) => setSlideFeedback(e.target.value)}
+                                    placeholder="例：タイトルを「価値の創造」に変更。背景をもっと暗く。ポイントを3つに減らして..."
+                                    className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
+                                    autoFocus
+                                  />
+
+                                  {/* 画像アップロード（コンパクト版） */}
+                                  <div className="flex items-center gap-3 mb-3">
+                                    <label className="cursor-pointer flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-300">
+                                      {slideImage.preview ? (
+                                        <>
+                                          <img src={slideImage.preview} alt="Preview" className="w-10 h-8 object-cover rounded" />
+                                          <span className="text-cyan-400">{slideImage.file?.name}</span>
+                                          <button
+                                            onClick={(e) => { e.preventDefault(); setSlideImage({ file: null, preview: null }); }}
+                                            className="text-red-400 hover:text-red-300"
+                                          >
+                                            ✕
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <span>📎 画像を追加</span>
+                                      )}
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                            const preview = URL.createObjectURL(file);
+                                            setSlideImage({ file, preview });
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={handleSlideFeedback}
+                                      disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
+                                      className="btn-primary flex-1 text-sm py-2"
+                                    >
+                                      {isRegenerating ? "再生成中..." : "🔄 適用"}
+                                    </button>
+                                    {slideCanUndo[selectedSlide] && (
+                                      <button
+                                        onClick={handleSlideUndo}
+                                        disabled={isUndoing || isRegenerating}
+                                        className="btn-secondary bg-amber-600/20 border-amber-500/30 hover:bg-amber-600/30 text-sm py-2"
+                                      >
+                                        {isUndoing ? "戻し中..." : "↩️ 戻す"}
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => {
+                                        setSelectedSlide(null);
+                                        setSlideFeedback("");
+                                        setSlideImage({ file: null, preview: null });
+                                      }}
+                                      className="btn-secondary text-sm py-2"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            {/* Zoom button */}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setZoomedSlide(i); }}
-                              className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-sm px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              🔍
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </>
                   )}
 
-                  {/* フィードバック入力 */}
-                  {selectedSlide && (
-                    <div className="bg-zinc-800/50 rounded-xl p-4 mb-6 border border-zinc-700">
-                      <h4 className="font-semibold mb-2 text-amber-400">
-                        📝 スライド {selectedSlide} を編集
-                      </h4>
-                      <textarea
-                        value={slideFeedback}
-                        onChange={(e) => setSlideFeedback(e.target.value)}
-                        placeholder="例：タイトルを「価値の創造」に変更。背景をもっと暗く。ポイントを3つに減らして..."
-                        className="w-full h-24 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
-                      />
 
-                      {/* 画像アップロード */}
-                      <div className="mb-3">
-                        <label className="block text-sm text-zinc-400 mb-2">🖼️ 画像を追加（任意）</label>
-                        <div className="flex items-center gap-3">
-                          <label className="flex-1 cursor-pointer">
-                            <div className={`border-2 border-dashed rounded-lg p-3 text-center transition-all ${slideImage.preview ? 'border-cyan-500 bg-cyan-500/10' : 'border-zinc-600 hover:border-zinc-500'
-                              }`}>
-                              {slideImage.preview ? (
-                                <div className="flex items-center gap-3">
-                                  <img src={slideImage.preview} alt="Preview" className="w-16 h-12 object-cover rounded" />
-                                  <span className="text-sm text-cyan-400">{slideImage.file?.name}</span>
-                                </div>
-                              ) : (
-                                <span className="text-sm text-zinc-500">📎 クリックして画像を選択</span>
-                              )}
-                            </div>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const preview = URL.createObjectURL(file);
-                                  setSlideImage({ file, preview });
-                                }
-                              }}
-                            />
-                          </label>
-                          {slideImage.preview && (
-                            <button
-                              onClick={() => setSlideImage({ file: null, preview: null })}
-                              className="text-red-400 hover:text-red-300 text-sm"
-                            >
-                              ✕ 削除
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex gap-3">
-                        <button
-                          onClick={handleSlideFeedback}
-                          disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
-                          className="btn-primary flex-1"
-                        >
-                          {isRegenerating ? "再生成中..." : slideImage.file ? "🖼️ 画像を追加して再生成" : "🔄 フィードバックを適用"}
-                        </button>
-                        {selectedSlide && slideCanUndo[selectedSlide] && (
-                          <button
-                            onClick={handleSlideUndo}
-                            disabled={isUndoing || isRegenerating}
-                            className="btn-secondary bg-amber-600/20 border-amber-500/30 hover:bg-amber-600/30"
-                          >
-                            {isUndoing ? "戻し中..." : "↩️ 元に戻す"}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            setSelectedSlide(null);
-                            setSlideFeedback("");
-                            setSlideImage({ file: null, preview: null });
-                          }}
-                          className="btn-secondary"
-                        >
-                          キャンセル
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                   <div className="flex gap-4">
                     <button
@@ -1861,26 +1899,47 @@ export default function Home() {
             </div>
           )}
 
-          {/* Processing Indicator */}
+          {/* Processing Indicator with Enhanced Progress */}
           {state.isProcessing && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-zinc-900 rounded-2xl p-8 text-center min-w-[300px]">
+              <div className="bg-zinc-900 rounded-2xl p-8 text-center min-w-[350px]">
                 <div className="text-5xl mb-4 animate-bounce">⚙️</div>
 
                 {/* Progress bar */}
                 {progress.percent > 0 && (
                   <div className="mb-4">
-                    <div className="bg-zinc-700 rounded-full h-3 overflow-hidden">
+                    <div className="bg-zinc-700 rounded-full h-4 overflow-hidden">
                       <div
                         className="bg-gradient-to-r from-amber-500 to-orange-500 h-full transition-all duration-500"
                         style={{ width: `${progress.percent}%` }}
                       />
                     </div>
-                    <p className="text-2xl font-bold mt-2 text-amber-400">{progress.percent}%</p>
+
+                    {/* Detailed Progress Info */}
+                    <div className="flex justify-between items-center mt-3">
+                      <p className="text-3xl font-bold text-amber-400">{Math.round(progress.percent)}%</p>
+                      {batchState.totalSlides > 0 && (
+                        <p className="text-sm text-zinc-400">
+                          {batchState.slidesCompleted || Math.round(progress.percent / 100 * batchState.totalSlides)} / {batchState.totalSlides} 枚
+                        </p>
+                      )}
+                    </div>
+
+                    {/* ETA */}
+                    {batchState.totalSlides > 0 && progress.percent > 5 && (
+                      <p className="text-xs text-zinc-500 mt-2">
+                        残り約 {Math.round((100 - progress.percent) / progress.percent * (batchState.totalSlides * 8) / 60)} 分
+                      </p>
+                    )}
                   </div>
                 )}
 
                 <p className="text-lg text-zinc-300">{progress.message || "処理中..."}</p>
+
+                {/* Keep-awake notice */}
+                <p className="text-xs text-zinc-600 mt-4">
+                  💡 生成中はこのタブを開いたままにしてください
+                </p>
               </div>
             </div>
           )}
