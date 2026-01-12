@@ -896,7 +896,8 @@ async def generate_slide_html(
     
     # User images instruction
     user_images_instruction = ""
-    user_images_list = strategy.get("user_images", [])
+    user_images_list = strategy.get("_user_images_data", [])  # Use internal key (not serialized to AI)
+    user_images_count = strategy.get("user_images_count", 0)
     if user_images_list and slide_number <= len(user_images_list):
         # Tell AI to add placeholder - we'll inject real image after generation
         user_images_instruction = """
@@ -964,7 +965,7 @@ async def generate_slide_html(
             return generate_fallback_html(slide, slide_number, total_slides, strategy)
         
         # Replace user image placeholder with actual base64 if present
-        user_images_list = strategy.get("user_images", [])
+        user_images_list = strategy.get("_user_images_data", [])
         if user_images_list and slide_number <= len(user_images_list):
             img_index = (slide_number - 1) % len(user_images_list)
             img = user_images_list[img_index]
@@ -1149,9 +1150,13 @@ async def generate_all_custom_slides(
         strategy = cached_data.get("strategy", {})
     
     # Convert user images to base64 for embedding in slides
+    # Store separately from strategy to avoid token overflow in prompts
     user_images_base64 = []
+    user_images_file = os.path.join(slides_dir, "user_images.pkl")
+    
     if user_images and start_slide == 1:
         import base64
+        import pickle
         for img_path in user_images:
             try:
                 with open(img_path, "rb") as f:
@@ -1168,15 +1173,25 @@ async def generate_all_custom_slides(
                 print(f"[User Images] Failed to load {img_path}: {e}")
         
         if user_images_base64:
-            strategy["user_images"] = user_images_base64
-            print(f"[Design Architect] Added {len(user_images_base64)} user images to strategy")
-            # Update cached strategy
-            if cached_data:
-                cached_data["strategy"] = strategy
-                save_slide_data(job_id, slides, strategy)
-    elif cached_data and "strategy" in cached_data:
-        # Use cached user images for subsequent batches
-        strategy = cached_data["strategy"]
+            # Save to separate file (not in strategy to avoid token overflow)
+            with open(user_images_file, "wb") as f:
+                pickle.dump(user_images_base64, f)
+            # Only store count in strategy (not the data)
+            strategy["user_images_count"] = len(user_images_base64)
+            print(f"[Design Architect] Saved {len(user_images_base64)} user images to {user_images_file}")
+    elif os.path.exists(user_images_file):
+        # Load cached user images for subsequent batches/regeneration
+        import pickle
+        try:
+            with open(user_images_file, "rb") as f:
+                user_images_base64 = pickle.load(f)
+            print(f"[Design Architect] Loaded {len(user_images_base64)} cached user images")
+        except Exception as e:
+            print(f"[User Images] Failed to load cached images: {e}")
+    
+    # Make user_images available for generate_slide_html via strategy reference
+    if user_images_base64:
+        strategy["_user_images_data"] = user_images_base64  # Underscore prefix = internal, not sent to AI
     
     if progress_callback:
         progress_callback(1, end_slide - start_slide + 2, f"スライド生成中 ({start_slide-1}/{total_slides})")
