@@ -889,6 +889,27 @@ async def generate_slide_html(
 文字が多いと失格です。ビジュアルで伝えてください。
 """
     
+    # User images instruction
+    user_images_instruction = ""
+    user_images_list = strategy.get("user_images", [])
+    if user_images_list and slide_number <= len(user_images_list):
+        # Assign one image per slide (round-robin if more slides than images)
+        img_index = (slide_number - 1) % len(user_images_list)
+        img = user_images_list[img_index]
+        user_images_instruction = f"""
+# 🖼️ ユーザー画像の配置（重要）
+
+ユーザーがアップロードした画像を**必ず**このスライドに配置してください。
+
+```html
+<img src="{img['base64']}" alt="User Image" style="max-width: 40%; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+```
+
+- 画像はスライドのデザインに自然に溶け込むよう配置
+- 画像サイズは40%以内に調整
+- 適切な位置（右寄せ、中央など）に配置
+"""
+    
     prompt = SLIDE_DESIGN_PROMPT.format(
         concept_name=style.get("concept_name", "Modern Professional"),
         concept_description=style.get("concept_description", ""),
@@ -906,7 +927,7 @@ async def generate_slide_html(
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
-        layout_instruction=layout_instruction + simple_mode_instruction,
+        layout_instruction=layout_instruction + simple_mode_instruction + user_images_instruction,
         image_section=image_section,
         personality_section=personality_section,
         width=VIDEO_WIDTH,
@@ -1114,6 +1135,36 @@ async def generate_all_custom_slides(
         # Subsequent batches: use cached strategy
         print(f"[Design Architect] Using cached strategy for batch {start_slide}-{end_slide}")
         strategy = cached_data.get("strategy", {})
+    
+    # Convert user images to base64 for embedding in slides
+    user_images_base64 = []
+    if user_images and start_slide == 1:
+        import base64
+        for img_path in user_images:
+            try:
+                with open(img_path, "rb") as f:
+                    img_data = f.read()
+                ext = os.path.splitext(img_path)[1].lower().replace(".", "")
+                if ext == "jpg":
+                    ext = "jpeg"
+                b64 = base64.b64encode(img_data).decode("utf-8")
+                user_images_base64.append({
+                    "base64": f"data:image/{ext};base64,{b64}",
+                    "filename": os.path.basename(img_path)
+                })
+            except Exception as e:
+                print(f"[User Images] Failed to load {img_path}: {e}")
+        
+        if user_images_base64:
+            strategy["user_images"] = user_images_base64
+            print(f"[Design Architect] Added {len(user_images_base64)} user images to strategy")
+            # Update cached strategy
+            if cached_data:
+                cached_data["strategy"] = strategy
+                save_slide_data(job_id, slides, strategy)
+    elif cached_data and "strategy" in cached_data:
+        # Use cached user images for subsequent batches
+        strategy = cached_data["strategy"]
     
     if progress_callback:
         progress_callback(1, end_slide - start_slide + 2, f"スライド生成中 ({start_slide-1}/{total_slides})")
