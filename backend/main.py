@@ -173,10 +173,51 @@ def get_api_keys(job_id: str) -> Dict[str, str]:
     """Get API keys for a job"""
     return api_keys.get(job_id, {"openai": "", "gemini": ""})
 
-
 @app.get("/")
 async def root():
     return {"service": "VoiceSlide AI v3", "workflow": "10-step hybrid"}
+
+
+# ========== Slide Images Upload ==========
+
+@app.post("/api/upload-slide-images/{job_id}")
+async def upload_slide_images(
+    job_id: str,
+    files: List[UploadFile] = File(...)
+):
+    """Upload images to be used in slide generation"""
+    from config import OUTPUT_DIR
+    
+    images_dir = os.path.join(OUTPUT_DIR, f"{job_id}_user_images")
+    os.makedirs(images_dir, exist_ok=True)
+    
+    saved_paths = []
+    allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+    
+    for i, file in enumerate(files):
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in allowed_ext:
+            continue
+        
+        filename = f"user_image_{i+1}{ext}"
+        filepath = os.path.join(images_dir, filename)
+        
+        with open(filepath, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        
+        saved_paths.append(filepath)
+    
+    # Store in pipeline
+    pipeline = get_or_create_pipeline(job_id)
+    pipeline.user_images = saved_paths
+    
+    print(f"[Upload Images] Saved {len(saved_paths)} images for job {job_id}")
+    
+    return {
+        "success": True,
+        "image_count": len(saved_paths),
+        "paths": [f"/outputs/{job_id}_user_images/{os.path.basename(p)}" for p in saved_paths]
+    }
 
 
 # ========== STEP 1: Upload Audio ==========
@@ -565,6 +606,7 @@ async def generate_slides_batch_endpoint(
                 outline=outline,
                 color_theme=x_color_theme,
                 font_style=x_font_style,
+                user_images=getattr(pipeline, 'user_images', None),
                 design_preference=request.design_preference,
                 text_density=request.text_density,
                 progress_callback=update_progress,

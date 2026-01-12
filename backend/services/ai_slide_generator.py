@@ -1067,6 +1067,7 @@ async def generate_all_custom_slides(
     outline: Optional[Dict[str, Any]] = None,
     color_theme: Optional[str] = None,  # User-selected color theme
     font_style: Optional[str] = None,   # User-selected font style: gothic, mincho, pop, handwritten
+    user_images: Optional[List[str]] = None,  # User-uploaded image paths
     design_preference: Optional[str] = None,  # User design requirements (e.g., "white background")
     text_density: str = "standard",  # "simple" (title+headline) or "standard" (full)
     progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)

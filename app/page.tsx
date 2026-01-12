@@ -373,6 +373,28 @@ export default function Home() {
     setProgress({ percent: 0, message: startSlide === 1 ? "デザイン戦略を生成中..." : `スライド ${startSlide} から生成中...` });
 
     try {
+      // Upload user images first (if any and first batch)
+      if (startSlide === 1 && userImages.length > 0) {
+        setProgress({ percent: 0, message: "画像をアップロード中..." });
+
+        const formData = new FormData();
+        userImages.forEach((img) => {
+          formData.append("files", img.file);
+        });
+
+        const uploadRes = await fetch(`${API_URL}/api/upload-slide-images/${state.jobId}`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          console.warn("[Images] Upload failed, continuing without images");
+        } else {
+          const uploadData = await uploadRes.json();
+          console.log(`[Images] Uploaded ${uploadData.image_count} images`);
+        }
+      }
+
       const headers: HeadersInit = {
         "Content-Type": "application/json",
         ...getAPIHeaders()
