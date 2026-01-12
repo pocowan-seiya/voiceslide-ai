@@ -100,6 +100,11 @@ export default function Home() {
   // Color theme selection
   const [selectedColorTheme, setSelectedColorTheme] = useState<string>(""); // empty = AI chooses
 
+  // Font style selection
+  const [selectedFontStyle, setSelectedFontStyle] = useState<string>(""); // empty = AI chooses
+
+  // User images for slides
+  const [userImages, setUserImages] = useState<{ file: File; preview: string }[]>([]);
   // Progress tracking
   const [progress, setProgress] = useState<{ percent: number, message: string }>({ percent: 0, message: "" });
 
@@ -374,6 +379,9 @@ export default function Home() {
       };
       if (selectedColorTheme) {
         (headers as Record<string, string>)["x-color-theme"] = selectedColorTheme;
+      }
+      if (selectedFontStyle) {
+        (headers as Record<string, string>)["x-font-style"] = selectedFontStyle;
       }
 
       // Use batch endpoint (returns immediately, runs in background)
@@ -1450,6 +1458,76 @@ export default function Home() {
                   <option value="ocean">🌊 Ocean Blue - 海のような開放感</option>
                   <option value="mono">⚫ Monochrome - シンプルでクリーン</option>
                 </select>
+              </div>
+
+              {/* Font Style Selector */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-zinc-400 mb-2">
+                  ✒️ フォントスタイル
+                </label>
+                <select
+                  value={selectedFontStyle}
+                  onChange={(e) => setSelectedFontStyle(e.target.value)}
+                  className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
+                >
+                  <option value="">AIにおまかせ（コンテンツに最適なフォント）</option>
+                  <option value="gothic">🔲 ゴシック体 - モダンでクリーン</option>
+                  <option value="mincho">📜 明朝体 - 上品でエレガント</option>
+                  <option value="pop">🎈 ポップ体 - カジュアルで親しみやすい</option>
+                  <option value="handwritten">✍️ 手書き風 - 温かみと個性</option>
+                </select>
+              </div>
+
+              {/* User Image Upload for Slides */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-zinc-400 mb-2">
+                  🖼️ スライドに使う画像（任意・複数可）
+                </label>
+                <div className="w-full max-w-md mx-auto">
+                  <label className="block cursor-pointer">
+                    <div className="border-2 border-dashed border-zinc-600 hover:border-zinc-500 rounded-lg p-4 text-center transition-all">
+                      <span className="text-sm text-zinc-500">📎 クリックして画像を選択（複数OK）</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          const newImages = files.map(file => ({
+                            file,
+                            preview: URL.createObjectURL(file)
+                          }));
+                          setUserImages(prev => [...prev, ...newImages]);
+                        }}
+                      />
+                    </div>
+                  </label>
+
+                  {/* Preview uploaded images */}
+                  {userImages.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {userImages.map((img, idx) => (
+                        <div key={idx} className="relative group">
+                          <img
+                            src={img.preview}
+                            alt={`Upload ${idx + 1}`}
+                            className="w-16 h-16 object-cover rounded border border-zinc-600"
+                          />
+                          <button
+                            onClick={() => setUserImages(prev => prev.filter((_, i) => i !== idx))}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-zinc-500 mt-2">
+                    アップロードした画像をスライドのどこかに自動配置します
+                  </p>
+                </div>
               </div>
 
               {/* Design Preference Input */}

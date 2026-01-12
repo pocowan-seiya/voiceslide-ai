@@ -425,7 +425,8 @@ async def export_outline(job_id: str, format: str = "json"):
 async def generate_slides_endpoint(
     job_id: str,
     x_gemini_key: Optional[str] = Header(None),
-    x_color_theme: Optional[str] = Header(None)  # Color theme: cosmic, warm, elegant, nature, ocean, mono
+    x_color_theme: Optional[str] = Header(None),  # Color theme: cosmic, warm, elegant, nature, ocean, mono
+    x_font_style: Optional[str] = Header(None)    # Font style: gothic, mincho, pop, handwritten
 ):
     """Step 7 (Full AI Mode): AI generates unique custom slides from outline"""
     pipeline = get_or_create_pipeline(job_id)
@@ -470,6 +471,7 @@ async def generate_slides_endpoint(
             gemini_key=x_gemini_key,
             outline=outline,
             color_theme=x_color_theme,
+            font_style=x_font_style,
             progress_callback=update_progress
         )
         
@@ -511,7 +513,8 @@ async def generate_slides_batch_endpoint(
     request: BatchGenerateRequest,
     background_tasks: BackgroundTasks,
     x_gemini_key: Optional[str] = Header(None),
-    x_color_theme: Optional[str] = Header(None)
+    x_color_theme: Optional[str] = Header(None),
+    x_font_style: Optional[str] = Header(None)
 ):
     """Batch slide generation: runs in background to avoid timeout"""
     pipeline = get_or_create_pipeline(job_id)
@@ -561,6 +564,7 @@ async def generate_slides_batch_endpoint(
                 gemini_key=x_gemini_key,
                 outline=outline,
                 color_theme=x_color_theme,
+                font_style=x_font_style,
                 design_preference=request.design_preference,
                 text_density=request.text_density,
                 progress_callback=update_progress,

@@ -77,6 +77,55 @@ COLOR_THEMES = {
     }
 }
 
+# Font Style Presets for user selection
+FONT_STYLES = {
+    "gothic": {
+        "name": "ゴシック体",
+        "description": "モダンでクリーン",
+        "font_family": "'Noto Sans JP', 'Hiragino Sans', sans-serif",
+        "google_font": "Noto+Sans+JP:wght@400;700;900",
+        "css_instruction": """
+/* ゴシック体: モダンでクリーン */
+body { font-family: 'Noto Sans JP', 'Hiragino Sans', sans-serif; }
+h1, h2, h3 { font-weight: 900; letter-spacing: -0.02em; }
+"""
+    },
+    "mincho": {
+        "name": "明朝体",
+        "description": "上品でエレガント",
+        "font_family": "'Noto Serif JP', 'Hiragino Mincho', serif",
+        "google_font": "Noto+Serif+JP:wght@400;700;900",
+        "css_instruction": """
+/* 明朝体: 上品でエレガント */
+body { font-family: 'Noto Serif JP', 'Hiragino Mincho', serif; }
+h1, h2, h3 { font-weight: 700; letter-spacing: 0.05em; }
+p, li { line-height: 1.8; }
+"""
+    },
+    "pop": {
+        "name": "ポップ体",
+        "description": "カジュアルで親しみやすい",
+        "font_family": "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif",
+        "google_font": "M+PLUS+Rounded+1c:wght@400;700;800",
+        "css_instruction": """
+/* ポップ体: カジュアルで親しみやすい */
+body { font-family: 'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif; }
+h1, h2, h3 { font-weight: 800; letter-spacing: 0.02em; }
+"""
+    },
+    "handwritten": {
+        "name": "手書き風",
+        "description": "温かみと個性",
+        "font_family": "'Zen Maru Gothic', 'Noto Sans JP', sans-serif",
+        "google_font": "Zen+Maru+Gothic:wght@400;700;900",
+        "css_instruction": """
+/* 手書き風: 温かみと個性 */
+body { font-family: 'Zen Maru Gothic', 'Noto Sans JP', sans-serif; }
+h1, h2, h3 { font-weight: 700; }
+"""
+    }
+}
+
 # =============================================================================
 # Layout Variation System - 8 Different Layout Types
 # =============================================================================
@@ -424,8 +473,9 @@ CSSで表現する**質感と雰囲気**：
 # Output
 完全なHTML（<!DOCTYPE html>から</html>まで）を出力してください。
 CSSはすべて<style>タグ内に記述。
-外部リソースはGoogle Fonts（Noto Sans JP）のみ。
+外部リソースはGoogle Fontsのみ使用可能（{font_import}）。
 説明は不要です。HTMLのみ。
+{font_instruction}
 
 ## 絶対禁止事項（厳守）
 以下は**絶対に**スライドに表示しないでください：
@@ -860,7 +910,9 @@ async def generate_slide_html(
         image_section=image_section,
         personality_section=personality_section,
         width=VIDEO_WIDTH,
-        height=VIDEO_HEIGHT
+        height=VIDEO_HEIGHT,
+        font_import=style.get("font_import", "Noto Sans JP:wght@400;700;900"),
+        font_instruction=style.get("font_instruction", "")
     )
     
     try:
@@ -1014,6 +1066,7 @@ async def generate_all_custom_slides(
     gemini_key: Optional[str] = None,
     outline: Optional[Dict[str, Any]] = None,
     color_theme: Optional[str] = None,  # User-selected color theme
+    font_style: Optional[str] = None,   # User-selected font style: gothic, mincho, pop, handwritten
     design_preference: Optional[str] = None,  # User design requirements (e.g., "white background")
     text_density: str = "standard",  # "simple" (title+headline) or "standard" (full)
     progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)
