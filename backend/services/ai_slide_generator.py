@@ -495,11 +495,21 @@ CSSはすべて<style>タグ内に記述。
 **日本語の改行問題を防ぐため、以下のCSSを必ず適用してください：**
 
 ```css
-/* 必須: 単語の途中で改行しない */
-h1, h2, h3, .title, .headline {{
+/* 必須: タイトルは1行で収める */
+h1, h2, .title, .headline {{
   word-break: keep-all;      /* 日本語の単語を分割しない */
-  overflow-wrap: break-word; /* 長すぎる場合のみ改行 */
-  line-height: 1.3;          /* 適切な行間 */
+  white-space: nowrap;       /* 必ず1行で表示 */
+  overflow: hidden;          /* はみ出しを隠す */
+  text-overflow: ellipsis;   /* 長すぎる場合は...で省略 */
+  max-width: 90%;            /* 幅制限 */
+  font-size: clamp(1.5rem, 5vw, 3.5rem);  /* サイズ自動調整 */
+}}
+
+/* サブタイトル・本文は折り返し可 */
+h3, p, .subtitle, .subheadline {{
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-height: 1.4;
 }}
 
 /* 必須: テキストが切れないようにパディング */
@@ -512,11 +522,6 @@ body {{
 .slide-content {{
   max-height: 90%;
   overflow: visible;         /* 切れないように */
-}}
-
-/* タイトルのフォントサイズ上限 */
-h1 {{
-  font-size: clamp(2rem, 6vw, 4.5rem);  /* 最小2rem、最大4.5rem */
 }}
 ```
 
@@ -893,21 +898,20 @@ async def generate_slide_html(
     user_images_instruction = ""
     user_images_list = strategy.get("user_images", [])
     if user_images_list and slide_number <= len(user_images_list):
-        # Assign one image per slide (round-robin if more slides than images)
-        img_index = (slide_number - 1) % len(user_images_list)
-        img = user_images_list[img_index]
-        user_images_instruction = f"""
+        # Tell AI to add placeholder - we'll inject real image after generation
+        user_images_instruction = """
 # 🖼️ ユーザー画像の配置（重要）
 
 ユーザーがアップロードした画像を**必ず**このスライドに配置してください。
+以下のプレースホルダーをHTMLに追加してください：
 
 ```html
-<img src="{img['base64']}" alt="User Image" style="max-width: 40%; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+<img src="USER_IMAGE_PLACEHOLDER" alt="User Image" class="user-image" style="max-width: 40%; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); position: absolute; right: 5%; top: 50%; transform: translateY(-50%);">
 ```
 
-- 画像はスライドのデザインに自然に溶け込むよう配置
-- 画像サイズは40%以内に調整
-- 適切な位置（右寄せ、中央など）に配置
+- 画像はスライドの右側に配置
+- 画像サイズは40%以内
+- position: absolute で固定配置
 """
     
     prompt = SLIDE_DESIGN_PROMPT.format(
@@ -958,6 +962,14 @@ async def generate_slide_html(
         if not html.startswith("<!DOCTYPE") and not html.startswith("<html"):
             print(f"[Design Architect] Invalid HTML for slide {slide_number}, using fallback")
             return generate_fallback_html(slide, slide_number, total_slides, strategy)
+        
+        # Replace user image placeholder with actual base64 if present
+        user_images_list = strategy.get("user_images", [])
+        if user_images_list and slide_number <= len(user_images_list):
+            img_index = (slide_number - 1) % len(user_images_list)
+            img = user_images_list[img_index]
+            html = html.replace("USER_IMAGE_PLACEHOLDER", img["base64"])
+            print(f"[Design Architect] Injected user image into slide {slide_number}")
         
         print(f"[Design Architect] Generated slide {slide_number}: {slide_type}")
         return html
