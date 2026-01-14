@@ -1409,7 +1409,7 @@ export default function Home() {
 
 
 
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 flex-wrap">
                     <button
                       onClick={handleGenerateVideo}
                       disabled={state.isProcessing}
@@ -1423,6 +1423,16 @@ export default function Home() {
                       className="btn-secondary"
                     >
                       🔄 スライド再生成
+                    </button>
+                    <button
+                      onClick={() => {
+                        const downloadUrl = `${API_URL}/api/download-slides/${state.jobId}`;
+                        window.open(downloadUrl, '_blank');
+                      }}
+                      className="btn-secondary"
+                      title="スライド画像をZIPでダウンロード"
+                    >
+                      📥 画像一括DL
                     </button>
                   </div>
                 </div>

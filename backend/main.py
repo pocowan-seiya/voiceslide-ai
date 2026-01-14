@@ -175,7 +175,46 @@ def get_api_keys(job_id: str) -> Dict[str, str]:
 
 @app.get("/")
 async def root():
-    return {"service": "VoiceSlide AI v3", "workflow": "10-step hybrid"}
+    return {"service": "VoiSlide Movie v3", "workflow": "10-step hybrid"}
+
+
+# ========== Slide Images ZIP Download ==========
+
+@app.get("/api/download-slides/{job_id}")
+async def download_slides_zip(job_id: str):
+    """Download all slide images as ZIP file"""
+    import zipfile
+    import io
+    from fastapi.responses import StreamingResponse
+    from config import OUTPUT_DIR
+    
+    slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+    
+    if not os.path.exists(slides_dir):
+        raise HTTPException(404, "スライドが見つかりません")
+    
+    # Get all PNG files in slides directory
+    slide_files = sorted([f for f in os.listdir(slides_dir) if f.endswith('.png')])
+    
+    if not slide_files:
+        raise HTTPException(404, "スライド画像がありません")
+    
+    # Create ZIP in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for filename in slide_files:
+            filepath = os.path.join(slides_dir, filename)
+            zip_file.write(filepath, filename)
+    
+    zip_buffer.seek(0)
+    
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=slides_{job_id[:8]}.zip"
+        }
+    )
 
 
 # ========== Slide Images Upload ==========
