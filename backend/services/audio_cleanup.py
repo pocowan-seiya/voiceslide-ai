@@ -28,6 +28,7 @@ async def cleanup_audio(
     segments: List[Dict[str, Any]],
     output_path: str = None,
     silence_threshold: float = 0.5,  # User-adjustable threshold in seconds
+    silence_threshold_db: int = -40, # User-adjustable threshold in dB
     preserve_natural_pauses: bool = True  # Keep pauses at sentence boundaries
 ) -> Dict[str, Any]:
     """
@@ -38,6 +39,7 @@ async def cleanup_audio(
         segments: Whisperからのセグメントデータ（タイムスタンプ付き）
         output_path: 出力ファイルパス（Noneの場合自動生成）
         silence_threshold: 無音と判定する最小時間（秒）
+        silence_threshold_db: 無音と判定するdB閾値
         preserve_natural_pauses: 文末の自然な間を保持するか
     
     Returns:
@@ -48,7 +50,7 @@ async def cleanup_audio(
         output_path = f"{base}_clean{ext}"
     
     # 1. 無音区間を検出（ユーザー指定の閾値を使用）
-    silences = detect_silences(audio_path, min_duration=silence_threshold)
+    silences = detect_silences(audio_path, min_duration=silence_threshold, threshold_db=silence_threshold_db)
     
     # 2. 自然な間を保持するフィルタリング
     if preserve_natural_pauses and segments:
@@ -134,17 +136,18 @@ def filter_meaningful_silences(
     return filtered
 
 
-def detect_silences(audio_path: str, min_duration: float = 0.5) -> List[Tuple[float, float]]:
+def detect_silences(audio_path: str, min_duration: float = 0.5, threshold_db: int = -40) -> List[Tuple[float, float]]:
     """
     FFmpegのsilencedetectフィルタを使用して無音区間を検出
     
     Args:
         audio_path: 音声ファイルパス
         min_duration: 無音と判定する最小時間（秒）
+        threshold_db: 無音と判定するdB閾値
     """
     cmd = [
         "ffmpeg", "-i", audio_path, "-af",
-        f"silencedetect=noise={SILENCE_THRESHOLD_DB}dB:d={min_duration}",
+        f"silencedetect=noise={threshold_db}dB:d={min_duration}",
         "-f", "null", "-"
     ]
     

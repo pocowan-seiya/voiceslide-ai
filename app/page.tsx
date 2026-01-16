@@ -120,8 +120,9 @@ export default function Home() {
   // Audio cleanup settings
   const [audioSettings, setAudioSettings] = useState<{
     cleanupEnabled: boolean;
+    cleanupMode: "strict" | "natural";
     silenceThreshold: number; // seconds (0.3 - 1.0)
-  }>({ cleanupEnabled: true, silenceThreshold: 0.5 });
+  }>({ cleanupEnabled: true, cleanupMode: "natural", silenceThreshold: 0.5 });
 
   // Slide count settings
   const [slideSettings, setSlideSettings] = useState<{
@@ -236,6 +237,7 @@ export default function Home() {
       // Build URL with audio cleanup settings
       const params = new URLSearchParams({
         cleanup_audio: audioSettings.cleanupEnabled.toString(),
+        cleanup_mode: audioSettings.cleanupMode,
         silence_threshold: audioSettings.silenceThreshold.toString(),
       });
 
@@ -1048,23 +1050,34 @@ export default function Home() {
                 </div>
 
                 {audioSettings.cleanupEnabled && (
-                  <div className="mt-3">
-                    <div className="flex justify-between text-xs text-zinc-400 mb-1">
-                      <span>無音判定: {audioSettings.silenceThreshold.toFixed(1)}秒以上</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.3"
-                      max="1.0"
-                      step="0.1"
-                      value={audioSettings.silenceThreshold}
-                      onChange={(e) => setAudioSettings(prev => ({ ...prev, silenceThreshold: parseFloat(e.target.value) }))}
-                      className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                    />
-                    <div className="flex justify-between text-xs text-zinc-500 mt-1">
-                      <span>敏感（0.3秒）</span>
-                      <span>鈍感（1.0秒）</span>
-                    </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setAudioSettings(prev => ({ ...prev, cleanupMode: "natural" }))}
+                      className={`p-3 rounded-lg border text-left transition-all relative overflow-hidden ${audioSettings.cleanupMode === "natural"
+                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-100"
+                          : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                        }`}
+                    >
+                      <div className="text-sm font-bold mb-1">😌 ナチュラル</div>
+                      <div className="text-[10px] opacity-70 leading-tight">自然な間を残してカット</div>
+                      {audioSettings.cleanupMode === "natural" && (
+                        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]" />
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => setAudioSettings(prev => ({ ...prev, cleanupMode: "strict" }))}
+                      className={`p-3 rounded-lg border text-left transition-all relative overflow-hidden ${audioSettings.cleanupMode === "strict"
+                          ? "border-cyan-500 bg-cyan-500/10 text-cyan-100"
+                          : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                        }`}
+                    >
+                      <div className="text-sm font-bold mb-1">⚡️ クッキリ</div>
+                      <div className="text-[10px] opacity-70 leading-tight">間を詰めてテンポアップ</div>
+                      {audioSettings.cleanupMode === "strict" && (
+                        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_10px_#06b6d4]" />
+                      )}
+                    </button>
                   </div>
                 )}
               </div>

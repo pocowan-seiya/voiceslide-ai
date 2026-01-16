@@ -901,18 +901,19 @@ async def generate_slide_html(
     if user_images_list and slide_number <= len(user_images_list):
         # Tell AI to add placeholder - we'll inject real image after generation
         user_images_instruction = """
-# 🖼️ ユーザー画像の配置（重要）
+# 🖼️ ユーザー画像の配置（必須）
 
-ユーザーがアップロードした画像を**必ず**このスライドに配置してください。
-以下のプレースホルダーをHTMLに追加してください：
+ユーザーがアップロードした画像を**必ず**配置してください。
+レイアウトにかかわらず、以下のHTMLタグを**そのまま**挿入してください（これを入れないと画像が表示されません）：
 
 ```html
-<img src="USER_IMAGE_PLACEHOLDER" alt="User Image" class="user-image" style="max-width: 40%; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); position: absolute; right: 5%; top: 50%; transform: translateY(-50%);">
+<div style="position: absolute; right: 5%; top: 50%; transform: translateY(-50%); width: 40%; max-height: 80%; z-index: 50; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+    <img src="USER_IMAGE_PLACEHOLDER" alt="User Image" style="width: 100%; height: auto; object-fit: contain; display: block;">
+</div>
 ```
 
-- 画像はスライドの右側に配置
-- 画像サイズは40%以内
-- position: absolute で固定配置
+- `src="USER_IMAGE_PLACEHOLDER"` を変更しないでください。
+- 画像が他の要素（テキストなど）と被らないように、左側のテキストエリア幅を調整してください（例: `max-width: 50%`）。
 """
     
     prompt = SLIDE_DESIGN_PROMPT.format(
@@ -969,8 +970,15 @@ async def generate_slide_html(
         if user_images_list and slide_number <= len(user_images_list):
             img_index = (slide_number - 1) % len(user_images_list)
             img = user_images_list[img_index]
-            html = html.replace("USER_IMAGE_PLACEHOLDER", img["base64"])
-            print(f"[Design Architect] Injected user image into slide {slide_number}")
+            
+            if "USER_IMAGE_PLACEHOLDER" in html:
+                html = html.replace("USER_IMAGE_PLACEHOLDER", img["base64"])
+                print(f"[Design Architect] Injected user image into slide {slide_number}")
+            elif "user_image_placeholder" in html: # Try lowercase fallback
+                html = html.replace("user_image_placeholder", img["base64"])
+                print(f"[Design Architect] Injected user image into slide {slide_number} (lowercase match)")
+            else:
+                 print(f"[Design Architect] WARNING: User image instruction sent but placeholder NOT found in generated HTML for slide {slide_number}. HTML preview: {html[:100]}...")
         
         print(f"[Design Architect] Generated slide {slide_number}: {slide_type}")
         return html

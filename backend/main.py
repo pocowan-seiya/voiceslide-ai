@@ -296,7 +296,8 @@ async def upload_audio(file: UploadFile = File(...)):
 async def transcribe(
     job_id: str, 
     cleanup_audio: bool = True,
-    silence_threshold: float = 0.5,  # seconds
+    cleanup_mode: str = "natural",  # "strict" or "natural"
+    silence_threshold: float = 0.5,  # legacy param, overridden by mode logic
     x_openai_key: Optional[str] = Header(None),
     x_gemini_key: Optional[str] = Header(None)
 ):
@@ -313,12 +314,20 @@ async def transcribe(
     jobs[job_id]["step"] = 2
     jobs[job_id]["status"] = "processing"
     
+    # Mode configuration
+    mode_config = {
+        "strict": {"threshold_db": -30, "min_duration": 0.3, "natural": False},
+        "natural": {"threshold_db": -40, "min_duration": 0.8, "natural": True}
+    }
+    config = mode_config.get(cleanup_mode, mode_config["natural"])
+    
     # Step 2a: 冒頭と末尾の無音をトリミング
     try:
         from services.transcription import trim_silence_from_audio
         original_audio_path = jobs[job_id].get("audio_path")
         if original_audio_path:
-            trimmed_path = trim_silence_from_audio(original_audio_path)
+            # Use stricter settings for start/end trim regardless of mode
+            trimmed_path = trim_silence_from_audio(original_audio_path, threshold_db=-45, min_silence_duration=0.5)
             if trimmed_path != original_audio_path:
                 jobs[job_id]["audio_path"] = trimmed_path
                 jobs[job_id]["original_audio_path"] = original_audio_path
@@ -338,9 +347,11 @@ async def transcribe(
             audio_path = jobs[job_id].get("audio_path")
             if audio_path:
                 cleanup_result = await do_cleanup(
-                    audio_path,
-                    result["segments"],
-                    silence_threshold=silence_threshold  # Pass user-specified threshold
+                    audio_path=audio_path,
+                    segments=result.get("segments", []),
+                    silence_threshold=config["min_duration"],
+                    silence_threshold_db=config["threshold_db"],
+                    preserve_natural_pauses=config["natural"]
                 )
                 # クリーンアップ後の音声パスを更新
                 if cleanup_result and cleanup_result.get("cleaned_audio_path"):
