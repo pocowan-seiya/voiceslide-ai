@@ -222,7 +222,7 @@ export default function Home() {
     }
   };
 
-  // Step 2: Transcribe
+  // Step 2: Transcribe (async with polling)
   const handleTranscribe = async () => {
     // Check if API keys are set
     if (!hasAPIKeys()) {
@@ -232,29 +232,51 @@ export default function Home() {
     }
 
     updateState({ isProcessing: true, error: null });
+    setProgress({ percent: 10, message: "文字起こしを開始中..." });
 
     try {
-      // Build URL with audio cleanup settings
+      // Start transcription (returns immediately)
       const params = new URLSearchParams({
         cleanup_audio: audioSettings.cleanupEnabled.toString(),
         cleanup_mode: audioSettings.cleanupMode,
         silence_threshold: audioSettings.silenceThreshold.toString(),
       });
 
-      const res = await fetch(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
+      const startRes = await fetch(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
         method: "POST",
         headers: getAPIHeaders(),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.error || "Transcription failed");
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.detail || startData.error || "Start failed");
 
-      updateState({
-        transcript: data.transcript,
-        cleanupInfo: data.cleanup || null,
-        isProcessing: false,
-      });
-      setEditText(data.transcript);
+      // Poll for status
+      let completed = false;
+      while (!completed) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+
+        const statusRes = await fetch(`${API_URL}/api/transcribe-status/${state.jobId}`, {
+          headers: getAPIHeaders(),
+        });
+        const statusData = await statusRes.json();
+
+        if (statusData.status === "completed") {
+          completed = true;
+          setProgress({ percent: 100, message: "完了！" });
+          updateState({
+            transcript: statusData.transcript,
+            cleanupInfo: statusData.cleanup || null,
+            isProcessing: false,
+          });
+          setEditText(statusData.transcript);
+        } else if (statusData.status === "error") {
+          throw new Error(statusData.error || "Transcription failed");
+        } else {
+          // Still processing - update progress message
+          setProgress({ percent: 50, message: statusData.progress || "処理中..." });
+        }
+      }
     } catch (err: any) {
+      setProgress({ percent: 0, message: "" });
       updateState({ error: err.message, isProcessing: false });
     }
   };

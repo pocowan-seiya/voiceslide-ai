@@ -295,102 +295,159 @@ async def upload_audio(file: UploadFile = File(...)):
 @app.post("/api/transcribe/{job_id}")
 async def transcribe(
     job_id: str, 
+    background_tasks: BackgroundTasks,
     cleanup_audio: bool = True,
     cleanup_mode: str = "natural",  # "strict" or "natural"
-    silence_threshold: float = 0.5,  # legacy param, overridden by mode logic
+    silence_threshold: float = 0.5,  # user-adjustable
     x_openai_key: Optional[str] = Header(None),
     x_gemini_key: Optional[str] = Header(None)
 ):
-    """Step 2: Transcribe audio (with optional cleanup)"""
+    """Step 2: Start transcription (async background processing)"""
     audio_path = jobs.get(job_id, {}).get("audio_path")
-    pipeline = get_or_create_pipeline(job_id, audio_path)
+    if not audio_path:
+        raise HTTPException(404, "Job not found or no audio uploaded")
     
-    # Store API keys in job for later use
+    # Store API keys and settings in job
     if x_openai_key:
         jobs[job_id]["openai_key"] = x_openai_key
     if x_gemini_key:
         jobs[job_id]["gemini_key"] = x_gemini_key
     
     jobs[job_id]["step"] = 2
-    jobs[job_id]["status"] = "processing"
+    jobs[job_id]["transcribe_status"] = "processing"
+    jobs[job_id]["transcribe_progress"] = "開始中..."
     
-    # Mode configuration (base settings)
-    mode_config = {
-        "strict": {"threshold_db": -30, "min_duration": 0.5, "natural": False},  # 0.3→0.5 to reduce splitting
-        "natural": {"threshold_db": -40, "min_duration": 0.8, "natural": True}
+    # Store settings for background task
+    jobs[job_id]["cleanup_settings"] = {
+        "cleanup_audio": cleanup_audio,
+        "cleanup_mode": cleanup_mode,
+        "silence_threshold": silence_threshold
     }
-    config = mode_config.get(cleanup_mode, mode_config["natural"])
     
-    # Allow user to override min_duration via silence_threshold parameter
-    effective_min_duration = silence_threshold if silence_threshold > 0 else config["min_duration"]
+    # Start background processing
+    background_tasks.add_task(
+        run_transcribe_background,
+        job_id,
+        x_openai_key
+    )
     
-    # Step 2a: 冒頭と末尾の無音をトリミング
+    return {
+        "job_id": job_id,
+        "status": "processing",
+        "message": "文字起こしを開始しました"
+    }
+
+
+async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
+    """Background task for transcription"""
     try:
-        from services.transcription import trim_silence_from_audio
-        original_audio_path = jobs[job_id].get("audio_path")
-        if original_audio_path:
-            # Use stricter settings for start/end trim regardless of mode
-            trimmed_path = trim_silence_from_audio(original_audio_path, threshold_db=-45, min_silence_duration=0.5)
-            if trimmed_path != original_audio_path:
-                jobs[job_id]["audio_path"] = trimmed_path
-                jobs[job_id]["original_audio_path"] = original_audio_path
-                pipeline.audio_path = trimmed_path
-                print(f"[Transcribe] Audio trimmed: {original_audio_path} → {trimmed_path}")
-    except Exception as e:
-        print(f"[Transcribe] Silence trim failed: {e}")
-    
-    # Step 2b: Pass API key to transcription
-    result = await pipeline.step_transcribe(openai_key=x_openai_key)
-    
-    # オプション: 無音・フィラーを除去
-    cleanup_result = None
-    if cleanup_audio:
+        audio_path = jobs[job_id].get("audio_path")
+        pipeline = get_or_create_pipeline(job_id, audio_path)
+        settings = jobs[job_id].get("cleanup_settings", {})
+        
+        cleanup_audio = settings.get("cleanup_audio", True)
+        cleanup_mode = settings.get("cleanup_mode", "natural")
+        silence_threshold = settings.get("silence_threshold", 0.5)
+        
+        # Mode configuration
+        mode_config = {
+            "strict": {"threshold_db": -30, "min_duration": 0.5, "natural": False},
+            "natural": {"threshold_db": -40, "min_duration": 0.8, "natural": True}
+        }
+        config = mode_config.get(cleanup_mode, mode_config["natural"])
+        effective_min_duration = silence_threshold if silence_threshold > 0 else config["min_duration"]
+        
+        # Step 2a: Trim silence
+        jobs[job_id]["transcribe_progress"] = "無音トリミング中..."
         try:
-            from services.audio_cleanup import cleanup_audio as do_cleanup
-            audio_path = jobs[job_id].get("audio_path")
-            if audio_path:
-                cleanup_result = await do_cleanup(
-                    audio_path=audio_path,
-                    segments=result.get("segments", []),
-                    silence_threshold=effective_min_duration,  # Use effective value
-                    silence_threshold_db=config["threshold_db"],
-                    preserve_natural_pauses=config["natural"]
-                )
-                # クリーンアップ後の音声パスを更新
-                if cleanup_result and cleanup_result.get("cleaned_audio_path"):
-                    jobs[job_id]["audio_path"] = cleanup_result["cleaned_audio_path"]
-                    jobs[job_id]["original_audio_path"] = audio_path
-                    # ⚠️ パイプラインの音声パスも更新（動画生成で使用）
-                    pipeline.audio_path = cleanup_result["cleaned_audio_path"]
-                    print(f"[Cleanup] Updated audio path: {audio_path} → {cleanup_result['cleaned_audio_path']}")
-                    print(f"[Cleanup] Duration: {cleanup_result.get('original_duration', 0):.1f}s → {cleanup_result.get('new_duration', 0):.1f}s")
-                    # セグメントも更新（調整済みタイムスタンプ）
-                    if cleanup_result.get("new_segments"):
-                        result["segments"] = cleanup_result["new_segments"]
-                        pipeline.segments = cleanup_result["new_segments"]
-                        print(f"[Cleanup] Updated segments with adjusted timestamps")
+            from services.transcription import trim_silence_from_audio
+            original_audio_path = jobs[job_id].get("audio_path")
+            if original_audio_path:
+                trimmed_path = trim_silence_from_audio(original_audio_path, threshold_db=-45, min_silence_duration=0.5)
+                if trimmed_path != original_audio_path:
+                    jobs[job_id]["audio_path"] = trimmed_path
+                    jobs[job_id]["original_audio_path"] = original_audio_path
+                    pipeline.audio_path = trimmed_path
+                    print(f"[Transcribe] Audio trimmed: {original_audio_path} → {trimmed_path}")
         except Exception as e:
-            print(f"Audio cleanup skipped: {e}")
-            cleanup_result = {"error": str(e)}
+            print(f"[Transcribe] Silence trim failed: {e}")
+        
+        # Step 2b: Transcription
+        jobs[job_id]["transcribe_progress"] = "AI文字起こし中..."
+        result = await pipeline.step_transcribe(openai_key=openai_key)
+        
+        # Step 2c: Audio cleanup
+        cleanup_result = None
+        if cleanup_audio:
+            jobs[job_id]["transcribe_progress"] = "無音・フィラー除去中..."
+            try:
+                from services.audio_cleanup import cleanup_audio as do_cleanup
+                audio_path = jobs[job_id].get("audio_path")
+                if audio_path:
+                    cleanup_result = await do_cleanup(
+                        audio_path=audio_path,
+                        segments=result.get("segments", []),
+                        silence_threshold=effective_min_duration,
+                        silence_threshold_db=config["threshold_db"],
+                        preserve_natural_pauses=config["natural"]
+                    )
+                    if cleanup_result and cleanup_result.get("cleaned_audio_path"):
+                        jobs[job_id]["audio_path"] = cleanup_result["cleaned_audio_path"]
+                        jobs[job_id]["original_audio_path"] = audio_path
+                        pipeline.audio_path = cleanup_result["cleaned_audio_path"]
+                        print(f"[Cleanup] Duration: {cleanup_result.get('original_duration', 0):.1f}s → {cleanup_result.get('new_duration', 0):.1f}s")
+                        if cleanup_result.get("new_segments"):
+                            result["segments"] = cleanup_result["new_segments"]
+                            pipeline.segments = cleanup_result["new_segments"]
+            except Exception as e:
+                print(f"Audio cleanup failed: {e}")
+                cleanup_result = {"error": str(e)}
+        
+        # Store results
+        jobs[job_id]["transcribe_status"] = "completed"
+        jobs[job_id]["transcribe_progress"] = "完了"
+        jobs[job_id]["transcript"] = result["transcript"]
+        jobs[job_id]["segments"] = result["segments"]
+        
+        if cleanup_result and not cleanup_result.get("error"):
+            jobs[job_id]["cleanup_result"] = {
+                "removed_silences": cleanup_result.get("removed_silences", 0),
+                "removed_fillers": cleanup_result.get("removed_fillers", 0),
+                "total_removed_seconds": cleanup_result.get("total_removed_seconds", 0),
+                "original_duration": cleanup_result.get("original_duration", 0),
+                "new_duration": cleanup_result.get("new_duration", 0)
+            }
+        
+        print(f"[Transcribe] Completed for job {job_id}")
+        
+    except Exception as e:
+        print(f"[Transcribe] Error for job {job_id}: {e}")
+        jobs[job_id]["transcribe_status"] = "error"
+        jobs[job_id]["transcribe_error"] = str(e)
+
+
+@app.get("/api/transcribe-status/{job_id}")
+async def get_transcribe_status(job_id: str):
+    """Get transcription status (for polling)"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
     
-    jobs[job_id]["status"] = "completed"
-    jobs[job_id]["transcript"] = result["transcript"]
+    job = jobs[job_id]
+    status = job.get("transcribe_status", "unknown")
     
     response = {
         "job_id": job_id,
-        "step": 2,
-        "transcript": result["transcript"],
-        "segments": result["segments"]
+        "status": status,
+        "progress": job.get("transcribe_progress", "")
     }
     
-    if cleanup_result:
-        response["cleanup"] = {
-            "removed_silences": cleanup_result.get("removed_silences", 0),
-            "removed_fillers": cleanup_result.get("removed_fillers", 0),
-            "total_removed_seconds": cleanup_result.get("total_removed_seconds", 0),
-            "original_duration": cleanup_result.get("original_duration", 0),
-            "new_duration": cleanup_result.get("new_duration", 0)
-        }
+    if status == "completed":
+        response["transcript"] = job.get("transcript", "")
+        response["segments"] = job.get("segments", [])
+        if job.get("cleanup_result"):
+            response["cleanup"] = job["cleanup_result"]
+    elif status == "error":
+        response["error"] = job.get("transcribe_error", "Unknown error")
     
     return response
 
