@@ -314,12 +314,15 @@ async def transcribe(
     jobs[job_id]["step"] = 2
     jobs[job_id]["status"] = "processing"
     
-    # Mode configuration
+    # Mode configuration (base settings)
     mode_config = {
-        "strict": {"threshold_db": -30, "min_duration": 0.3, "natural": False},
+        "strict": {"threshold_db": -30, "min_duration": 0.5, "natural": False},  # 0.3→0.5 to reduce splitting
         "natural": {"threshold_db": -40, "min_duration": 0.8, "natural": True}
     }
     config = mode_config.get(cleanup_mode, mode_config["natural"])
+    
+    # Allow user to override min_duration via silence_threshold parameter
+    effective_min_duration = silence_threshold if silence_threshold > 0 else config["min_duration"]
     
     # Step 2a: 冒頭と末尾の無音をトリミング
     try:
@@ -349,7 +352,7 @@ async def transcribe(
                 cleanup_result = await do_cleanup(
                     audio_path=audio_path,
                     segments=result.get("segments", []),
-                    silence_threshold=config["min_duration"],
+                    silence_threshold=effective_min_duration,  # Use effective value
                     silence_threshold_db=config["threshold_db"],
                     preserve_natural_pauses=config["natural"]
                 )

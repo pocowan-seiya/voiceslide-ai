@@ -1052,10 +1052,10 @@ export default function Home() {
                 {audioSettings.cleanupEnabled && (
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => setAudioSettings(prev => ({ ...prev, cleanupMode: "natural" }))}
+                      onClick={() => setAudioSettings(prev => ({ ...prev, cleanupMode: "natural", silenceThreshold: 0.8 }))}
                       className={`p-3 rounded-lg border text-left transition-all relative overflow-hidden ${audioSettings.cleanupMode === "natural"
-                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-100"
-                          : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-100"
+                        : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
                         }`}
                     >
                       <div className="text-sm font-bold mb-1">😌 ナチュラル</div>
@@ -1066,10 +1066,10 @@ export default function Home() {
                     </button>
 
                     <button
-                      onClick={() => setAudioSettings(prev => ({ ...prev, cleanupMode: "strict" }))}
+                      onClick={() => setAudioSettings(prev => ({ ...prev, cleanupMode: "strict", silenceThreshold: 0.5 }))}
                       className={`p-3 rounded-lg border text-left transition-all relative overflow-hidden ${audioSettings.cleanupMode === "strict"
-                          ? "border-cyan-500 bg-cyan-500/10 text-cyan-100"
-                          : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                        ? "border-cyan-500 bg-cyan-500/10 text-cyan-100"
+                        : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
                         }`}
                     >
                       <div className="text-sm font-bold mb-1">⚡️ クッキリ</div>
@@ -1078,6 +1078,29 @@ export default function Home() {
                         <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_10px_#06b6d4]" />
                       )}
                     </button>
+                  </div>
+                )}
+
+                {/* Sensitivity Slider */}
+                {audioSettings.cleanupEnabled && (
+                  <div className="mt-4 bg-zinc-900/50 rounded-lg p-3">
+                    <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                      <span>敏感さ調整</span>
+                      <span className="text-zinc-500">{audioSettings.silenceThreshold.toFixed(1)}秒以上を無音と判定</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.3"
+                      max="1.0"
+                      step="0.1"
+                      value={audioSettings.silenceThreshold}
+                      onChange={(e) => setAudioSettings(prev => ({ ...prev, silenceThreshold: parseFloat(e.target.value) }))}
+                      className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-zinc-600 mt-1">
+                      <span>敏感（短い無音もカット）</span>
+                      <span>鈍感（長い無音のみカット）</span>
+                    </div>
                   </div>
                 )}
               </div>
