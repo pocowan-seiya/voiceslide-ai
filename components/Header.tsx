@@ -10,20 +10,7 @@ export function Header() {
                 </div>
 
                 <nav className="flex items-center gap-6">
-                    <a href="#" className="text-zinc-400 hover:text-white transition-colors">
-                        使い方
-                    </a>
-                    <a href="#" className="text-zinc-400 hover:text-white transition-colors">
-                        料金
-                    </a>
-                    <a
-                        href="https://github.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-zinc-400 hover:text-white transition-colors"
-                    >
-                        GitHub
-                    </a>
+                    {/* Navigation links removed as per request */}
                 </nav>
             </div>
         </header>

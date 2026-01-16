@@ -54,7 +54,7 @@ export default function LoginPage() {
                             VoiSlide<br />Movie
                         </span>
                     </h1>
-                    <p className="text-zinc-400">関係者専用ログイン</p>
+                    <p className="text-zinc-400">ユーザー専用ログイン</p>
                 </div>
 
                 <div className="bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 shadow-2xl">
