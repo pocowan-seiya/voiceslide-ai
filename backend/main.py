@@ -488,38 +488,95 @@ async def polish_transcript(
 @app.post("/api/generate-outline/{job_id}")
 async def generate_outline(
     job_id: str, 
+    background_tasks: BackgroundTasks,
     update: Optional[TranscriptUpdate] = None,
     x_gemini_key: Optional[str] = Header(None)
 ):
-    """Step 4: Generate slide outline"""
-    pipeline = get_or_create_pipeline(job_id)
+    """Step 4: Start outline generation (async background processing)"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
     
-    # Store API key for this job
+    # Store API key and settings
     if x_gemini_key:
         jobs[job_id]["gemini_key"] = x_gemini_key
     
     jobs[job_id]["step"] = 4
-    jobs[job_id]["status"] = "processing"
+    jobs[job_id]["outline_status"] = "processing"
+    jobs[job_id]["outline_progress"] = "アウトライン生成開始..."
     
-    edited = update.transcript if update else None
-    slide_count_mode = update.slide_count_mode if update else "auto"
-    custom_slide_count = update.custom_slide_count if update else 10
+    # Store settings for background task
+    jobs[job_id]["outline_settings"] = {
+        "transcript": update.transcript if update else None,
+        "slide_count_mode": update.slide_count_mode if update else "auto",
+        "custom_slide_count": update.custom_slide_count if update else 10
+    }
     
-    result = await pipeline.step_generate_outline(
-        edited, 
-        gemini_key=x_gemini_key,
-        slide_count_mode=slide_count_mode,
-        custom_slide_count=custom_slide_count
+    # Start background processing
+    background_tasks.add_task(
+        run_outline_background,
+        job_id,
+        x_gemini_key
     )
-    
-    jobs[job_id]["status"] = "completed"
-    jobs[job_id]["outline"] = result["outline"]
     
     return {
         "job_id": job_id,
-        "step": 4,
-        "outline": result["outline"]
+        "status": "processing",
+        "message": "アウトライン生成を開始しました"
     }
+
+
+async def run_outline_background(job_id: str, gemini_key: Optional[str]):
+    """Background task for outline generation"""
+    try:
+        pipeline = get_or_create_pipeline(job_id)
+        settings = jobs[job_id].get("outline_settings", {})
+        
+        edited = settings.get("transcript")
+        slide_count_mode = settings.get("slide_count_mode", "auto")
+        custom_slide_count = settings.get("custom_slide_count", 10)
+        
+        jobs[job_id]["outline_progress"] = "AIでアウトライン作成中..."
+        
+        result = await pipeline.step_generate_outline(
+            edited, 
+            gemini_key=gemini_key,
+            slide_count_mode=slide_count_mode,
+            custom_slide_count=custom_slide_count
+        )
+        
+        jobs[job_id]["outline_status"] = "completed"
+        jobs[job_id]["outline_progress"] = "完了"
+        jobs[job_id]["outline"] = result["outline"]
+        
+        print(f"[Outline] Completed for job {job_id}")
+        
+    except Exception as e:
+        print(f"[Outline] Error for job {job_id}: {e}")
+        jobs[job_id]["outline_status"] = "error"
+        jobs[job_id]["outline_error"] = str(e)
+
+
+@app.get("/api/outline-status/{job_id}")
+async def get_outline_status(job_id: str):
+    """Get outline generation status (for polling)"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    job = jobs[job_id]
+    status = job.get("outline_status", "unknown")
+    
+    response = {
+        "job_id": job_id,
+        "status": status,
+        "progress": job.get("outline_progress", "")
+    }
+    
+    if status == "completed":
+        response["outline"] = job.get("outline", [])
+    elif status == "error":
+        response["error"] = job.get("outline_error", "Unknown error")
+    
+    return response
 
 
 # ========== STEP 5: Polish Outline ==========

@@ -323,9 +323,11 @@ export default function Home() {
     }
 
     updateState({ isProcessing: true, error: null });
+    setProgress({ percent: 10, message: "アウトライン生成を開始中..." });
 
     try {
-      const res = await fetch(`${API_URL}/api/generate-outline/${state.jobId}`, {
+      // Start outline generation (returns immediately)
+      const startRes = await fetch(`${API_URL}/api/generate-outline/${state.jobId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -337,15 +339,35 @@ export default function Home() {
           custom_slide_count: slideSettings.customCount,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.error || "Outline generation failed");
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.detail || startData.error || "Start failed");
 
-      updateState({
-        outline: data.outline,
-        step: 4,
-        isProcessing: false,
-      });
+      // Poll for status
+      let completed = false;
+      while (!completed) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const statusRes = await fetch(`${API_URL}/api/outline-status/${state.jobId}`, {
+          headers: getAPIHeaders(),
+        });
+        const statusData = await statusRes.json();
+
+        if (statusData.status === "completed") {
+          completed = true;
+          setProgress({ percent: 100, message: "完了！" });
+          updateState({
+            outline: statusData.outline,
+            step: 4,
+            isProcessing: false,
+          });
+        } else if (statusData.status === "error") {
+          throw new Error(statusData.error || "Outline generation failed");
+        } else {
+          setProgress({ percent: 50, message: statusData.progress || "処理中..." });
+        }
+      }
     } catch (err: any) {
+      setProgress({ percent: 0, message: "" });
       updateState({ error: err.message, isProcessing: false });
     }
   };
