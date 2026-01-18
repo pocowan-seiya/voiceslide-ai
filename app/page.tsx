@@ -1412,7 +1412,16 @@ export default function Home() {
                                         : 'border-zinc-700 hover:border-zinc-500'
                                         }`}
                                     >
-                                      <img src={preview} alt={`Slide ${slideNum}`} className="w-full h-auto" />
+                                      <img
+                                        src={preview}
+                                        alt={`Slide ${slideNum}`}
+                                        className="w-full h-auto"
+                                        onError={(e) => {
+                                          console.error(`[Image Error] Failed to load: ${preview}`);
+                                          e.currentTarget.style.border = "2px solid red";
+                                          // e.currentTarget.src = "fallback_image_url"; // Optional
+                                        }}
+                                      />
                                       <div className="bg-zinc-800 text-center text-xs py-1">
                                         スライド {slideNum}
                                       </div>
