@@ -1,0 +1,36 @@
+# VoiceSlide AI - Backend Only (Railway)
+# FastAPI Backend as standalone service
+
+FROM python:3.11-slim
+
+# 必要なシステムパッケージをインストール（日本語フォント含む）
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    curl \
+    fonts-noto-cjk \
+    fonts-noto-cjk-extra \
+    fontconfig \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -fv
+
+WORKDIR /app
+
+# Python依存関係をインストール
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Playwright Chromiumをインストール（HTMLレンダリング用）
+RUN playwright install chromium --with-deps
+
+# アプリケーションコードをコピー
+COPY . .
+
+# 出力・アップロードディレクトリを作成
+RUN mkdir -p /app/outputs /app/uploads
+
+# ポート
+ENV PORT=8001
+EXPOSE 8001
+
+# 起動
+CMD ["python", "main.py"]

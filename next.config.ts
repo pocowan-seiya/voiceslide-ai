@@ -1,19 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 出力ファイルとAPIへのアクセスをプロキシ（Railway等の1コンテナ構成用）
-  async rewrites() {
-    return [
-      {
-        source: '/outputs/:path*',
-        destination: 'http://localhost:8001/outputs/:path*',
-      },
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:8001/api/:path*',
-      },
-    ];
-  },
+  // 2サービス構成: Frontend (Next.js) + Backend (FastAPI) を別々にデプロイ
+  // NEXT_PUBLIC_API_URL 環境変数でバックエンドURLを指定
+  // リライトは不要（直接バックエンドにアクセス）
 };
 
 export default nextConfig;
+
