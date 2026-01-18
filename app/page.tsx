@@ -4,9 +4,15 @@ import { useState, useCallback, DragEvent, useEffect } from "react";
 import { Header } from "@/components/Header";
 import { APIKeysSettings, getAPIKeys, hasAPIKeys } from "@/components/APIKeysSettings";
 
-// 本番環境：Next.js API Routes経由でバックエンドにプロキシ
-// ローカル：直接バックエンドに接続
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+// 本番環境：Frontend (Next.js) + Backend (FastAPI) を別々にデプロイ
+// NEXT_PUBLIC_API_URL 環境変数でバックエンドURLを指定
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
+
+// Debug log
+if (typeof window !== "undefined") {
+  console.log("[Config] API_URL:", API_URL);
+}
 
 // Helper to get API headers with keys
 function getAPIHeaders(): HeadersInit {

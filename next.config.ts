@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   // 2サービス構成: Frontend (Next.js) + Backend (FastAPI) を別々にデプロイ
   // NEXT_PUBLIC_API_URL 環境変数でバックエンドURLを指定
   // リライトは不要（直接バックエンドにアクセス）
+  env: {
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+  },
 };
 
 export default nextConfig;
