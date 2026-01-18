@@ -265,7 +265,7 @@ export default function Home() {
         silence_threshold: audioSettings.silenceThreshold.toString(),
       });
 
-      const startRes = await fetch(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
+      const startRes = await fetchWithRetry(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
         method: "POST",
         headers: getAPIHeaders(),
       });
@@ -350,7 +350,7 @@ export default function Home() {
 
     try {
       // Start outline generation (returns immediately)
-      const startRes = await fetch(`${API_URL}/api/generate-outline/${state.jobId}`, {
+      const startRes = await fetchWithRetry(`${API_URL}/api/generate-outline/${state.jobId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
