@@ -6,7 +6,8 @@ import { APIKeysSettings, getAPIKeys, hasAPIKeys } from "@/components/APIKeysSet
 
 // 本番環境：Frontend (Next.js) + Backend (FastAPI) を別々にデプロイ
 // NEXT_PUBLIC_API_URL 環境変数でバックエンドURLを指定
-const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+// Fallback to the specific backend URL if env var is missing (temporary fix)
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || "https://backend-api-production-391c.up.railway.app";
 const API_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
 
 // Debug log
