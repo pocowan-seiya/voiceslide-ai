@@ -34,6 +34,10 @@ RUN npm ci
 # アプリケーションコードをコピー
 COPY . .
 
+# ビルド引数を受け取る（Railwayの環境変数をビルド時に注入）
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 # Next.jsをビルド
 RUN npm run build
 
