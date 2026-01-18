@@ -17,6 +17,29 @@ function getAPIHeaders(): HeadersInit {
   return headers;
 }
 
+// Helper for fetch with automatic retry on network errors
+async function fetchWithRetry(
+  url: string,
+  options?: RequestInit,
+  maxRetries: number = 3,
+  delayMs: number = 1000
+): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      return res;
+    } catch (err: any) {
+      lastError = err;
+      console.log(`[Fetch] Attempt ${attempt + 1} failed: ${err.message}, retrying...`);
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError || new Error("Fetch failed after retries");
+}
+
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 type WorkflowMode = "hybrid" | "full-ai" | null;
 
@@ -254,7 +277,7 @@ export default function Home() {
       while (!completed) {
         await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
 
-        const statusRes = await fetch(`${API_URL}/api/transcribe-status/${state.jobId}`, {
+        const statusRes = await fetchWithRetry(`${API_URL}/api/transcribe-status/${state.jobId}`, {
           headers: getAPIHeaders(),
         });
         const statusData = await statusRes.json();
@@ -347,7 +370,7 @@ export default function Home() {
       while (!completed) {
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        const statusRes = await fetch(`${API_URL}/api/outline-status/${state.jobId}`, {
+        const statusRes = await fetchWithRetry(`${API_URL}/api/outline-status/${state.jobId}`, {
           headers: getAPIHeaders(),
         });
         const statusData = await statusRes.json();
@@ -472,7 +495,7 @@ export default function Home() {
       // Single polling interval for batch status (5 seconds to avoid timeout)
       const pollInterval = setInterval(async () => {
         try {
-          const statusRes = await fetch(`${API_URL}/api/batch-status/${state.jobId}`, {
+          const statusRes = await fetchWithRetry(`${API_URL}/api/batch-status/${state.jobId}`, {
             headers: getAPIHeaders()
           });
 
