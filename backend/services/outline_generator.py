@@ -767,75 +767,12 @@ def validate_and_fix_outline_timestamps(
             remaining = total_duration - slides[i]["timestamp_start"]
             remaining_slides = len(slides) - i
             slides[i]["timestamp_end"] = slides[i]["timestamp_start"] + (remaining / remaining_slides)
-    
     # 3. 最後のスライドは総時間で終了
     slides[-1]["timestamp_end"] = total_duration
     
-    # 4. 最後のスライドが極端に長い場合は分割（JSONが途中で切れた場合の対策）
-    max_slide_duration = 120.0  # 最大2分
-    last_slide_duration = slides[-1]["timestamp_end"] - slides[-1]["timestamp_start"]
-    
-    if last_slide_duration > max_slide_duration and segments:
-        print(f"[Outline] Warning: Last slide is {last_slide_duration:.1f}s, splitting with content extraction...")
-        
-        # 残りの時間を適切な数のスライドに分割
-        extra_time = last_slide_duration - max_slide_duration
-        extra_slides_needed = int(extra_time / 60) + 1  # 60秒ごとに1スライド追加
-        
-        # 最後のスライドの開始時刻を調整
-        original_start = slides[-1]["timestamp_start"]
-        segment_duration = (total_duration - original_start) / (extra_slides_needed + 1)
-        
-        # 最後のスライドを短くして、追加スライドを作成
-        slides[-1]["timestamp_end"] = original_start + segment_duration
-        
-        # 追加スライドを生成（セグメントから実際の内容を抽出）
-        for j in range(extra_slides_needed):
-            new_start = original_start + segment_duration * (j + 1)
-            new_end = original_start + segment_duration * (j + 2)
-            
-            # この時間範囲のセグメントを抽出
-            segment_texts = []
-            for seg in segments:
-                seg_start = seg.get("start", 0)
-                seg_end = seg.get("end", 0)
-                # この時間範囲に重なるセグメントを取得
-                if seg_end > new_start and seg_start < new_end:
-                    segment_texts.append(seg.get("text", ""))
-            
-            # セグメントからコンテンツを抽出
-            combined_text = " ".join(segment_texts).strip()
-            
-            # タイトルを生成（最初の20文字程度）
-            if combined_text:
-                # 最初の文を取得
-                first_sentence = combined_text.split("。")[0] if "。" in combined_text else combined_text[:30]
-                title = first_sentence[:25] + "..." if len(first_sentence) > 25 else first_sentence
-            else:
-                title = f"セクション {len(slides) + 1}"
-            
-            # キーワードを抽出（重要そうな単語）
-            keywords = extract_keywords_from_text(combined_text) if combined_text else []
-            
-            new_slide = {
-                "number": len(slides) + 1,
-                "title": title,
-                "timestamp_start": round(new_start, 1),
-                "timestamp_end": round(new_end, 1),
-                "segment_ids": [],
-                "speakers_words": combined_text[:200] if combined_text else "",
-                "keywords": keywords[:6],  # 最大6個
-                "visual_role": "内容を視覚的に補強",
-                "main_visual": "テキストとアイコン",
-                "energy_level": "medium",
-                "_auto_generated": True
-            }
-            slides.append(new_slide)
-        
-        # 最後のスライドを総時間に合わせる
-        slides[-1]["timestamp_end"] = total_duration
-        
-        print(f"[Outline] Split into {extra_slides_needed + 1} slides with extracted content")
+    # NOTE: 自動分割ロジックは削除しました
+    # アウトライン段階で枚数を確定し、スライド生成時に変更しない方針に変更
+    # 枚数調整が必要な場合は、アウトラインのブラッシュアップ段階で行う
     
     # 5. 最小時間（10秒）の確保 - プロフェッショナル基準
     min_duration = 10.0
