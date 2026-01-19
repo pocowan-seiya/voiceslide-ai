@@ -753,6 +753,27 @@ export default function Home() {
     setEditedTranscript("");
   };
 
+  // 動画をダウンロードフォルダに保存する関数
+  const handleDownloadVideo = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Download error:', error);
+      // フォールバック: 新しいタブで開く
+      window.open(url, '_blank');
+    }
+  };
+
   const formatOutlineForCopy = () => {
     const outline = state.polishedOutline || state.outline;
     if (!outline) return "";
@@ -1965,9 +1986,12 @@ export default function Home() {
               <video src={state.videoUrl} controls className="w-full rounded-xl mb-6" />
 
               <div className="flex justify-center gap-4 mb-8">
-                <a href={`${API_URL}/api/download/${state.jobId}`} className="btn-primary" download>
+                <button
+                  onClick={() => handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`)}
+                  className="btn-primary"
+                >
                   📥 ダウンロード
-                </a>
+                </button>
                 <button onClick={handleReset} className="btn-secondary">
                   🔄 新規作成
                 </button>
@@ -2113,13 +2137,12 @@ export default function Home() {
                         controls
                         className="w-full rounded-lg"
                       />
-                      <a
-                        href={concatVideoUrl}
-                        download="voiceslide_youtube.mp4"
-                        className="block mt-2 text-center bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg"
+                      <button
+                        onClick={() => handleDownloadVideo(concatVideoUrl, "voiceslide_youtube.mp4")}
+                        className="block w-full mt-2 text-center bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg"
                       >
                         📥 YouTube用動画をダウンロード
-                      </a>
+                      </button>
                     </div>
                   )}
                 </div>
