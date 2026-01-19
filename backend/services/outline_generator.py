@@ -770,9 +770,29 @@ def validate_and_fix_outline_timestamps(
     # 3. 最後のスライドは総時間で終了
     slides[-1]["timestamp_end"] = total_duration
     
-    # NOTE: 自動分割ロジックは削除しました
-    # アウトライン段階で枚数を確定し、スライド生成時に変更しない方針に変更
-    # 枚数調整が必要な場合は、アウトラインのブラッシュアップ段階で行う
+    # 4. 最後のスライドが平均の2倍以上長い場合、時間を均等に再分配
+    if len(slides) >= 2:
+        # 各スライドの時間を計算
+        durations = [s["timestamp_end"] - s["timestamp_start"] for s in slides]
+        avg_duration = sum(durations) / len(durations)
+        last_duration = durations[-1]
+        
+        # 最後のスライドが平均の2倍以上長い場合
+        if last_duration > avg_duration * 2:
+            print(f"[Outline] 最後のスライドが長すぎます ({last_duration:.1f}秒 vs 平均{avg_duration:.1f}秒)")
+            print(f"[Outline] 時間を均等に再分配します...")
+            
+            # 全スライドの時間を均等に再分配
+            equal_duration = total_duration / len(slides)
+            for i, slide in enumerate(slides):
+                slide["timestamp_start"] = round(i * equal_duration, 1)
+                slide["timestamp_end"] = round((i + 1) * equal_duration, 1)
+            
+            # 最後のスライドは正確に総時間で終了
+            slides[-1]["timestamp_end"] = total_duration
+            
+            new_durations = [s["timestamp_end"] - s["timestamp_start"] for s in slides]
+            print(f"[Outline] 再分配完了: 各スライド約{new_durations[0]:.1f}秒")
     
     # 5. 最小時間（10秒）の確保 - プロフェッショナル基準
     min_duration = 10.0
