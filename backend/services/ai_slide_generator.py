@@ -501,8 +501,8 @@ h1, h2, .title, .headline {{
   white-space: nowrap;       /* 必ず1行で表示 */
   overflow: hidden;          /* はみ出しを隠す */
   text-overflow: ellipsis;   /* 長すぎる場合は...で省略 */
-  max-width: 90%;            /* 幅制限 */
-  font-size: clamp(1.5rem, 5vw, 3.5rem);  /* サイズ自動調整 */
+  max-width: 85%;            /* 幅制限（厳しめ） */
+  font-size: clamp(1.2rem, 4vw, 3rem);  /* サイズ自動調整（小さめ上限） */
 }}
 
 /* サブタイトル・本文は折り返し可 */
@@ -510,25 +510,39 @@ h3, p, .subtitle, .subheadline {{
   word-break: keep-all;
   overflow-wrap: break-word;
   line-height: 1.4;
+  max-width: 85%;            /* 幅制限追加 */
 }}
 
 /* 必須: テキストが切れないようにパディング */
 body {{
-  padding: 5% !important;    /* 全辺に5%の余白 */
+  padding: 60px !important;    /* 固定60pxの余白 */
   box-sizing: border-box;
+  overflow: hidden !important;  /* ★絶対にはみ出さない★ */
+}}
+
+/* ★★★ 最重要: 画面からはみ出し完全禁止 ★★★ */
+html {{
+  overflow: hidden !important;
 }}
 
 /* 必須: コンテンツがはみ出さないように */
-.slide-content {{
-  max-height: 90%;
-  overflow: visible;         /* 切れないように */
+.slide-content, .content, main, section, article, div {{
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}}
+
+/* すべてのテキストにはみ出し防止 */
+* {{
+  box-sizing: border-box;
 }}
 ```
 
-**絶対に守ること:**
-1. **単語の途中で改行しない**（「コーディン/グ」❌ →「コーディング」で1行 ✅）
-2. **テキストが画面端で切れない**（下部に十分なパディング）
-3. **タイトルが長すぎる場合はフォントサイズを小さくする**（改行より縮小優先）
+**⚠️ テキストはみ出し防止（最重要 - 必ず守る）:**
+1. **すべてのテキストはスライド内に収める** - 画面端で切れる文字は絶対NG
+2. **文字が多すぎる場合はフォントサイズを小さくする** - 改行や省略より縮小
+3. **左右の余白を十分に確保** - 画面端から60px以上離す
+4. **body に padding: 60px を必ず設定** - これがないとはみ出す
 
 
 ## レイアウトのバランス（重要）
@@ -1576,6 +1590,41 @@ def remove_caption_text(html: str) -> str:
             html,
             flags=re.IGNORECASE
         )
+    
+    # ★★★ 強制CSS注入: はみ出し防止とフォント統一 ★★★
+    mandatory_css = '''
+<style id="overflow-prevention">
+/* ★ 強制注入CSS: はみ出し完全防止 ★ */
+html, body {
+    overflow: hidden !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+}
+body {
+    padding: 60px !important;
+    box-sizing: border-box !important;
+}
+h1, h2, h3, .title, .headline {
+    max-width: 85% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-size: clamp(1.2rem, 4vw, 3rem) !important;
+}
+p, span, div, li {
+    max-width: 90% !important;
+    overflow-wrap: break-word !important;
+}
+* {
+    box-sizing: border-box !important;
+}
+</style>
+'''
+    
+    # </head>の直前にCSSを挿入
+    if '</head>' in html:
+        html = html.replace('</head>', mandatory_css + '</head>')
+    elif '</HEAD>' in html:
+        html = html.replace('</HEAD>', mandatory_css + '</HEAD>')
     
     return html
 
