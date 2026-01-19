@@ -515,7 +515,7 @@ h3, p, .subtitle, .subheadline {{
 
 /* 必須: テキストが切れないようにパディング */
 body {{
-  padding: 60px !important;    /* 固定60pxの余白 */
+  /* padding: AIが適切に設定 */
   box-sizing: border-box;
   overflow: hidden !important;  /* ★絶対にはみ出さない★ */
 }}
@@ -542,7 +542,7 @@ html {{
 1. **すべてのテキストはスライド内に収める** - 画面端で切れる文字は絶対NG
 2. **文字が多すぎる場合はフォントサイズを小さくする** - 改行や省略より縮小
 3. **左右の余白を十分に確保** - 画面端から60px以上離す
-4. **body に padding: 60px を必ず設定** - これがないとはみ出す
+4. **テキストがはみ出さないようにフォントサイズを調整**
 
 
 ## レイアウトのバランス（重要）
@@ -1601,7 +1601,6 @@ html, body {
     max-height: 100% !important;
 }
 body {
-    padding: 60px !important;
     box-sizing: border-box !important;
 }
 h1, h2, h3, .title, .headline {
