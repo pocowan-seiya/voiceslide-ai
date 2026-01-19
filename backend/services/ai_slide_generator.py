@@ -1150,6 +1150,14 @@ async def generate_all_custom_slides(
         
         strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference)
         
+        # Apply user-selected font style to strategy
+        if font_style and font_style in FONT_STYLES:
+            font_config = FONT_STYLES[font_style]
+            strategy.setdefault("design_style", {})
+            strategy["design_style"]["font_import"] = font_config["google_font"]
+            strategy["design_style"]["font_instruction"] = font_config["css_instruction"]
+            print(f"[Design Architect] Applying font style: {font_config['name']}")
+        
         # Save strategy and slide data for later batches
         save_slide_data(job_id, slides, strategy)
     else:
