@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import hashlib
 import secrets
+import asyncio
 
 from config import UPLOAD_DIR, OUTPUT_DIR, ACCESS_PASSWORD
 from services.pipeline import get_or_create_pipeline, delete_pipeline, pipelines
@@ -57,6 +58,10 @@ slide_progress: Dict[str, Dict[str, Any]] = {}
 
 # Slide history for undo (job_id -> slide_number -> list of previous versions)
 slide_history: Dict[str, Dict[int, List[Dict[str, Any]]]] = {}
+
+# Semaphore to limit concurrent heavy slide generation jobs
+# This prevents "pthread_create failed" (PID exhaustion) on restricted environments
+slide_generation_semaphore = asyncio.Semaphore(1)
 
 # Request models
 class TranscriptUpdate(BaseModel):
@@ -789,36 +794,39 @@ async def generate_slides_batch_endpoint(
         "total_slides": total_slides
     }
     
+
+
     # Define background task
     async def generate_batch_async():
-        try:
-            from services.ai_slide_generator import generate_all_custom_slides
-            
-            def update_progress(current: int, total: int, message: str):
-                slide_progress[job_id] = {
-                    **slide_progress.get(job_id, {}),
-                    "current": current,
-                    "total": total,
-                    "message": message,
-                    "status": "processing"
-                }
-            
-            # Generate batch of slides
-            image_paths = await generate_all_custom_slides(
-                slides=slides,
-                job_id=job_id,
-                gemini_key=x_gemini_key,
-                outline=outline,
-                color_theme=x_color_theme,
-                font_style=x_font_style,
-                user_images=getattr(pipeline, 'user_images', None),
-                design_preference=request.design_preference,
-                text_density=request.text_density,
-                progress_callback=update_progress,
-                start_slide=start,
-                end_slide=end,
-                reference_image_path=getattr(pipeline, 'reference_image', None)
-            )
+        async with slide_generation_semaphore:
+            try:
+                from services.ai_slide_generator import generate_all_custom_slides
+                
+                def update_progress(current: int, total: int, message: str):
+                    slide_progress[job_id] = {
+                        **slide_progress.get(job_id, {}),
+                        "current": current,
+                        "total": total,
+                        "message": message,
+                        "status": "processing"
+                    }
+                
+                # Generate batch of slides
+                image_paths = await generate_all_custom_slides(
+                    slides=slides,
+                    job_id=job_id,
+                    gemini_key=x_gemini_key,
+                    outline=outline,
+                    color_theme=x_color_theme,
+                    font_style=x_font_style,
+                    user_images=getattr(pipeline, 'user_images', None),
+                    design_preference=request.design_preference,
+                    text_density=request.text_density,
+                    progress_callback=update_progress,
+                    start_slide=start,
+                    end_slide=end,
+                    reference_image_path=getattr(pipeline, 'reference_image', None)
+                )
             
             # パイプラインに保存
             pipeline.slide_images = image_paths
