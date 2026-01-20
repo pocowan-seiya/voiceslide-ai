@@ -1319,6 +1319,29 @@ async def generate_all_custom_slides(
                 text_density=text_density  # Pass text density setting
             )
             
+            # Step 3b-2: Inject AI illustration if not present in HTML
+            if is_illustration_mode and image_info:
+                img_url = image_info.get("url", "")
+                # Check if image is already in HTML
+                if img_url and img_url not in html:
+                    print(f"[Generator] Injecting illustration into slide {slide_number}...")
+                    # Create illustration overlay HTML - positioned behind text
+                    illustration_html = f'''
+<div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; overflow: hidden;">
+    <img src="{img_url}" alt="AI Illustration" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;">
+    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.5) 100%);"></div>
+</div>'''
+                    # Insert after <body> tag
+                    if '<body' in html:
+                        html = html.replace('<body>', '<body>' + illustration_html, 1)
+                    elif '<body ' in html:
+                        # Handle <body with attributes>
+                        import re
+                        html = re.sub(r'(<body[^>]*>)', r'\1' + illustration_html.replace('\\', '\\\\'), html, count=1)
+                    else:
+                        # Fallback: insert at beginning of content
+                        html = illustration_html + html
+            
             # Step 3c: Self-review to check for transcript text and improve quality
             # Now runs on ALL slides to ensure no transcript/subtitle text remains
             print(f"[Design Architect] Self-reviewing slide {slide_number}...")
