@@ -127,6 +127,338 @@ h1, h2, h3 { font-weight: 700; }
 }
 
 # =============================================================================
+# Illustration Mode Templates and Mix Strategy
+# =============================================================================
+
+# 6 different illustration template layouts
+ILLUSTRATION_TEMPLATES = {
+    "center_hero": {
+        "name": "Center Hero",
+        "description": "イラストを中央に大きく配置、タイトルは上部"
+    },
+    "left_illustration": {
+        "name": "Left Illustration",
+        "description": "左にイラスト、右にテキスト"
+    },
+    "right_illustration": {
+        "name": "Right Illustration", 
+        "description": "右にイラスト、左にテキスト"
+    },
+    "background_overlay": {
+        "name": "Background Overlay",
+        "description": "イラストを背景に、テキストを重ねる"
+    },
+    "compact_accent": {
+        "name": "Compact Accent",
+        "description": "コンパクトなイラストをアクセントとして右下に配置"
+    },
+    "full_bleed": {
+        "name": "Full Bleed",
+        "description": "イラストを画面いっぱいに、最小限のテキスト"
+    }
+}
+
+def should_use_illustration(slide_type: str, slide_number: int, total_slides: int) -> bool:
+    """
+    Determine if a slide should use illustration based on slide type.
+    Returns True for illustration, False for standard text-based slide.
+    
+    Strategy:
+    - First slide (intro/title): Always illustration
+    - Last slide (summary/cta): Always illustration  
+    - Concept/visual-heavy: Always illustration
+    - Points/lists: Usually standard text (better readability)
+    - Others: 50% chance for variety
+    """
+    import random
+    
+    # Always use illustration for these
+    always_illustration = ["intro", "title", "summary", "cta", "concept", "quote"]
+    if slide_type in always_illustration:
+        return True
+    
+    # First and last slides always get illustrations
+    if slide_number == 1 or slide_number == total_slides:
+        return True
+    
+    # Standard text slides for points/lists (better for reading)
+    prefer_text = ["points", "list", "flow", "steps"]
+    if slide_type in prefer_text:
+        return random.random() < 0.3  # 30% chance for illustration
+    
+    # For everything else, 50/50 mix
+    return random.random() < 0.5
+
+def select_illustration_template(slide_number: int, total_slides: int, slide_type: str) -> str:
+    """
+    Select an illustration template for variety.
+    Avoids using the same template consecutively.
+    """
+    import random
+    
+    templates = list(ILLUSTRATION_TEMPLATES.keys())
+    
+    # First/last slides: prefer hero layouts
+    if slide_number == 1 or slide_number == total_slides:
+        hero_templates = ["center_hero", "full_bleed", "background_overlay"]
+        return random.choice(hero_templates)
+    
+    # Concept slides: prefer center or full layouts
+    if slide_type in ["concept", "quote"]:
+        concept_templates = ["center_hero", "full_bleed"]
+        return random.choice(concept_templates)
+    
+    # Others: random selection with variety
+    return random.choice(templates)
+
+def should_include_text_in_illustration(slide_number: int, total_slides: int) -> bool:
+    """
+    Determine if the illustration should include text labels (for diagram-style).
+    About 30% of slides get text in illustrations.
+    """
+    import random
+    return random.random() < 0.3
+
+
+def generate_illustration_template_html(
+    template: str,
+    title: str,
+    subtitle: str,
+    points: list,
+    img_src: str,
+    slide_number: int,
+    total_slides: int,
+    bg_start: str,
+    bg_end: str,
+    primary: str,
+    secondary: str,
+    title_font: str
+) -> str:
+    """
+    Generate HTML for illustration slides based on the selected template.
+    Supports 6 different layout variations.
+    """
+    
+    # Common CSS base
+    base_css = f'''
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            width: 1920px;
+            height: 1080px;
+            background: linear-gradient(135deg, {bg_start} 0%, {bg_end} 100%);
+            font-family: {title_font};
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }}
+        .slide-number {{
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            font-size: 16px;
+            color: #64748B;
+        }}
+    '''
+    
+    # Build points HTML if available
+    points_html = ""
+    if points:
+        icons = ["💡", "⭐", "🎯", "✨", "🚀", "💎"]
+        for i, point in enumerate(points[:4]):  # Max 4 points for illustration slides
+            point_text = point if isinstance(point, str) else str(point)
+            icon = icons[i % len(icons)]
+            points_html += f'<div class="point"><span class="icon">{icon}</span><span>{point_text}</span></div>'
+    
+    if template == "center_hero":
+        # Center Hero: イラスト中央、タイトル上部
+        return f'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        {base_css}
+        body {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px 80px;
+        }}
+        .title {{ font-size: 52px; font-weight: 900; text-align: center; margin-bottom: 20px;
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .subtitle {{ font-size: 24px; color: #94A3B8; text-align: center; margin-bottom: 30px; }}
+        .illustration-container {{ flex: 1; display: flex; align-items: center; justify-content: center; }}
+        .illustration {{ max-width: 85%; max-height: 100%; object-fit: contain; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }}
+    </style>
+</head>
+<body>
+    <h1 class="title">{title}</h1>
+    {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
+    <div class="illustration-container"><img src="{img_src}" class="illustration" alt=""></div>
+    <div class="slide-number">{slide_number} / {total_slides}</div>
+</body>
+</html>'''
+    
+    elif template == "left_illustration":
+        # Left Illustration: 左にイラスト、右にテキスト
+        return f'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        {base_css}
+        body {{ display: flex; }}
+        .left {{ width: 55%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px; }}
+        .illustration {{ max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
+        .right {{ width: 45%; padding: 60px 50px; display: flex; flex-direction: column; justify-content: center; }}
+        .title {{ font-size: 44px; font-weight: 900; line-height: 1.3; margin-bottom: 20px;
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .subtitle {{ font-size: 20px; color: #94A3B8; margin-bottom: 30px; }}
+        .points {{ display: flex; flex-direction: column; gap: 16px; }}
+        .point {{ display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: rgba(255,255,255,0.05); border-radius: 12px; border-left: 3px solid {primary}; }}
+        .icon {{ font-size: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="left"><img src="{img_src}" class="illustration" alt=""></div>
+    <div class="right">
+        <h1 class="title">{title}</h1>
+        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
+        {f'<div class="points">{points_html}</div>' if points_html else ''}
+    </div>
+    <div class="slide-number">{slide_number} / {total_slides}</div>
+</body>
+</html>'''
+    
+    elif template == "right_illustration":
+        # Right Illustration: 右にイラスト、左にテキスト
+        return f'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        {base_css}
+        body {{ display: flex; }}
+        .left {{ width: 45%; padding: 60px 50px; display: flex; flex-direction: column; justify-content: center; }}
+        .right {{ width: 55%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px; }}
+        .illustration {{ max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
+        .title {{ font-size: 44px; font-weight: 900; line-height: 1.3; margin-bottom: 20px;
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .subtitle {{ font-size: 20px; color: #94A3B8; margin-bottom: 30px; }}
+        .points {{ display: flex; flex-direction: column; gap: 16px; }}
+        .point {{ display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: rgba(255,255,255,0.05); border-radius: 12px; border-left: 3px solid {primary}; }}
+        .icon {{ font-size: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="left">
+        <h1 class="title">{title}</h1>
+        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
+        {f'<div class="points">{points_html}</div>' if points_html else ''}
+    </div>
+    <div class="right"><img src="{img_src}" class="illustration" alt=""></div>
+    <div class="slide-number">{slide_number} / {total_slides}</div>
+</body>
+</html>'''
+    
+    elif template == "background_overlay":
+        # Background Overlay: イラストを背景に、テキストを上に重ねる
+        return f'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        {base_css}
+        .bg-image {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.4; }}
+        .overlay {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(0,0,0,0.7), rgba(0,0,0,0.3)); }}
+        .content {{ position: relative; z-index: 10; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 80px; text-align: center; }}
+        .title {{ font-size: 60px; font-weight: 900; margin-bottom: 24px; text-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .subtitle {{ font-size: 28px; color: #E2E8F0; max-width: 70%; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }}
+    </style>
+</head>
+<body>
+    <img src="{img_src}" class="bg-image" alt="">
+    <div class="overlay"></div>
+    <div class="content">
+        <h1 class="title">{title}</h1>
+        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
+    </div>
+    <div class="slide-number">{slide_number} / {total_slides}</div>
+</body>
+</html>'''
+    
+    elif template == "compact_accent":
+        # Compact Accent: コンパクトなイラストを右下にアクセントとして配置
+        return f'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        {base_css}
+        body {{ padding: 60px 80px; }}
+        .main-content {{ width: 60%; }}
+        .title {{ font-size: 48px; font-weight: 900; margin-bottom: 20px; line-height: 1.3;
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .subtitle {{ font-size: 22px; color: #94A3B8; margin-bottom: 40px; }}
+        .points {{ display: flex; flex-direction: column; gap: 20px; }}
+        .point {{ display: flex; align-items: center; gap: 14px; padding: 18px 24px; background: rgba(255,255,255,0.05); border-radius: 14px; border-left: 4px solid {primary}; font-size: 18px; }}
+        .icon {{ font-size: 22px; }}
+        .accent-illustration {{ position: absolute; right: 60px; bottom: 80px; width: 380px; height: 380px; }}
+        .accent-illustration img {{ width: 100%; height: 100%; object-fit: contain; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <h1 class="title">{title}</h1>
+        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
+        {f'<div class="points">{points_html}</div>' if points_html else ''}
+    </div>
+    <div class="accent-illustration"><img src="{img_src}" alt=""></div>
+    <div class="slide-number">{slide_number} / {total_slides}</div>
+</body>
+</html>'''
+    
+    elif template == "full_bleed":
+        # Full Bleed: イラストを画面いっぱいに、最小限のテキスト
+        return f'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        {base_css}
+        .full-image {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }}
+        .gradient-overlay {{ position: absolute; bottom: 0; left: 0; width: 100%; height: 40%; background: linear-gradient(transparent, rgba(0,0,0,0.8)); }}
+        .title-bar {{ position: absolute; bottom: 60px; left: 80px; right: 80px; z-index: 10; }}
+        .title {{ font-size: 54px; font-weight: 900; text-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .subtitle {{ font-size: 24px; color: #E2E8F0; margin-top: 12px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }}
+    </style>
+</head>
+<body>
+    <img src="{img_src}" class="full-image" alt="">
+    <div class="gradient-overlay"></div>
+    <div class="title-bar">
+        <h1 class="title">{title}</h1>
+        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
+    </div>
+    <div class="slide-number">{slide_number} / {total_slides}</div>
+</body>
+</html>'''
+    
+    else:
+        # Fallback to center_hero
+        return generate_illustration_template_html(
+            "center_hero", title, subtitle, points, img_src,
+            slide_number, total_slides, bg_start, bg_end, primary, secondary, title_font
+        )
+
+# =============================================================================
 # Layout Variation System - 8 Different Layout Types
 # =============================================================================
 
@@ -1267,12 +1599,23 @@ async def generate_all_custom_slides(
             image_info = None
             
             # Check for illustration mode settings
-            is_illustration_mode = False
+            is_illustration_mode_enabled = False
             if design_preference and ("illustration" in design_preference.lower() or "イラスト" in design_preference):
-                is_illustration_mode = True
+                is_illustration_mode_enabled = True
             
-            # Generate image if in illustration mode
-            if is_illustration_mode:
+            # Apply MIX strategy: not all slides need illustrations
+            use_illustration_for_this_slide = False
+            selected_template = None
+            if is_illustration_mode_enabled:
+                use_illustration_for_this_slide = should_use_illustration(slide_type, slide_number, total_slides)
+                if use_illustration_for_this_slide:
+                    selected_template = select_illustration_template(slide_number, total_slides, slide_type)
+                    print(f"[Generator] Slide {slide_number}: Using illustration (template: {selected_template})")
+                else:
+                    print(f"[Generator] Slide {slide_number}: Standard text-based slide (MIX strategy)")
+            
+            # Generate image only if this slide should have illustration
+            if use_illustration_for_this_slide:
                 print(f"[Generator] Illustration mode detected for slide {slide_number}")
                 visual_suggestion = slide.get("visual_suggestion", {})
                 # Use image_prompt if available, otherwise description, otherwise title
@@ -1291,12 +1634,20 @@ async def generate_all_custom_slides(
                     # The core purpose is to help understanding and visualization of concepts
                     
                     # Base instruction: focus on conceptual visualization, not artistic beauty
-                    diagram_instruction = """Create an explanatory diagram illustration that helps visualize and understand the concept.
+                    # Determine if this illustration should include text labels
+                    include_text_labels = should_include_text_in_illustration(slide_number, total_slides)
+                    
+                    text_instruction = "- NO text or labels in the image (text will be added separately on the slide)"
+                    if include_text_labels:
+                        text_instruction = "- Include simple Japanese labels or short text annotations in the diagram to explain key parts"
+                        print(f"[Generator] Including text labels in illustration for slide {slide_number}")
+                    
+                    diagram_instruction = f"""Create an explanatory diagram illustration that helps visualize and understand the concept.
 Focus on:
 - Visualizing relationships, processes, or concepts clearly
 - Using arrows, icons, and simple visual elements to explain ideas
 - Making the illustration educational and easy to understand
-- NO text or labels in the image (text will be added separately on the slide)
+{text_instruction}
 
 Concept to illustrate: """
                     
@@ -1351,101 +1702,44 @@ Concept to illustrate: """
             
             # Step 3b: Generate HTML
             # For illustration mode with image, use dedicated template (bypass AI)
-            if is_illustration_mode and image_info:
-                print(f"[Generator] Using illustration-centered template for slide {slide_number}")
+            if use_illustration_for_this_slide and image_info:
+                print(f"[Generator] Using illustration template '{selected_template}' for slide {slide_number}")
                 
                 # Get slide content
                 slide_copy = slide.get("slide_copy", {})
                 title = slide_copy.get("headline") or slide.get("title", f"スライド {slide_number}")
                 subtitle = slide_copy.get("subtext") or ""
+                points = slide_copy.get("bullet_points") or slide.get("points", [])
                 
                 # Get colors from strategy
                 colors = strategy.get("colors", {})
                 bg_start = colors.get("background_start", "#0f172a")
                 bg_end = colors.get("background_end", "#1e293b")
                 primary = colors.get("primary", "#F59E0B")
+                secondary = colors.get("secondary", "#8B5CF6")
                 
                 # Get font from strategy
                 fonts = strategy.get("fonts", {})
                 title_font = fonts.get("title_font", "'Noto Sans JP', sans-serif")
                 
-                # Create illustration-centered HTML template
                 # Use base64 data URL for reliable Playwright rendering
                 img_src = image_info.get("data_url", "")
-                html = f'''<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=1920, height=1080">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&family=Zen+Maru+Gothic:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            width: 1920px;
-            height: 1080px;
-            background: linear-gradient(135deg, {bg_start} 0%, {bg_end} 100%);
-            font-family: {title_font};
-            color: white;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 40px 60px;
-            position: relative;
-        }}
-        .title-section {{
-            text-align: center;
-            margin-bottom: 30px;
-        }}
-        .title {{
-            font-size: 48px;
-            font-weight: 900;
-            background: linear-gradient(135deg, {primary} 0%, #fff 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            line-height: 1.3;
-            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        }}
-        .subtitle {{
-            font-size: 24px;
-            color: #94A3B8;
-            margin-top: 10px;
-        }}
-        .illustration-container {{
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            padding: 20px;
-        }}
-        .illustration {{
-            max-width: 90%;
-            max-height: 100%;
-            object-fit: contain;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-        }}
-        .slide-number {{
-            position: absolute;
-            bottom: 30px;
-            right: 40px;
-            font-size: 16px;
-            color: #64748B;
-        }}
-    </style>
-</head>
-<body>
-    <div class="title-section">
-        <h1 class="title">{title}</h1>
-        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
-    </div>
-    <div class="illustration-container">
-        <img src="{img_src}" alt="Illustration" class="illustration">
-    </div>
-    <div class="slide-number">{slide_number} / {total_slides}</div>
-</body>
-</html>'''
+                
+                # Generate HTML based on selected template
+                html = generate_illustration_template_html(
+                    template=selected_template,
+                    title=title,
+                    subtitle=subtitle,
+                    points=points,
+                    img_src=img_src,
+                    slide_number=slide_number,
+                    total_slides=total_slides,
+                    bg_start=bg_start,
+                    bg_end=bg_end,
+                    primary=primary,
+                    secondary=secondary,
+                    title_font=title_font
+                )
             else:
                 # Standard mode: use AI-generated HTML
                 html = await generate_slide_html(
