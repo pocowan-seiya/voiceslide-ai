@@ -165,8 +165,11 @@ export default function Home() {
   // Text density setting: simple (title+headline) or standard (title+headline+points)
   const [textDensity, setTextDensity] = useState<"simple" | "standard">("standard");
 
-  // Visual style setting: standard or illustration (AI generated images)
-  const [visualStyle, setVisualStyle] = useState<"standard" | "illustration">("standard");
+  // Slide generation mode: standard (text-focused) or illustration (AI image-focused)
+  const [slideGenerationMode, setSlideGenerationMode] = useState<"standard" | "illustration">("standard");
+
+  // Reference image for illustration mode (style guide)
+  const [referenceImage, setReferenceImage] = useState<{ file: File; preview: string } | null>(null);
 
   // OP/ED video for YouTube
   const [introVideo, setIntroVideo] = useState<File | null>(null);
@@ -491,7 +494,7 @@ export default function Home() {
         body: JSON.stringify({
           start_slide: startSlide,
           batch_size: 5,
-          design_preference: (designPreference || "") + (visualStyle === "illustration" ? " [illustration mode]" : ""),
+          design_preference: (designPreference || "") + (slideGenerationMode === "illustration" ? " [illustration mode]" : ""),
           text_density: textDensity,
         })
       });
@@ -1614,173 +1617,269 @@ export default function Home() {
                 アウトラインを元に、AIがスライドを自動デザインします。
               </p>
 
-              {/* Color Theme Selector */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  🎨 カラーテーマ
+              {/* Mode Selection Cards */}
+              <div className="mb-8">
+                <label className="block text-sm font-medium text-zinc-400 mb-3">
+                  スライドタイプを選択
                 </label>
-                <select
-                  value={selectedColorTheme}
-                  onChange={(e) => setSelectedColorTheme(e.target.value)}
-                  className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
-                >
-                  <option value="">AIにおまかせ（コンテンツに最適な配色）</option>
-                  <option value="cosmic">🌌 Cosmic Dark - 宇宙的な深みと神秘感</option>
-                  <option value="warm">🌅 Warm Sunset - 温かみのあるオレンジ・ゴールド</option>
-                  <option value="elegant">💜 Elegant Purple - エレガントな紫・ピンク</option>
-                  <option value="nature">🌿 Nature Green - 自然とリラックス</option>
-                  <option value="ocean">🌊 Ocean Blue - 海のような開放感</option>
-                  <option value="mono">⚫ Monochrome - シンプルでクリーン</option>
-                </select>
+                <div className="flex justify-center gap-6 max-w-2xl mx-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSlideGenerationMode("standard")}
+                    className={`flex-1 p-6 rounded-xl border-2 transition-all ${slideGenerationMode === "standard"
+                      ? "border-cyan-500 bg-cyan-500/10"
+                      : "border-zinc-700 hover:border-zinc-500"
+                      }`}
+                  >
+                    <div className="text-3xl mb-2">📝</div>
+                    <div className={`font-bold text-lg ${slideGenerationMode === "standard" ? "text-cyan-400" : "text-white"}`}>
+                      標準スライド
+                    </div>
+                    <div className="text-sm text-zinc-400 mt-1">テキスト＆レイアウト重視</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSlideGenerationMode("illustration")}
+                    className={`flex-1 p-6 rounded-xl border-2 transition-all ${slideGenerationMode === "illustration"
+                      ? "border-purple-500 bg-purple-500/10"
+                      : "border-zinc-700 hover:border-zinc-500"
+                      }`}
+                  >
+                    <div className="text-3xl mb-2">🎨</div>
+                    <div className={`font-bold text-lg ${slideGenerationMode === "illustration" ? "text-purple-400" : "text-white"}`}>
+                      イラストスライド
+                    </div>
+                    <div className="text-sm text-zinc-400 mt-1">Gemini 3 ProでAI画像生成</div>
+                  </button>
+                </div>
               </div>
 
-              {/* Font Style Selector */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  ✒️ フォントスタイル
-                </label>
-                <select
-                  value={selectedFontStyle}
-                  onChange={(e) => setSelectedFontStyle(e.target.value)}
-                  className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
-                >
-                  <option value="">AIにおまかせ（コンテンツに最適なフォント）</option>
-                  <option value="gothic">🔲 ゴシック体 - モダンでクリーン</option>
-                  <option value="mincho">📜 明朝体 - 上品でエレガント</option>
-                  <option value="pop">🎈 ポップ体 - カジュアルで親しみやすい</option>
-                  <option value="handwritten">✍️ 手書き風 - 温かみと個性</option>
-                </select>
-              </div>
+              <div className="border-t border-zinc-700 pt-6">
+                {/* ===== STANDARD MODE OPTIONS ===== */}
+                {slideGenerationMode === "standard" && (
+                  <>
+                    {/* Color Theme Selector */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        🎨 カラーテーマ
+                      </label>
+                      <select
+                        value={selectedColorTheme}
+                        onChange={(e) => setSelectedColorTheme(e.target.value)}
+                        className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
+                      >
+                        <option value="">AIにおまかせ（コンテンツに最適な配色）</option>
+                        <option value="cosmic">🌌 Cosmic Dark - 宇宙的な深みと神秘感</option>
+                        <option value="warm">🌅 Warm Sunset - 温かみのあるオレンジ・ゴールド</option>
+                        <option value="elegant">💜 Elegant Purple - エレガントな紫・ピンク</option>
+                        <option value="nature">🌿 Nature Green - 自然とリラックス</option>
+                        <option value="ocean">🌊 Ocean Blue - 海のような開放感</option>
+                        <option value="mono">⚫ Monochrome - シンプルでクリーン</option>
+                      </select>
+                    </div>
 
-              {/* User Image Upload for Slides */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  🖼️ スライドに使う画像（任意・複数可）
-                </label>
-                <div className="w-full max-w-md mx-auto">
-                  <label className="block cursor-pointer">
-                    <div className="border-2 border-dashed border-zinc-600 hover:border-zinc-500 rounded-lg p-4 text-center transition-all">
-                      <span className="text-sm text-zinc-500">📎 クリックして画像を選択（複数OK）</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        className="hidden"
-                        onChange={(e) => {
-                          const files = Array.from(e.target.files || []);
-                          const newImages = files.map(file => ({
-                            file,
-                            preview: URL.createObjectURL(file)
-                          }));
-                          setUserImages(prev => [...prev, ...newImages]);
-                        }}
+                    {/* Font Style Selector */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        ✒️ フォントスタイル
+                      </label>
+                      <select
+                        value={selectedFontStyle}
+                        onChange={(e) => setSelectedFontStyle(e.target.value)}
+                        className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
+                      >
+                        <option value="">AIにおまかせ（コンテンツに最適なフォント）</option>
+                        <option value="gothic">🔲 ゴシック体 - モダンでクリーン</option>
+                        <option value="mincho">📜 明朝体 - 上品でエレガント</option>
+                        <option value="pop">🎈 ポップ体 - カジュアルで親しみやすい</option>
+                        <option value="handwritten">✍️ 手書き風 - 温かみと個性</option>
+                      </select>
+                    </div>
+
+                    {/* User Image Upload for Slides */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        🖼️ スライドに使う画像（任意・複数可）
+                      </label>
+                      <div className="w-full max-w-md mx-auto">
+                        <label className="block cursor-pointer">
+                          <div className="border-2 border-dashed border-zinc-600 hover:border-zinc-500 rounded-lg p-4 text-center transition-all">
+                            <span className="text-sm text-zinc-500">📎 クリックして画像を選択（複数OK）</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="hidden"
+                              onChange={(e) => {
+                                const files = Array.from(e.target.files || []);
+                                const newImages = files.map(file => ({
+                                  file,
+                                  preview: URL.createObjectURL(file)
+                                }));
+                                setUserImages(prev => [...prev, ...newImages]);
+                              }}
+                            />
+                          </div>
+                        </label>
+                        {userImages.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {userImages.map((img, idx) => (
+                              <div key={idx} className="relative group">
+                                <img
+                                  src={img.preview}
+                                  alt={`Upload ${idx + 1}`}
+                                  className="w-16 h-16 object-cover rounded border border-zinc-600"
+                                />
+                                <button
+                                  onClick={() => setUserImages(prev => prev.filter((_, i) => i !== idx))}
+                                  className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Design Preference Input */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        📝 デザイン要望（任意）
+                      </label>
+                      <textarea
+                        value={designPreference}
+                        onChange={(e) => setDesignPreference(e.target.value)}
+                        placeholder="例: 背景は白で、シンプルでミニマルなデザイン"
+                        className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white resize-none"
+                        rows={2}
                       />
                     </div>
-                  </label>
 
-                  {/* Preview uploaded images */}
-                  {userImages.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {userImages.map((img, idx) => (
-                        <div key={idx} className="relative group">
-                          <img
-                            src={img.preview}
-                            alt={`Upload ${idx + 1}`}
-                            className="w-16 h-16 object-cover rounded border border-zinc-600"
-                          />
-                          <button
-                            onClick={() => setUserImages(prev => prev.filter((_, i) => i !== idx))}
-                            className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
+                    {/* Text Density Selector */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        📋 テキスト量
+                      </label>
+                      <div className="flex justify-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setTextDensity("simple")}
+                          className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "simple"
+                            ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                            : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                            }`}
+                        >
+                          📌 シンプル
+                          <span className="block text-xs mt-1 opacity-70">タイトル + 見出し</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTextDensity("standard")}
+                          className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "standard"
+                            ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                            : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                            }`}
+                        >
+                          📝 標準
+                          <span className="block text-xs mt-1 opacity-70">タイトル + 見出し + ポイント</span>
+                        </button>
+                      </div>
                     </div>
-                  )}
-                  <p className="text-xs text-zinc-500 mt-2">
-                    アップロードした画像をスライドのどこかに自動配置します
-                  </p>
-                </div>
-              </div>
+                  </>
+                )}
 
-              {/* Design Preference Input */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  📝 デザイン要望（任意）
-                </label>
-                <textarea
-                  value={designPreference}
-                  onChange={(e) => setDesignPreference(e.target.value)}
-                  placeholder="例: 背景は白で、シンプルでミニマルなデザイン"
-                  className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white resize-none"
-                  rows={2}
-                />
-                <p className="text-xs text-zinc-500 mt-1 max-w-md mx-auto">
-                  背景色、スタイル、フォントなどの希望を入力できます
-                </p>
-              </div>
+                {/* ===== ILLUSTRATION MODE OPTIONS ===== */}
+                {slideGenerationMode === "illustration" && (
+                  <>
+                    {/* Reference Image Upload */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        🖼️ リファレンス画像（スタイルの参考）
+                      </label>
+                      <div className="w-full max-w-md mx-auto">
+                        <label className="block cursor-pointer">
+                          <div className="border-2 border-dashed border-purple-600 hover:border-purple-500 rounded-lg p-4 text-center transition-all">
+                            <span className="text-sm text-zinc-400">📎 イラストスタイルの参考画像をアップロード</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  setReferenceImage({
+                                    file,
+                                    preview: URL.createObjectURL(file)
+                                  });
+                                }
+                              }}
+                            />
+                          </div>
+                        </label>
+                        {referenceImage && (
+                          <div className="mt-3 flex justify-center">
+                            <div className="relative group">
+                              <img
+                                src={referenceImage.preview}
+                                alt="Reference"
+                                className="w-32 h-32 object-cover rounded-lg border-2 border-purple-500"
+                              />
+                              <button
+                                onClick={() => setReferenceImage(null)}
+                                className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <p className="text-xs text-zinc-500 mt-2 text-center">
+                          この画像のスタイルを参考にAIがイラストを生成します
+                        </p>
+                      </div>
+                    </div>
 
-              {/* Text Density Selector */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  📋 テキスト量
-                </label>
-                <div className="flex justify-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setTextDensity("simple")}
-                    className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "simple"
-                      ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                      }`}
-                  >
-                    📌 シンプル
-                    <span className="block text-xs mt-1 opacity-70">タイトル + 見出し</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTextDensity("standard")}
-                    className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "standard"
-                      ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                      }`}
-                  >
-                    📝 標準
-                    <span className="block text-xs mt-1 opacity-70">タイトル + 見出し + ポイント</span>
-                  </button>
-                </div>
-              </div>
+                    {/* Color Theme Selector for Illustration */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        🎨 背景カラー
+                      </label>
+                      <select
+                        value={selectedColorTheme}
+                        onChange={(e) => setSelectedColorTheme(e.target.value)}
+                        className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
+                      >
+                        <option value="">AIにおまかせ</option>
+                        <option value="cosmic">🌌 Cosmic Dark - ダークな宇宙感</option>
+                        <option value="warm">🌅 Warm - 温かみのある色調</option>
+                        <option value="elegant">💜 Elegant - エレガントな紫系</option>
+                        <option value="nature">🌿 Nature - 自然な緑系</option>
+                        <option value="ocean">🌊 Ocean - 爽やかな青系</option>
+                        <option value="mono">⚫ Mono - モノクロ</option>
+                      </select>
+                    </div>
 
-              {/* Visual Style Selector */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  🖼️ ビジュアルスタイル
-                </label>
-                <div className="flex justify-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setVisualStyle("standard")}
-                    className={`px-4 py-2 rounded-lg border transition-all ${visualStyle === "standard"
-                      ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                      }`}
-                  >
-                    標準デザイン
-                    <span className="block text-xs mt-1 opacity-70">テキストとレイアウト重視</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVisualStyle("illustration")}
-                    className={`px-4 py-2 rounded-lg border transition-all ${visualStyle === "illustration"
-                      ? "border-purple-500 bg-purple-500/20 text-purple-400"
-                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                      }`}
-                  >
-                    🎨 AIイラスト重視
-                    <span className="block text-xs mt-1 opacity-70">Gemini 3 Proで全画像を生成</span>
-                  </button>
-                </div>
+                    {/* Font Style Selector for Illustration */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        ✒️ フォントスタイル
+                      </label>
+                      <select
+                        value={selectedFontStyle}
+                        onChange={(e) => setSelectedFontStyle(e.target.value)}
+                        className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
+                      >
+                        <option value="">AIにおまかせ</option>
+                        <option value="gothic">🔲 ゴシック体</option>
+                        <option value="mincho">📜 明朝体</option>
+                        <option value="pop">🎈 ポップ体</option>
+                        <option value="handwritten">✍️ 手書き風</option>
+                      </select>
+                    </div>
+                  </>
+                )}
               </div>
 
               <button
