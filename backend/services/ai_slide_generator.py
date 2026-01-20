@@ -1309,41 +1309,133 @@ async def generate_all_custom_slides(
                             print(f"[Generator] Failed to save image: {e}")
             
             # Step 3b: Generate HTML
-            html = await generate_slide_html(
-                slide=slide,
-                slide_number=slide_number,
-                total_slides=total_slides,
-                strategy=strategy,
-                job_id=job_id,  # Added for layout tracking
-                gemini_key=gemini_key,
-                image_info=image_info,
-                text_density=text_density  # Pass text density setting
-            )
-            
-            # Step 3b-2: Inject AI illustration if not present in HTML
+            # For illustration mode with image, use dedicated template (bypass AI)
             if is_illustration_mode and image_info:
+                print(f"[Generator] Using illustration-centered template for slide {slide_number}")
+                
+                # Get slide content
+                slide_copy = slide.get("slide_copy", {})
+                title = slide_copy.get("headline") or slide.get("title", f"スライド {slide_number}")
+                subtitle = slide_copy.get("subtext") or ""
+                
+                # Get colors from strategy
+                colors = strategy.get("colors", {})
+                bg_start = colors.get("background_start", "#0f172a")
+                bg_end = colors.get("background_end", "#1e293b")
+                primary = colors.get("primary", "#F59E0B")
+                
+                # Get font from strategy
+                fonts = strategy.get("fonts", {})
+                title_font = fonts.get("title_font", "'Noto Sans JP', sans-serif")
+                
+                # Create illustration-centered HTML template
                 img_url = image_info.get("url", "")
-                # Check if image is already in HTML
-                if img_url and img_url not in html:
-                    print(f"[Generator] Injecting illustration into slide {slide_number}...")
-                    # Create illustration overlay HTML - positioned behind text
-                    illustration_html = f'''
+                html = f'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&family=Zen+Maru+Gothic:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            width: 1920px;
+            height: 1080px;
+            background: linear-gradient(135deg, {bg_start} 0%, {bg_end} 100%);
+            font-family: {title_font};
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 60px;
+            position: relative;
+        }}
+        .title-section {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .title {{
+            font-size: 48px;
+            font-weight: 900;
+            background: linear-gradient(135deg, {primary} 0%, #fff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.3;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }}
+        .subtitle {{
+            font-size: 24px;
+            color: #94A3B8;
+            margin-top: 10px;
+        }}
+        .illustration-container {{
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 20px;
+        }}
+        .illustration {{
+            max-width: 90%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }}
+        .slide-number {{
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            font-size: 16px;
+            color: #64748B;
+        }}
+    </style>
+</head>
+<body>
+    <div class="title-section">
+        <h1 class="title">{title}</h1>
+        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
+    </div>
+    <div class="illustration-container">
+        <img src="{img_url}" alt="Illustration" class="illustration">
+    </div>
+    <div class="slide-number">{slide_number} / {total_slides}</div>
+</body>
+</html>'''
+            else:
+                # Standard mode: use AI-generated HTML
+                html = await generate_slide_html(
+                    slide=slide,
+                    slide_number=slide_number,
+                    total_slides=total_slides,
+                    strategy=strategy,
+                    job_id=job_id,
+                    gemini_key=gemini_key,
+                    image_info=image_info,
+                    text_density=text_density
+                )
+                
+                # Step 3b-2: Inject AI illustration if not present in HTML (fallback)
+                if is_illustration_mode and image_info:
+                    img_url = image_info.get("url", "")
+                    if img_url and img_url not in html:
+                        print(f"[Generator] Injecting illustration into slide {slide_number}...")
+                        illustration_html = f'''
 <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; overflow: hidden;">
     <img src="{img_url}" alt="AI Illustration" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;">
     <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.5) 100%);"></div>
 </div>'''
-                    # Insert after <body> tag
-                    if '<body' in html:
-                        html = html.replace('<body>', '<body>' + illustration_html, 1)
-                    elif '<body ' in html:
-                        # Handle <body with attributes>
-                        import re
-                        html = re.sub(r'(<body[^>]*>)', r'\1' + illustration_html.replace('\\', '\\\\'), html, count=1)
-                    else:
-                        # Fallback: insert at beginning of content
-                        html = illustration_html + html
+                        if '<body' in html:
+                            html = html.replace('<body>', '<body>' + illustration_html, 1)
+                        elif '<body ' in html:
+                            import re
+                            html = re.sub(r'(<body[^>]*>)', r'\1' + illustration_html.replace('\\', '\\\\'), html, count=1)
+                        else:
+                            html = illustration_html + html
             
-            # Step 3c: Self-review to check for transcript text and improve quality
+            # Step 3c: Self-review (skip for illustration mode as we use fixed template)
             # Now runs on ALL slides to ensure no transcript/subtitle text remains
             print(f"[Design Architect] Self-reviewing slide {slide_number}...")
             html = await self_review_slide(
