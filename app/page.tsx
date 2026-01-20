@@ -1670,11 +1670,14 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => setSlideGenerationMode("illustration")}
-                    className={`flex-1 p-6 rounded-xl border-2 transition-all ${slideGenerationMode === "illustration"
+                    className={`flex-1 p-6 rounded-xl border-2 transition-all relative ${slideGenerationMode === "illustration"
                       ? "border-purple-500 bg-purple-500/10"
                       : "border-zinc-700 hover:border-zinc-500"
                       }`}
                   >
+                    <span className="absolute top-2 right-2 bg-amber-500 text-black text-xs font-bold px-2 py-0.5 rounded-full">
+                      開発中
+                    </span>
                     <div className="text-3xl mb-2">🎨</div>
                     <div className={`font-bold text-lg ${slideGenerationMode === "illustration" ? "text-purple-400" : "text-white"}`}>
                       イラストスライド
