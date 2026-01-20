@@ -1312,6 +1312,7 @@ async def generate_all_custom_slides(
                             # Set image info for HTML generation
                             image_info = {
                                 "url": f"/outputs/{job_id}_slides/{img_filename}",
+                                "absolute_path": img_path,  # For Playwright rendering
                                 "photographer": "AI Generated (Gemini 3)"
                             }
                             print(f"[Generator] Saved illustration to {img_path}")
@@ -1343,7 +1344,8 @@ async def generate_all_custom_slides(
                 title_font = fonts.get("title_font", "'Noto Sans JP', sans-serif")
                 
                 # Create illustration-centered HTML template
-                img_url = image_info.get("url", "")
+                # Use absolute path for Playwright rendering
+                img_path_for_html = image_info.get("absolute_path", "")
                 html = f'''<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1413,7 +1415,7 @@ async def generate_all_custom_slides(
         {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
     </div>
     <div class="illustration-container">
-        <img src="{img_url}" alt="Illustration" class="illustration">
+        <img src="{img_path_for_html}" alt="Illustration" class="illustration">
     </div>
     <div class="slide-number">{slide_number} / {total_slides}</div>
 </body>
