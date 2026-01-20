@@ -853,15 +853,15 @@ async def generate_slides_batch_endpoint(
                 }
                 print(f"[Batch Generate] Completed slides {start}-{end}")
             
-        except Exception as e:
-            print(f"[Batch Generate] Error: {e}")
-            import traceback
-            traceback.print_exc()
-            slide_progress[job_id] = {
-                **slide_progress.get(job_id, {}),
-                "status": "error",
-                "message": f"エラー: {str(e)}"
-            }
+            except Exception as e:
+                print(f"[Batch Generate] Error: {e}")
+                import traceback
+                traceback.print_exc()
+                slide_progress[job_id] = {
+                    **slide_progress.get(job_id, {}),
+                    "status": "error",
+                    "message": f"エラー: {str(e)}"
+                }
     
     # Run in background using asyncio
     import asyncio
