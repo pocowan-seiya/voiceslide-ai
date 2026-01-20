@@ -836,10 +836,14 @@ async def generate_slide_html(
     print(f"[Design Architect] Slide {slide_number}: Using layout '{layout['name']}'")
     
     # Build image section if image provided
+    is_ai_illustration = False
     if image_info:
+        photographer = image_info.get("photographer", "Unknown")
+        is_ai_illustration = "Gemini 3" in photographer
+        
         image_section = IMAGE_SECTION_TEMPLATE.format(
             image_url=image_info.get("url", ""),
-            photographer=image_info.get("photographer", "Unknown")
+            photographer=photographer
         )
     else:
         image_section = ""
@@ -853,6 +857,7 @@ async def generate_slide_html(
         style_desc = personality.get("speaking_style", "")
         values = personality.get("values", "")
         design_hint = personality.get("design_hint", "")
+
         
         personality_section = f"""
 話者の口調: {tone}
@@ -894,6 +899,25 @@ async def generate_slide_html(
 文字が多いと失格です。ビジュアルで伝えてください。
 """
     
+    # Illustration mode instruction
+    illustration_mode_instruction = ""
+    if is_ai_illustration:
+        illustration_mode_instruction = """
+# 🎨 イラスト重視モード（※最優先ルール）
+
+AI生成されたイラストがこのスライドの主役です。以下の絶対ルールに従ってください：
+
+1. **画像を大きく配置**: 提供された画像をスライドの背景全体(`width: 100%; height: 100vh; object-fit: cover;`)、またはスライドの大部分に配置してください。
+2. **テキストは最小限**: 
+   - タイトルのみ、またはタイトル＋短い補足のみ。
+   - 箇条書きは原則禁止（画像の邪魔になるため）。
+3. **画像の上に文字を乗せる場合**:
+   - 文字の可読性を確保するために、`backdrop-filter: blur(10px)` や半透明の暗い背景 (`rgba(0,0,0,0.6)`) をテキストコンテナに適用してください。
+   - `text-shadow: 0 4px 12px rgba(0,0,0,0.8)` を強めにかけてください。
+   
+提供された `{{image_section}}` 内の画像タグを必ず使用してください。
+"""
+    
     # User images instruction
     user_images_instruction = ""
     user_images_list = strategy.get("_user_images_data", [])  # Use internal key (not serialized to AI)
@@ -933,7 +957,7 @@ async def generate_slide_html(
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
-        layout_instruction=layout_instruction + simple_mode_instruction + user_images_instruction,
+        layout_instruction=layout_instruction + simple_mode_instruction + illustration_mode_instruction + user_images_instruction,
         image_section=image_section,
         personality_section=personality_section,
         width=VIDEO_WIDTH,
@@ -1237,9 +1261,51 @@ async def generate_all_custom_slides(
             
             slide_type = determine_slide_type(slide, slide_number, total_slides)
             
-            # Step 3a: Image generation temporarily disabled (API version compatibility)
-            # TODO: Re-enable when google-generativeai supports response_modalities
+            # Step 3a: Image generation
             image_info = None
+            
+            # Check for illustration mode settings
+            is_illustration_mode = False
+            if design_preference and ("illustration" in design_preference.lower() or "イラスト" in design_preference):
+                is_illustration_mode = True
+            
+            # Generate image if in illustration mode
+            if is_illustration_mode:
+                visual_suggestion = slide.get("visual_suggestion", {})
+                # Use image_prompt if available, otherwise description
+                base_prompt = visual_suggestion.get("image_prompt") or visual_suggestion.get("description", "")
+                
+                if base_prompt:
+                    # Construct prompt based on design strategy
+                    style_keywords = "high quality, artistic"
+                    if strategy.get("design_style"):
+                        visual_theme = strategy["design_style"].get("visual_theme", "")
+                        style_keywords += f", {visual_theme}"
+                    
+                    full_prompt = f"{base_prompt}, {style_keywords}, no text, clear background"
+                    
+                    print(f"[Generator] Generating illustration for slide {slide_number}...")
+                    if progress_callback:
+                        # Only update status text roughly
+                        progress_callback(i, end_slide - start_slide + 2, f"イラスト生成中 ({slide_number}/{total_slides})...")
+                    
+                    img_data = await generate_slide_image(full_prompt, gemini_key)
+                    
+                    if img_data:
+                        img_filename = f"slide_illustration_{slide_number:03d}.png"
+                        img_path = os.path.join(slides_dir, img_filename)
+                        try:
+                            with open(img_path, "wb") as f:
+                                f.write(img_data)
+                            
+                            # Set image info for HTML generation
+                            image_info = {
+                                "url": f"/outputs/{job_id}_slides/{img_filename}",
+                                "photographer": "AI Generated (Gemini 3)"
+                            }
+                            print(f"[Generator] Saved illustration to {img_path}")
+                        except Exception as e:
+                            print(f"[Generator] Failed to save image: {e}")
             
             # Step 3b: Generate HTML
             html = await generate_slide_html(
@@ -1978,3 +2044,31 @@ async def regenerate_slide_with_feedback(
             "slide_number": slide_number,
             "error": str(e)
         }
+
+async def generate_slide_image(prompt: str, api_key: str) -> Optional[bytes]:
+    """Generates an image using Gemini 3 Pro Image Preview model."""
+    if not api_key:
+        return None
+        
+    try:
+        genai.configure(api_key=api_key)
+        # 指定されたモデルを使用
+        model_name = "gemini-3-pro-image-preview"
+        model = genai.GenerativeModel(model_name)
+        
+        print(f"[Imagen] Generating image with prompt: {prompt[:50]}...")
+        # 画像生成プロンプトの調整（英語の方が精度が良い傾向があるため、簡単な補正を入れることも検討）
+        # 現状はそのまま渡す
+        response = model.generate_content(prompt)
+        
+        if hasattr(response, 'candidates') and response.candidates:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data'):
+                    print(f"[Imagen] Success!")
+                    return part.inline_data.data
+        
+        print(f"[Imagen] No image data in response.")
+        return None
+    except Exception as e:
+        print(f"[Imagen] Error: {e}")
+        return None
