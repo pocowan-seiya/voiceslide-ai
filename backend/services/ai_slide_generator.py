@@ -1272,22 +1272,32 @@ async def generate_all_custom_slides(
             
             # Generate image if in illustration mode
             if is_illustration_mode:
+                print(f"[Generator] Illustration mode detected for slide {slide_number}")
                 visual_suggestion = slide.get("visual_suggestion", {})
-                # Use image_prompt if available, otherwise description
+                # Use image_prompt if available, otherwise description, otherwise title
                 base_prompt = visual_suggestion.get("image_prompt") or visual_suggestion.get("description", "")
+                
+                # Fallback: use slide title if no visual_suggestion
+                if not base_prompt:
+                    slide_copy = slide.get("slide_copy", {})
+                    title = slide_copy.get("headline") or slide.get("title", "")
+                    if title:
+                        base_prompt = f"illustration for: {title}"
+                        print(f"[Generator] Using title as prompt fallback: {title}")
                 
                 if base_prompt:
                     # Construct prompt based on design strategy
-                    style_keywords = "high quality, artistic"
+                    style_keywords = "high quality, artistic, illustration, digital art"
                     if strategy.get("design_style"):
                         visual_theme = strategy["design_style"].get("visual_theme", "")
-                        style_keywords += f", {visual_theme}"
+                        if visual_theme:
+                            style_keywords += f", {visual_theme}"
                     
-                    full_prompt = f"{base_prompt}, {style_keywords}, no text, clear background"
+                    full_prompt = f"{base_prompt}, {style_keywords}, no text overlay, clean composition"
                     
                     print(f"[Generator] Generating illustration for slide {slide_number}...")
+                    print(f"[Generator] Prompt: {full_prompt[:100]}...")
                     if progress_callback:
-                        # Only update status text roughly
                         progress_callback(i, end_slide - start_slide + 2, f"イラスト生成中 ({slide_number}/{total_slides})...")
                     
                     img_data = await generate_slide_image(full_prompt, gemini_key, reference_image_path)
@@ -1307,6 +1317,10 @@ async def generate_all_custom_slides(
                             print(f"[Generator] Saved illustration to {img_path}")
                         except Exception as e:
                             print(f"[Generator] Failed to save image: {e}")
+                    else:
+                        print(f"[Generator] Image generation returned no data for slide {slide_number}")
+                else:
+                    print(f"[Generator] No prompt available for slide {slide_number}, skipping image generation")
             
             # Step 3b: Generate HTML
             # For illustration mode with image, use dedicated template (bypass AI)
