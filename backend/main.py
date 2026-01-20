@@ -259,6 +259,44 @@ async def upload_slide_images(
     }
 
 
+# ========== Reference Image Upload (Illustration Mode) ==========
+
+@app.post("/api/upload-reference-image/{job_id}")
+async def upload_reference_image(
+    job_id: str,
+    file: UploadFile = File(...)
+):
+    """Upload reference image for illustration style guidance"""
+    from config import OUTPUT_DIR
+    
+    images_dir = os.path.join(OUTPUT_DIR, f"{job_id}_reference")
+    os.makedirs(images_dir, exist_ok=True)
+    
+    allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+    ext = os.path.splitext(file.filename)[1].lower()
+    
+    if ext not in allowed_ext:
+        raise HTTPException(400, f"サポートされていない画像形式です: {ext}")
+    
+    filename = f"reference{ext}"
+    filepath = os.path.join(images_dir, filename)
+    
+    with open(filepath, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    # Store in pipeline
+    pipeline = get_or_create_pipeline(job_id)
+    pipeline.reference_image = filepath
+    
+    print(f"[Reference Image] Saved reference image for job {job_id}: {filepath}")
+    
+    return {
+        "success": True,
+        "path": f"/outputs/{job_id}_reference/{filename}"
+    }
+
+
+
 # ========== STEP 1: Upload Audio ==========
 
 @app.post("/api/upload-audio")
@@ -778,7 +816,8 @@ async def generate_slides_batch_endpoint(
                 text_density=request.text_density,
                 progress_callback=update_progress,
                 start_slide=start,
-                end_slide=end
+                end_slide=end,
+                reference_image_path=getattr(pipeline, 'reference_image', None)
             )
             
             # パイプラインに保存

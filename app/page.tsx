@@ -476,6 +476,25 @@ export default function Home() {
         }
       }
 
+      // Upload reference image for illustration mode (if any and first batch)
+      if (startSlide === 1 && slideGenerationMode === "illustration" && referenceImage) {
+        setProgress({ percent: 0, message: "リファレンス画像をアップロード中..." });
+
+        const formData = new FormData();
+        formData.append("file", referenceImage.file);
+
+        const uploadRes = await fetch(`${API_URL}/api/upload-reference-image/${state.jobId}`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          console.warn("[Reference Image] Upload failed, continuing without reference");
+        } else {
+          console.log("[Reference Image] Uploaded successfully");
+        }
+      }
+
       const headers: HeadersInit = {
         "Content-Type": "application/json",
         ...getAPIHeaders()

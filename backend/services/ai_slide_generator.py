@@ -1138,7 +1138,8 @@ async def generate_all_custom_slides(
     text_density: str = "standard",  # "simple" (title+headline) or "standard" (full)
     progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)
     start_slide: int = 1,  # Batch: start from this slide (1-indexed)
-    end_slide: Optional[int] = None  # Batch: end at this slide (inclusive), None = all
+    end_slide: Optional[int] = None,  # Batch: end at this slide (inclusive), None = all
+    reference_image_path: Optional[str] = None  # Reference image for illustration style
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -1289,7 +1290,7 @@ async def generate_all_custom_slides(
                         # Only update status text roughly
                         progress_callback(i, end_slide - start_slide + 2, f"イラスト生成中 ({slide_number}/{total_slides})...")
                     
-                    img_data = await generate_slide_image(full_prompt, gemini_key)
+                    img_data = await generate_slide_image(full_prompt, gemini_key, reference_image_path)
                     
                     if img_data:
                         img_filename = f"slide_illustration_{slide_number:03d}.png"
@@ -2068,21 +2069,57 @@ async def regenerate_slide_with_feedback(
             "error": str(e)
         }
 
-async def generate_slide_image(prompt: str, api_key: str) -> Optional[bytes]:
-    """Generates an image using Gemini 3 Pro Image Preview model."""
+async def generate_slide_image(prompt: str, api_key: str, reference_image_path: Optional[str] = None) -> Optional[bytes]:
+    """Generates an image using Gemini 3 Pro Image Preview model.
+    
+    Args:
+        prompt: The text prompt for image generation
+        api_key: Gemini API key
+        reference_image_path: Optional path to reference image for style guidance
+    """
     if not api_key:
         return None
         
     try:
         genai.configure(api_key=api_key)
-        # 指定されたモデルを使用
         model_name = "gemini-3-pro-image-preview"
         model = genai.GenerativeModel(model_name)
         
+        # Build content with optional reference image
+        content_parts = []
+        
+        if reference_image_path and os.path.exists(reference_image_path):
+            print(f"[Imagen] Using reference image: {reference_image_path}")
+            # Read and encode reference image
+            with open(reference_image_path, "rb") as f:
+                ref_image_data = f.read()
+            
+            # Determine mime type
+            ext = os.path.splitext(reference_image_path)[1].lower()
+            mime_type = {
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".png": "image/png",
+                ".gif": "image/gif",
+                ".webp": "image/webp"
+            }.get(ext, "image/png")
+            
+            # Add reference image to content
+            content_parts.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(ref_image_data).decode("utf-8")
+                }
+            })
+            
+            # Modify prompt to reference the style
+            enhanced_prompt = f"Generate an illustration in the same artistic style as the reference image. {prompt}"
+            content_parts.append(enhanced_prompt)
+        else:
+            content_parts.append(prompt)
+        
         print(f"[Imagen] Generating image with prompt: {prompt[:50]}...")
-        # 画像生成プロンプトの調整（英語の方が精度が良い傾向があるため、簡単な補正を入れることも検討）
-        # 現状はそのまま渡す
-        response = model.generate_content(prompt)
+        response = model.generate_content(content_parts)
         
         if hasattr(response, 'candidates') and response.candidates:
             for part in response.candidates[0].content.parts:
@@ -2095,3 +2132,4 @@ async def generate_slide_image(prompt: str, api_key: str) -> Optional[bytes]:
     except Exception as e:
         print(f"[Imagen] Error: {e}")
         return None
+
