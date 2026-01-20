@@ -2187,6 +2187,9 @@ async def generate_slide_image(prompt: str, api_key: str, reference_image_path: 
         return None
         
     try:
+        import os
+        import base64
+        
         genai.configure(api_key=api_key)
         model_name = "gemini-3-pro-image-preview"
         model = genai.GenerativeModel(model_name)
