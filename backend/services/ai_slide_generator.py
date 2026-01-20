@@ -1457,18 +1457,22 @@ async def generate_all_custom_slides(
                         else:
                             html = illustration_html + html
             
-            # Step 3c: Self-review (skip for illustration mode as we use fixed template)
-            # Now runs on ALL slides to ensure no transcript/subtitle text remains
-            print(f"[Design Architect] Self-reviewing slide {slide_number}...")
-            html = await self_review_slide(
-                html=html,
-                strategy=strategy,
-                gemini_key=gemini_key
-            )
+            # Step 3c: Self-review (skip for illustration mode as we use fixed template with base64 image)
+            # Only run for standard slides to ensure no transcript/subtitle text remains
+            if not (is_illustration_mode and image_info):
+                print(f"[Design Architect] Self-reviewing slide {slide_number}...")
+                html = await self_review_slide(
+                    html=html,
+                    strategy=strategy,
+                    gemini_key=gemini_key
+                )
+                
+                # Step 3d: Post-processing - forcibly remove any remaining caption text
+                print(f"[Design Architect] Post-processing slide {slide_number} (removing captions)...")
+                html = remove_caption_text(html)
+            else:
+                print(f"[Design Architect] Skipping self-review for illustration slide {slide_number}")
             
-            # Step 3d: Post-processing - forcibly remove any remaining caption text
-            print(f"[Design Architect] Post-processing slide {slide_number} (removing captions)...")
-            html = remove_caption_text(html)
             html_contents.append(html)
             
             # Render to image with browser restart on crash
