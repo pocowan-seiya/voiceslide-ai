@@ -59,6 +59,77 @@ slide_progress: Dict[str, Dict[str, Any]] = {}
 # Slide history for undo (job_id -> slide_number -> list of previous versions)
 slide_history: Dict[str, Dict[int, List[Dict[str, Any]]]] = {}
 
+# Job timestamps for cleanup tracking
+job_timestamps: Dict[str, datetime] = {}
+
+# Cleanup configuration
+CLEANUP_INTERVAL_HOURS = 1  # Run cleanup every hour
+JOB_MAX_AGE_HOURS = 24  # Delete jobs older than 24 hours
+
+async def cleanup_old_jobs():
+    """Remove old job data from memory and disk to prevent resource accumulation"""
+    import time
+    while True:
+        try:
+            now = datetime.now()
+            jobs_to_delete = []
+            
+            # Find old jobs
+            for job_id, created_at in list(job_timestamps.items()):
+                age_hours = (now - created_at).total_seconds() / 3600
+                if age_hours > JOB_MAX_AGE_HOURS:
+                    jobs_to_delete.append(job_id)
+            
+            # Delete old jobs
+            for job_id in jobs_to_delete:
+                print(f"[Cleanup] Removing old job: {job_id}")
+                
+                # Clean memory
+                jobs.pop(job_id, None)
+                api_keys.pop(job_id, None)
+                slide_progress.pop(job_id, None)
+                slide_history.pop(job_id, None)
+                job_timestamps.pop(job_id, None)
+                
+                # Clean pipeline
+                try:
+                    delete_pipeline(job_id)
+                except:
+                    pass
+                
+                # Clean disk (output files)
+                for suffix in ["_slides", "_user_images", "_reference"]:
+                    dir_path = os.path.join(OUTPUT_DIR, f"{job_id}{suffix}")
+                    if os.path.exists(dir_path):
+                        try:
+                            shutil.rmtree(dir_path)
+                            print(f"[Cleanup] Deleted directory: {dir_path}")
+                        except Exception as e:
+                            print(f"[Cleanup] Failed to delete {dir_path}: {e}")
+                
+                # Clean uploads
+                upload_dir = os.path.join(UPLOAD_DIR, job_id)
+                if os.path.exists(upload_dir):
+                    try:
+                        shutil.rmtree(upload_dir)
+                    except:
+                        pass
+            
+            if jobs_to_delete:
+                print(f"[Cleanup] Removed {len(jobs_to_delete)} old jobs")
+        
+        except Exception as e:
+            print(f"[Cleanup] Error: {e}")
+        
+        # Wait before next cleanup cycle
+        await asyncio.sleep(CLEANUP_INTERVAL_HOURS * 3600)
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background cleanup task on server startup"""
+    asyncio.create_task(cleanup_old_jobs())
+    print("[Startup] Cleanup task started")
+
 
 # Request models
 class TranscriptUpdate(BaseModel):
@@ -331,6 +402,9 @@ async def upload_audio(file: UploadFile = File(...)):
         "audio_path": audio_path,
         "created_at": datetime.now().isoformat()
     }
+    
+    # Track job timestamp for cleanup
+    job_timestamps[job_id] = datetime.now()
     
     # Initialize pipeline
     get_or_create_pipeline(job_id, audio_path)
