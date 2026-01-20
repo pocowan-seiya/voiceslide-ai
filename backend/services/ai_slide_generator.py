@@ -1309,10 +1309,16 @@ async def generate_all_custom_slides(
                             with open(img_path, "wb") as f:
                                 f.write(img_data)
                             
+                            # Create base64 data URL for Playwright rendering
+                            import base64
+                            img_base64 = base64.b64encode(img_data).decode('utf-8')
+                            data_url = f"data:image/png;base64,{img_base64}"
+                            
                             # Set image info for HTML generation
                             image_info = {
                                 "url": f"/outputs/{job_id}_slides/{img_filename}",
-                                "absolute_path": img_path,  # For Playwright rendering
+                                "absolute_path": img_path,
+                                "data_url": data_url,  # Base64 for Playwright
                                 "photographer": "AI Generated (Gemini 3)"
                             }
                             print(f"[Generator] Saved illustration to {img_path}")
@@ -1344,8 +1350,8 @@ async def generate_all_custom_slides(
                 title_font = fonts.get("title_font", "'Noto Sans JP', sans-serif")
                 
                 # Create illustration-centered HTML template
-                # Use absolute path for Playwright rendering
-                img_path_for_html = image_info.get("absolute_path", "")
+                # Use base64 data URL for reliable Playwright rendering
+                img_src = image_info.get("data_url", "")
                 html = f'''<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1415,7 +1421,7 @@ async def generate_all_custom_slides(
         {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
     </div>
     <div class="illustration-container">
-        <img src="{img_path_for_html}" alt="Illustration" class="illustration">
+        <img src="{img_src}" alt="Illustration" class="illustration">
     </div>
     <div class="slide-number">{slide_number} / {total_slides}</div>
 </body>
