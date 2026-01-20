@@ -1287,20 +1287,33 @@ async def generate_all_custom_slides(
                         print(f"[Generator] Using title as prompt fallback: {title}")
                 
                 if base_prompt:
-                    # Construct prompt based on design strategy
-                    style_keywords = "high quality, artistic, illustration, digital art"
+                    # Build illustration prompt focused on concept visualization (diagram-style)
+                    # The core purpose is to help understanding and visualization of concepts
+                    
+                    # Base instruction: focus on conceptual visualization, not artistic beauty
+                    diagram_instruction = """Create an explanatory diagram illustration that helps visualize and understand the concept.
+Focus on:
+- Visualizing relationships, processes, or concepts clearly
+- Using arrows, icons, and simple visual elements to explain ideas
+- Making the illustration educational and easy to understand
+- NO text or labels in the image (text will be added separately on the slide)
+
+Concept to illustrate: """
+                    
+                    # Include user's illustration request if provided (this controls style)
+                    user_style_part = ""
+                    if illustration_request:
+                        user_style_part = f"\n\nStyle instruction from user: {illustration_request}"
+                        print(f"[Generator] Including user style request: {illustration_request[:50]}...")
+                    
+                    # Add visual theme from design strategy if available
+                    theme_part = ""
                     if strategy.get("design_style"):
                         visual_theme = strategy["design_style"].get("visual_theme", "")
                         if visual_theme:
-                            style_keywords += f", {visual_theme}"
+                            theme_part = f"\n\nVisual theme: {visual_theme}"
                     
-                    # Include user's illustration request if provided
-                    user_request_part = ""
-                    if illustration_request:
-                        user_request_part = f"User request: {illustration_request}. "
-                        print(f"[Generator] Including user request: {illustration_request[:50]}...")
-                    
-                    full_prompt = f"{user_request_part}{base_prompt}, {style_keywords}, no text overlay, clean composition"
+                    full_prompt = f"{diagram_instruction}{base_prompt}{user_style_part}{theme_part}"
                     
                     print(f"[Generator] Generating illustration for slide {slide_number}...")
                     print(f"[Generator] Prompt: {full_prompt[:100]}...")
