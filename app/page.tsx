@@ -165,9 +165,6 @@ export default function Home() {
   // Text density setting: simple (title+headline) or standard (title+headline+points)
   const [textDensity, setTextDensity] = useState<"simple" | "standard">("standard");
 
-  // Visual style setting: standard or illustration (AI generated images)
-  const [visualStyle, setVisualStyle] = useState<"standard" | "illustration">("standard");
-
   // OP/ED video for YouTube
   const [introVideo, setIntroVideo] = useState<File | null>(null);
   const [outroVideo, setOutroVideo] = useState<File | null>(null);
@@ -491,7 +488,7 @@ export default function Home() {
         body: JSON.stringify({
           start_slide: startSlide,
           batch_size: 5,
-          design_preference: (designPreference || "") + (visualStyle === "illustration" ? " [illustration mode]" : ""),
+          design_preference: designPreference || undefined,
           text_density: textDensity,
         })
       });
@@ -1748,37 +1745,6 @@ export default function Home() {
                   >
                     📝 標準
                     <span className="block text-xs mt-1 opacity-70">タイトル + 見出し + ポイント</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Visual Style Selector */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  🖼️ ビジュアルスタイル
-                </label>
-                <div className="flex justify-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setVisualStyle("standard")}
-                    className={`px-4 py-2 rounded-lg border transition-all ${visualStyle === "standard"
-                      ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                      }`}
-                  >
-                    標準デザイン
-                    <span className="block text-xs mt-1 opacity-70">テキストとレイアウト重視</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVisualStyle("illustration")}
-                    className={`px-4 py-2 rounded-lg border transition-all ${visualStyle === "illustration"
-                      ? "border-purple-500 bg-purple-500/20 text-purple-400"
-                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                      }`}
-                  >
-                    🎨 AIイラスト重視
-                    <span className="block text-xs mt-1 opacity-70">Gemini 3 Proで全画像を生成</span>
                   </button>
                 </div>
               </div>
