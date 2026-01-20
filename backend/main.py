@@ -269,35 +269,43 @@ async def upload_slide_images(
 @app.post("/api/upload-reference-image/{job_id}")
 async def upload_reference_image(
     job_id: str,
-    file: UploadFile = File(...)
+    file: Optional[UploadFile] = File(None),
+    illustration_request: Optional[str] = Form(None)
 ):
-    """Upload reference image for illustration style guidance"""
+    """Upload reference image and/or illustration request for style guidance"""
     from config import OUTPUT_DIR
     
-    images_dir = os.path.join(OUTPUT_DIR, f"{job_id}_reference")
-    os.makedirs(images_dir, exist_ok=True)
-    
-    allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
-    ext = os.path.splitext(file.filename)[1].lower()
-    
-    if ext not in allowed_ext:
-        raise HTTPException(400, f"サポートされていない画像形式です: {ext}")
-    
-    filename = f"reference{ext}"
-    filepath = os.path.join(images_dir, filename)
-    
-    with open(filepath, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    
-    # Store in pipeline
     pipeline = get_or_create_pipeline(job_id)
-    pipeline.reference_image = filepath
     
-    print(f"[Reference Image] Saved reference image for job {job_id}: {filepath}")
+    # Handle reference image upload
+    if file and file.filename:
+        images_dir = os.path.join(OUTPUT_DIR, f"{job_id}_reference")
+        os.makedirs(images_dir, exist_ok=True)
+        
+        allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+        ext = os.path.splitext(file.filename)[1].lower()
+        
+        if ext not in allowed_ext:
+            raise HTTPException(400, f"サポートされていない画像形式です: {ext}")
+        
+        filename = f"reference{ext}"
+        filepath = os.path.join(images_dir, filename)
+        
+        with open(filepath, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        
+        pipeline.reference_image = filepath
+        print(f"[Reference Image] Saved reference image for job {job_id}: {filepath}")
+    
+    # Handle illustration request text
+    if illustration_request:
+        pipeline.illustration_request = illustration_request
+        print(f"[Illustration Request] Saved request for job {job_id}: {illustration_request[:50]}...")
     
     return {
         "success": True,
-        "path": f"/outputs/{job_id}_reference/{filename}"
+        "has_reference_image": hasattr(pipeline, 'reference_image') and pipeline.reference_image is not None,
+        "has_illustration_request": hasattr(pipeline, 'illustration_request') and pipeline.illustration_request is not None
     }
 
 
@@ -825,7 +833,8 @@ async def generate_slides_batch_endpoint(
                     progress_callback=update_progress,
                     start_slide=start,
                     end_slide=end,
-                    reference_image_path=getattr(pipeline, 'reference_image', None)
+                    reference_image_path=getattr(pipeline, 'reference_image', None),
+                    illustration_request=getattr(pipeline, 'illustration_request', None)
                 )
             
                 # パイプラインに保存

@@ -1139,7 +1139,8 @@ async def generate_all_custom_slides(
     progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)
     start_slide: int = 1,  # Batch: start from this slide (1-indexed)
     end_slide: Optional[int] = None,  # Batch: end at this slide (inclusive), None = all
-    reference_image_path: Optional[str] = None  # Reference image for illustration style
+    reference_image_path: Optional[str] = None,  # Reference image for illustration style
+    illustration_request: Optional[str] = None  # User's text request for illustrations
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -1293,7 +1294,13 @@ async def generate_all_custom_slides(
                         if visual_theme:
                             style_keywords += f", {visual_theme}"
                     
-                    full_prompt = f"{base_prompt}, {style_keywords}, no text overlay, clean composition"
+                    # Include user's illustration request if provided
+                    user_request_part = ""
+                    if illustration_request:
+                        user_request_part = f"User request: {illustration_request}. "
+                        print(f"[Generator] Including user request: {illustration_request[:50]}...")
+                    
+                    full_prompt = f"{user_request_part}{base_prompt}, {style_keywords}, no text overlay, clean composition"
                     
                     print(f"[Generator] Generating illustration for slide {slide_number}...")
                     print(f"[Generator] Prompt: {full_prompt[:100]}...")

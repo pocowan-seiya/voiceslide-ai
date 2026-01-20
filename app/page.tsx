@@ -171,6 +171,9 @@ export default function Home() {
   // Reference image for illustration mode (style guide)
   const [referenceImage, setReferenceImage] = useState<{ file: File; preview: string } | null>(null);
 
+  // Illustration request text (e.g., "use this character", "make it watercolor style")
+  const [illustrationRequest, setIllustrationRequest] = useState<string>("");
+
   // OP/ED video for YouTube
   const [introVideo, setIntroVideo] = useState<File | null>(null);
   const [outroVideo, setOutroVideo] = useState<File | null>(null);
@@ -477,21 +480,29 @@ export default function Home() {
       }
 
       // Upload reference image for illustration mode (if any and first batch)
-      if (startSlide === 1 && slideGenerationMode === "illustration" && referenceImage) {
-        setProgress({ percent: 0, message: "リファレンス画像をアップロード中..." });
+      if (startSlide === 1 && slideGenerationMode === "illustration") {
+        setProgress({ percent: 0, message: "イラスト設定をアップロード中..." });
 
         const formData = new FormData();
-        formData.append("file", referenceImage.file);
+        if (referenceImage) {
+          formData.append("file", referenceImage.file);
+        }
+        if (illustrationRequest.trim()) {
+          formData.append("illustration_request", illustrationRequest.trim());
+        }
 
-        const uploadRes = await fetch(`${API_URL}/api/upload-reference-image/${state.jobId}`, {
-          method: "POST",
-          body: formData,
-        });
+        // Only upload if there's something to send
+        if (referenceImage || illustrationRequest.trim()) {
+          const uploadRes = await fetch(`${API_URL}/api/upload-reference-image/${state.jobId}`, {
+            method: "POST",
+            body: formData,
+          });
 
-        if (!uploadRes.ok) {
-          console.warn("[Reference Image] Upload failed, continuing without reference");
-        } else {
-          console.log("[Reference Image] Uploaded successfully");
+          if (!uploadRes.ok) {
+            console.warn("[Illustration Settings] Upload failed, continuing without reference");
+          } else {
+            console.log("[Illustration Settings] Uploaded successfully");
+          }
         }
       }
 
@@ -1860,7 +1871,22 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Color Theme Selector for Illustration */}
+                    {/* Illustration Request Text */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        💬 イラストへのリクエスト（任意）
+                      </label>
+                      <textarea
+                        value={illustrationRequest}
+                        onChange={(e) => setIllustrationRequest(e.target.value)}
+                        placeholder="例: このキャラクターを使ってほしい、水彩画風にしてほしい、明るい雰囲気で..."
+                        className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 resize-none"
+                        rows={3}
+                      />
+                      <p className="text-xs text-zinc-500 mt-2 text-center">
+                        リファレンス画像と組み合わせて、より具体的なイラストを生成します
+                      </p>
+                    </div>
                     <div className="mb-6">
                       <label className="block text-sm font-medium text-zinc-400 mb-2">
                         🎨 背景カラー
