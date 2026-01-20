@@ -836,10 +836,14 @@ async def generate_slide_html(
     print(f"[Design Architect] Slide {slide_number}: Using layout '{layout['name']}'")
     
     # Build image section if image provided
+    is_ai_illustration = False
     if image_info:
+        photographer = image_info.get("photographer", "Unknown")
+        is_ai_illustration = "Gemini 3" in photographer
+        
         image_section = IMAGE_SECTION_TEMPLATE.format(
             image_url=image_info.get("url", ""),
-            photographer=image_info.get("photographer", "Unknown")
+            photographer=photographer
         )
     else:
         image_section = ""
@@ -853,6 +857,7 @@ async def generate_slide_html(
         style_desc = personality.get("speaking_style", "")
         values = personality.get("values", "")
         design_hint = personality.get("design_hint", "")
+
         
         personality_section = f"""
 話者の口調: {tone}
@@ -894,6 +899,25 @@ async def generate_slide_html(
 文字が多いと失格です。ビジュアルで伝えてください。
 """
     
+    # Illustration mode instruction
+    illustration_mode_instruction = ""
+    if is_ai_illustration:
+        illustration_mode_instruction = """
+# 🎨 イラスト重視モード（※最優先ルール）
+
+AI生成されたイラストがこのスライドの主役です。以下の絶対ルールに従ってください：
+
+1. **画像を大きく配置**: 提供された画像をスライドの背景全体(`width: 100%; height: 100vh; object-fit: cover;`)、またはスライドの大部分に配置してください。
+2. **テキストは最小限**: 
+   - タイトルのみ、またはタイトル＋短い補足のみ。
+   - 箇条書きは原則禁止（画像の邪魔になるため）。
+3. **画像の上に文字を乗せる場合**:
+   - 文字の可読性を確保するために、`backdrop-filter: blur(10px)` や半透明の暗い背景 (`rgba(0,0,0,0.6)`) をテキストコンテナに適用してください。
+   - `text-shadow: 0 4px 12px rgba(0,0,0,0.8)` を強めにかけてください。
+   
+提供された `{{image_section}}` 内の画像タグを必ず使用してください。
+"""
+    
     # User images instruction
     user_images_instruction = ""
     user_images_list = strategy.get("_user_images_data", [])  # Use internal key (not serialized to AI)
@@ -933,7 +957,7 @@ async def generate_slide_html(
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
-        layout_instruction=layout_instruction + simple_mode_instruction + user_images_instruction,
+        layout_instruction=layout_instruction + simple_mode_instruction + illustration_mode_instruction + user_images_instruction,
         image_section=image_section,
         personality_section=personality_section,
         width=VIDEO_WIDTH,
@@ -1114,7 +1138,9 @@ async def generate_all_custom_slides(
     text_density: str = "standard",  # "simple" (title+headline) or "standard" (full)
     progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)
     start_slide: int = 1,  # Batch: start from this slide (1-indexed)
-    end_slide: Optional[int] = None  # Batch: end at this slide (inclusive), None = all
+    end_slide: Optional[int] = None,  # Batch: end at this slide (inclusive), None = all
+    reference_image_path: Optional[str] = None,  # Reference image for illustration style
+    illustration_request: Optional[str] = None  # User's text request for illustrations
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -1237,34 +1263,223 @@ async def generate_all_custom_slides(
             
             slide_type = determine_slide_type(slide, slide_number, total_slides)
             
-            # Step 3a: Image generation temporarily disabled (API version compatibility)
-            # TODO: Re-enable when google-generativeai supports response_modalities
+            # Step 3a: Image generation
             image_info = None
             
+            # Check for illustration mode settings
+            is_illustration_mode = False
+            if design_preference and ("illustration" in design_preference.lower() or "イラスト" in design_preference):
+                is_illustration_mode = True
+            
+            # Generate image if in illustration mode
+            if is_illustration_mode:
+                print(f"[Generator] Illustration mode detected for slide {slide_number}")
+                visual_suggestion = slide.get("visual_suggestion", {})
+                # Use image_prompt if available, otherwise description, otherwise title
+                base_prompt = visual_suggestion.get("image_prompt") or visual_suggestion.get("description", "")
+                
+                # Fallback: use slide title if no visual_suggestion
+                if not base_prompt:
+                    slide_copy = slide.get("slide_copy", {})
+                    title = slide_copy.get("headline") or slide.get("title", "")
+                    if title:
+                        base_prompt = f"illustration for: {title}"
+                        print(f"[Generator] Using title as prompt fallback: {title}")
+                
+                if base_prompt:
+                    # Construct prompt based on design strategy
+                    style_keywords = "high quality, artistic, illustration, digital art"
+                    if strategy.get("design_style"):
+                        visual_theme = strategy["design_style"].get("visual_theme", "")
+                        if visual_theme:
+                            style_keywords += f", {visual_theme}"
+                    
+                    # Include user's illustration request if provided
+                    user_request_part = ""
+                    if illustration_request:
+                        user_request_part = f"User request: {illustration_request}. "
+                        print(f"[Generator] Including user request: {illustration_request[:50]}...")
+                    
+                    full_prompt = f"{user_request_part}{base_prompt}, {style_keywords}, no text overlay, clean composition"
+                    
+                    print(f"[Generator] Generating illustration for slide {slide_number}...")
+                    print(f"[Generator] Prompt: {full_prompt[:100]}...")
+                    if progress_callback:
+                        progress_callback(i, end_slide - start_slide + 2, f"イラスト生成中 ({slide_number}/{total_slides})...")
+                    
+                    img_data = await generate_slide_image(full_prompt, gemini_key, reference_image_path)
+                    
+                    if img_data:
+                        img_filename = f"slide_illustration_{slide_number:03d}.png"
+                        img_path = os.path.join(slides_dir, img_filename)
+                        try:
+                            with open(img_path, "wb") as f:
+                                f.write(img_data)
+                            
+                            # Create base64 data URL for Playwright rendering
+                            import base64
+                            img_base64 = base64.b64encode(img_data).decode('utf-8')
+                            data_url = f"data:image/png;base64,{img_base64}"
+                            
+                            # Set image info for HTML generation
+                            image_info = {
+                                "url": f"/outputs/{job_id}_slides/{img_filename}",
+                                "absolute_path": img_path,
+                                "data_url": data_url,  # Base64 for Playwright
+                                "photographer": "AI Generated (Gemini 3)"
+                            }
+                            print(f"[Generator] Saved illustration to {img_path}")
+                        except Exception as e:
+                            print(f"[Generator] Failed to save image: {e}")
+                    else:
+                        print(f"[Generator] Image generation returned no data for slide {slide_number}")
+                else:
+                    print(f"[Generator] No prompt available for slide {slide_number}, skipping image generation")
+            
             # Step 3b: Generate HTML
-            html = await generate_slide_html(
-                slide=slide,
-                slide_number=slide_number,
-                total_slides=total_slides,
-                strategy=strategy,
-                job_id=job_id,  # Added for layout tracking
-                gemini_key=gemini_key,
-                image_info=image_info,
-                text_density=text_density  # Pass text density setting
-            )
+            # For illustration mode with image, use dedicated template (bypass AI)
+            if is_illustration_mode and image_info:
+                print(f"[Generator] Using illustration-centered template for slide {slide_number}")
+                
+                # Get slide content
+                slide_copy = slide.get("slide_copy", {})
+                title = slide_copy.get("headline") or slide.get("title", f"スライド {slide_number}")
+                subtitle = slide_copy.get("subtext") or ""
+                
+                # Get colors from strategy
+                colors = strategy.get("colors", {})
+                bg_start = colors.get("background_start", "#0f172a")
+                bg_end = colors.get("background_end", "#1e293b")
+                primary = colors.get("primary", "#F59E0B")
+                
+                # Get font from strategy
+                fonts = strategy.get("fonts", {})
+                title_font = fonts.get("title_font", "'Noto Sans JP', sans-serif")
+                
+                # Create illustration-centered HTML template
+                # Use base64 data URL for reliable Playwright rendering
+                img_src = image_info.get("data_url", "")
+                html = f'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&family=Zen+Maru+Gothic:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            width: 1920px;
+            height: 1080px;
+            background: linear-gradient(135deg, {bg_start} 0%, {bg_end} 100%);
+            font-family: {title_font};
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 60px;
+            position: relative;
+        }}
+        .title-section {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .title {{
+            font-size: 48px;
+            font-weight: 900;
+            background: linear-gradient(135deg, {primary} 0%, #fff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.3;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }}
+        .subtitle {{
+            font-size: 24px;
+            color: #94A3B8;
+            margin-top: 10px;
+        }}
+        .illustration-container {{
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 20px;
+        }}
+        .illustration {{
+            max-width: 90%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }}
+        .slide-number {{
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            font-size: 16px;
+            color: #64748B;
+        }}
+    </style>
+</head>
+<body>
+    <div class="title-section">
+        <h1 class="title">{title}</h1>
+        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
+    </div>
+    <div class="illustration-container">
+        <img src="{img_src}" alt="Illustration" class="illustration">
+    </div>
+    <div class="slide-number">{slide_number} / {total_slides}</div>
+</body>
+</html>'''
+            else:
+                # Standard mode: use AI-generated HTML
+                html = await generate_slide_html(
+                    slide=slide,
+                    slide_number=slide_number,
+                    total_slides=total_slides,
+                    strategy=strategy,
+                    job_id=job_id,
+                    gemini_key=gemini_key,
+                    image_info=image_info,
+                    text_density=text_density
+                )
+                
+                # Step 3b-2: Inject AI illustration if not present in HTML (fallback)
+                if is_illustration_mode and image_info:
+                    img_url = image_info.get("url", "")
+                    if img_url and img_url not in html:
+                        print(f"[Generator] Injecting illustration into slide {slide_number}...")
+                        illustration_html = f'''
+<div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; overflow: hidden;">
+    <img src="{img_url}" alt="AI Illustration" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;">
+    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.5) 100%);"></div>
+</div>'''
+                        if '<body' in html:
+                            html = html.replace('<body>', '<body>' + illustration_html, 1)
+                        elif '<body ' in html:
+                            import re
+                            html = re.sub(r'(<body[^>]*>)', r'\1' + illustration_html.replace('\\', '\\\\'), html, count=1)
+                        else:
+                            html = illustration_html + html
             
-            # Step 3c: Self-review to check for transcript text and improve quality
-            # Now runs on ALL slides to ensure no transcript/subtitle text remains
-            print(f"[Design Architect] Self-reviewing slide {slide_number}...")
-            html = await self_review_slide(
-                html=html,
-                strategy=strategy,
-                gemini_key=gemini_key
-            )
+            # Step 3c: Self-review (skip for illustration mode as we use fixed template with base64 image)
+            # Only run for standard slides to ensure no transcript/subtitle text remains
+            if not (is_illustration_mode and image_info):
+                print(f"[Design Architect] Self-reviewing slide {slide_number}...")
+                html = await self_review_slide(
+                    html=html,
+                    strategy=strategy,
+                    gemini_key=gemini_key
+                )
+                
+                # Step 3d: Post-processing - forcibly remove any remaining caption text
+                print(f"[Design Architect] Post-processing slide {slide_number} (removing captions)...")
+                html = remove_caption_text(html)
+            else:
+                print(f"[Design Architect] Skipping self-review for illustration slide {slide_number}")
             
-            # Step 3d: Post-processing - forcibly remove any remaining caption text
-            print(f"[Design Architect] Post-processing slide {slide_number} (removing captions)...")
-            html = remove_caption_text(html)
             html_contents.append(html)
             
             # Render to image with browser restart on crash
@@ -1978,3 +2193,71 @@ async def regenerate_slide_with_feedback(
             "slide_number": slide_number,
             "error": str(e)
         }
+
+async def generate_slide_image(prompt: str, api_key: str, reference_image_path: Optional[str] = None) -> Optional[bytes]:
+    """Generates an image using Gemini 3 Pro Image Preview model.
+    
+    Args:
+        prompt: The text prompt for image generation
+        api_key: Gemini API key
+        reference_image_path: Optional path to reference image for style guidance
+    """
+    if not api_key:
+        return None
+        
+    try:
+        import os
+        import base64
+        
+        genai.configure(api_key=api_key)
+        model_name = "gemini-3-pro-image-preview"
+        model = genai.GenerativeModel(model_name)
+        
+        # Build content with optional reference image
+        content_parts = []
+        
+        if reference_image_path and os.path.exists(reference_image_path):
+            print(f"[Imagen] Using reference image: {reference_image_path}")
+            # Read and encode reference image
+            with open(reference_image_path, "rb") as f:
+                ref_image_data = f.read()
+            
+            # Determine mime type
+            ext = os.path.splitext(reference_image_path)[1].lower()
+            mime_type = {
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".png": "image/png",
+                ".gif": "image/gif",
+                ".webp": "image/webp"
+            }.get(ext, "image/png")
+            
+            # Add reference image to content
+            content_parts.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(ref_image_data).decode("utf-8")
+                }
+            })
+            
+            # Modify prompt to reference the style
+            enhanced_prompt = f"Generate an illustration in the same artistic style as the reference image. {prompt}"
+            content_parts.append(enhanced_prompt)
+        else:
+            content_parts.append(prompt)
+        
+        print(f"[Imagen] Generating image with prompt: {prompt[:50]}...")
+        response = model.generate_content(content_parts)
+        
+        if hasattr(response, 'candidates') and response.candidates:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data'):
+                    print(f"[Imagen] Success!")
+                    return part.inline_data.data
+        
+        print(f"[Imagen] No image data in response.")
+        return None
+    except Exception as e:
+        print(f"[Imagen] Error: {e}")
+        return None
+
