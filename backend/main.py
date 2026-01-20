@@ -828,30 +828,30 @@ async def generate_slides_batch_endpoint(
                     reference_image_path=getattr(pipeline, 'reference_image', None)
                 )
             
-            # パイプラインに保存
-            pipeline.slide_images = image_paths
-            pipeline.slide_contents = slides
-            
-            # スライドプレビューURLを生成
-            slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
-            
-            # Calculate next batch
-            next_start = end + 1
-            is_complete = next_start > total_slides
-            
-            # Update progress with completion
-            slide_progress[job_id] = {
-                **slide_progress.get(job_id, {}),
-                "status": "complete",
-                "message": f"バッチ完了 ({start}-{end})",
-                "slide_previews": slide_previews,
-                "batch_start": start,
-                "batch_end": end,
-                "next_start": None if is_complete else next_start,
-                "is_complete": is_complete,
-                "total_slides": total_slides
-            }
-            print(f"[Batch Generate] Completed slides {start}-{end}")
+                # パイプラインに保存
+                pipeline.slide_images = image_paths
+                pipeline.slide_contents = slides
+                
+                # スライドプレビューURLを生成
+                slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
+                
+                # Calculate next batch
+                next_start = end + 1
+                is_complete = next_start > total_slides
+                
+                # Update progress with completion
+                slide_progress[job_id] = {
+                    **slide_progress.get(job_id, {}),
+                    "status": "complete",
+                    "message": f"バッチ完了 ({start}-{end})",
+                    "slide_previews": slide_previews,
+                    "batch_start": start,
+                    "batch_end": end,
+                    "next_start": None if is_complete else next_start,
+                    "is_complete": is_complete,
+                    "total_slides": total_slides
+                }
+                print(f"[Batch Generate] Completed slides {start}-{end}")
             
         except Exception as e:
             print(f"[Batch Generate] Error: {e}")
