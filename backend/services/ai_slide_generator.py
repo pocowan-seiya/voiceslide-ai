@@ -233,7 +233,7 @@ def generate_illustration_template_html(
             points_html += f'<div class="point"><span class="icon">{icon}</span><span>{point_text}</span></div>'
     
     if template == "center_hero":
-        # Center Hero: イラスト中央、タイトル上部
+        # Center Hero: イラスト中央、タイトル上部（インパクト重視の大きな文字）
         return f'''<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -247,9 +247,9 @@ def generate_illustration_template_html(
             align-items: center;
             padding: 50px 80px;
         }}
-        .title {{ font-size: 52px; font-weight: 900; text-align: center; margin-bottom: 20px;
+        .title {{ font-size: 72px; font-weight: 900; text-align: center; margin-bottom: 24px; line-height: 1.2;
             background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 24px; color: #94A3B8; text-align: center; margin-bottom: 30px; }}
+        .subtitle {{ font-size: 32px; color: #CBD5E1; text-align: center; margin-bottom: 30px; }}
         .illustration-container {{ flex: 1; display: flex; align-items: center; justify-content: center; }}
         .illustration {{ max-width: 85%; max-height: 100%; object-fit: contain; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }}
     </style>
@@ -275,12 +275,12 @@ def generate_illustration_template_html(
         .left {{ width: 55%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px; }}
         .illustration {{ max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
         .right {{ width: 45%; padding: 60px 50px; display: flex; flex-direction: column; justify-content: center; }}
-        .title {{ font-size: 44px; font-weight: 900; line-height: 1.3; margin-bottom: 20px;
+        .title {{ font-size: 56px; font-weight: 900; line-height: 1.2; margin-bottom: 24px;
             background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 20px; color: #94A3B8; margin-bottom: 30px; }}
-        .points {{ display: flex; flex-direction: column; gap: 16px; }}
-        .point {{ display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: rgba(255,255,255,0.05); border-radius: 12px; border-left: 3px solid {primary}; }}
-        .icon {{ font-size: 20px; }}
+        .subtitle {{ font-size: 28px; color: #CBD5E1; margin-bottom: 36px; line-height: 1.5; }}
+        .points {{ display: flex; flex-direction: column; gap: 20px; }}
+        .point {{ display: flex; align-items: center; gap: 14px; padding: 20px 24px; background: rgba(255,255,255,0.08); border-radius: 14px; border-left: 4px solid {primary}; font-size: 22px; }}
+        .icon {{ font-size: 24px; }}
     </style>
 </head>
 <body>
@@ -307,12 +307,12 @@ def generate_illustration_template_html(
         .left {{ width: 45%; padding: 60px 50px; display: flex; flex-direction: column; justify-content: center; }}
         .right {{ width: 55%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px; }}
         .illustration {{ max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
-        .title {{ font-size: 44px; font-weight: 900; line-height: 1.3; margin-bottom: 20px;
+        .title {{ font-size: 56px; font-weight: 900; line-height: 1.2; margin-bottom: 24px;
             background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 20px; color: #94A3B8; margin-bottom: 30px; }}
-        .points {{ display: flex; flex-direction: column; gap: 16px; }}
-        .point {{ display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: rgba(255,255,255,0.05); border-radius: 12px; border-left: 3px solid {primary}; }}
-        .icon {{ font-size: 20px; }}
+        .subtitle {{ font-size: 28px; color: #CBD5E1; margin-bottom: 36px; line-height: 1.5; }}
+        .points {{ display: flex; flex-direction: column; gap: 20px; }}
+        .point {{ display: flex; align-items: center; gap: 14px; padding: 20px 24px; background: rgba(255,255,255,0.08); border-radius: 14px; border-left: 4px solid {primary}; font-size: 22px; }}
+        .icon {{ font-size: 24px; }}
     </style>
 </head>
 <body>
@@ -326,90 +326,19 @@ def generate_illustration_template_html(
 </body>
 </html>'''
     
-    elif template == "background_overlay":
-        # Background Overlay: イラストを背景に、テキストを上に重ねる
-        return f'''<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
-    <style>
-        {base_css}
-        .bg-image {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.4; }}
-        .overlay {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(0,0,0,0.7), rgba(0,0,0,0.3)); }}
-        .content {{ position: relative; z-index: 10; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 80px; text-align: center; }}
-        .title {{ font-size: 60px; font-weight: 900; margin-bottom: 24px; text-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 28px; color: #E2E8F0; max-width: 70%; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }}
-    </style>
-</head>
-<body>
-    <img src="{img_src}" class="bg-image" alt="">
-    <div class="overlay"></div>
-    <div class="content">
-        <h1 class="title">{title}</h1>
-        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
-    </div>
-    <div class="slide-number">{slide_number} / {total_slides}</div>
-</body>
-</html>'''
-    
-    elif template == "compact_accent":
-        # Compact Accent: コンパクトなイラストを右下にアクセントとして配置
-        return f'''<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
-    <style>
-        {base_css}
-        body {{ padding: 60px 80px; }}
-        .main-content {{ width: 60%; }}
-        .title {{ font-size: 48px; font-weight: 900; margin-bottom: 20px; line-height: 1.3;
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 22px; color: #94A3B8; margin-bottom: 40px; }}
-        .points {{ display: flex; flex-direction: column; gap: 20px; }}
-        .point {{ display: flex; align-items: center; gap: 14px; padding: 18px 24px; background: rgba(255,255,255,0.05); border-radius: 14px; border-left: 4px solid {primary}; font-size: 18px; }}
-        .icon {{ font-size: 22px; }}
-        .accent-illustration {{ position: absolute; right: 60px; bottom: 80px; width: 380px; height: 380px; }}
-        .accent-illustration img {{ width: 100%; height: 100%; object-fit: contain; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
-    </style>
-</head>
-<body>
-    <div class="main-content">
-        <h1 class="title">{title}</h1>
-        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
-        {f'<div class="points">{points_html}</div>' if points_html else ''}
-    </div>
-    <div class="accent-illustration"><img src="{img_src}" alt=""></div>
-    <div class="slide-number">{slide_number} / {total_slides}</div>
-</body>
-</html>'''
-    
     elif template == "full_bleed":
-        # Full Bleed: イラストを画面いっぱいに、最小限のテキスト
+        # Full Bleed: 画像オンリー（テキストなし）
         return f'''<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         {base_css}
         .full-image {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }}
-        .gradient-overlay {{ position: absolute; bottom: 0; left: 0; width: 100%; height: 40%; background: linear-gradient(transparent, rgba(0,0,0,0.8)); }}
-        .title-bar {{ position: absolute; bottom: 60px; left: 80px; right: 80px; z-index: 10; }}
-        .title {{ font-size: 54px; font-weight: 900; text-shadow: 0 4px 20px rgba(0,0,0,0.6);
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 24px; color: #E2E8F0; margin-top: 12px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }}
     </style>
 </head>
 <body>
     <img src="{img_src}" class="full-image" alt="">
-    <div class="gradient-overlay"></div>
-    <div class="title-bar">
-        <h1 class="title">{title}</h1>
-        {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
-    </div>
     <div class="slide-number">{slide_number} / {total_slides}</div>
 </body>
 </html>'''
