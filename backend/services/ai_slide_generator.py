@@ -183,6 +183,115 @@ def should_include_text_in_illustration(slide_number: int, total_slides: int) ->
     return random.random() < 0.3
 
 
+async def polish_copy_for_illustration(
+    slide: Dict[str, Any],
+    slide_number: int,
+    total_slides: int,
+    strategy: Dict[str, Any],
+    gemini_key: str
+) -> Dict[str, str]:
+    """
+    Polish slide copy for illustration mode using AI.
+    Returns optimized title, subtitle, and points for impactful display.
+    """
+    import google.generativeai as genai
+    
+    key = gemini_key or GEMINI_API_KEY
+    if not key:
+        # Fallback to raw copy if no API key
+        slide_copy = slide.get("slide_copy", {})
+        return {
+            "title": slide_copy.get("headline") or slide.get("title", f"スライド {slide_number}"),
+            "subtitle": slide_copy.get("subheadline") or "",
+            "points": slide_copy.get("bullet_points") or []
+        }
+    
+    genai.configure(api_key=key)
+    
+    # Get raw copy
+    slide_copy = slide.get("slide_copy", {})
+    raw_title = slide_copy.get("headline") or slide.get("title", "")
+    raw_subtitle = slide_copy.get("subheadline") or ""
+    raw_points = slide_copy.get("bullet_points") or []
+    key_message = slide_copy.get("key_message") or ""
+    
+    # Get personality for consistent tone
+    personality = strategy.get("personality_analysis", {})
+    tone = personality.get("tone", "プロフェッショナル")
+    expressions = personality.get("characteristic_expressions", [])
+    
+    prompt = f"""# タスク
+イラストスライド用に、以下のコピーを**インパクトのある短いコピー**に最適化してください。
+
+## 入力
+- タイトル: {raw_title}
+- サブタイトル: {raw_subtitle}
+- ポイント: {raw_points}
+- キーメッセージ: {key_message}
+
+## 話者のトーン
+{tone}
+特徴的な表現: {', '.join(expressions) if expressions else '(なし)'}
+
+## 最適化ルール
+
+### タイトル（最重要）
+- **15文字以内**に凝縮
+- インパクトのある言葉で始める
+- 話者のオリジナルの言葉から核心を抽出
+- 「〜とは」「〜について」などの説明調を避け、断言調に
+
+### サブタイトル
+- **20文字以内**
+- タイトルを補足する簡潔な一文
+- なくても良い場合は空にする
+
+### ポイント（ある場合）
+- 各ポイントを**10文字以内**に凝縮
+- 最大3個まで
+- 不要なポイントは削除
+
+## 出力形式（JSON）
+```json
+{{
+  "title": "最適化されたタイトル",
+  "subtitle": "最適化されたサブタイトル",
+  "points": ["ポイント1", "ポイント2"]
+}}
+```
+"""
+    
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+                max_output_tokens=500
+            )
+        )
+        
+        import json
+        result = json.loads(response.text)
+        
+        print(f"[Copy Polish] Slide {slide_number}: '{raw_title[:20]}...' → '{result.get('title', '')}'")
+        
+        return {
+            "title": result.get("title") or raw_title,
+            "subtitle": result.get("subtitle") or "",
+            "points": result.get("points") or []
+        }
+        
+    except Exception as e:
+        print(f"[Copy Polish] Error for slide {slide_number}: {e}")
+        # Fallback to raw copy
+        return {
+            "title": raw_title or f"スライド {slide_number}",
+            "subtitle": raw_subtitle,
+            "points": raw_points[:3] if raw_points else []
+        }
+
 def generate_illustration_template_html(
     template: str,
     title: str,
@@ -1597,11 +1706,17 @@ Concept to illustrate: """
             if use_illustration_for_this_slide and image_info:
                 print(f"[Generator] Using illustration template '{selected_template}' for slide {slide_number}")
                 
-                # Get slide content
-                slide_copy = slide.get("slide_copy", {})
-                title = slide_copy.get("headline") or slide.get("title", f"スライド {slide_number}")
-                subtitle = slide_copy.get("subtext") or ""
-                points = slide_copy.get("bullet_points") or slide.get("points", [])
+                # Polish slide copy using AI (same quality as standard mode)
+                polished = await polish_copy_for_illustration(
+                    slide=slide,
+                    slide_number=slide_number,
+                    total_slides=total_slides,
+                    strategy=strategy,
+                    gemini_key=gemini_key
+                )
+                title = polished["title"]
+                subtitle = polished["subtitle"]
+                points = polished["points"]
                 
                 # Get colors from strategy
                 colors = strategy.get("colors", {})
