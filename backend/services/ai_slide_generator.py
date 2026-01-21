@@ -130,7 +130,7 @@ h1, h2, h3 { font-weight: 700; }
 # Illustration Mode Templates and Mix Strategy
 # =============================================================================
 
-# 6 different illustration template layouts
+# 4 illustration template layouts (simplified)
 ILLUSTRATION_TEMPLATES = {
     "center_hero": {
         "name": "Center Hero",
@@ -144,14 +144,6 @@ ILLUSTRATION_TEMPLATES = {
         "name": "Right Illustration", 
         "description": "右にイラスト、左にテキスト"
     },
-    "background_overlay": {
-        "name": "Background Overlay",
-        "description": "イラストを背景に、テキストを重ねる"
-    },
-    "compact_accent": {
-        "name": "Compact Accent",
-        "description": "コンパクトなイラストをアクセントとして右下に配置"
-    },
     "full_bleed": {
         "name": "Full Bleed",
         "description": "イラストを画面いっぱいに、最小限のテキスト"
@@ -160,55 +152,26 @@ ILLUSTRATION_TEMPLATES = {
 
 def should_use_illustration(slide_type: str, slide_number: int, total_slides: int) -> bool:
     """
-    Determine if a slide should use illustration based on slide type.
-    Returns True for illustration, False for standard text-based slide.
-    
-    Strategy:
-    - First slide (intro/title): Always illustration
-    - Last slide (summary/cta): Always illustration  
-    - Concept/visual-heavy: Always illustration
-    - Points/lists: Usually standard text (better readability)
-    - Others: 50% chance for variety
+    Always return True - all slides use illustrations in illustration mode.
+    (MIX strategy removed per user feedback)
     """
-    import random
-    
-    # Always use illustration for these
-    always_illustration = ["intro", "title", "summary", "cta", "concept", "quote"]
-    if slide_type in always_illustration:
-        return True
-    
-    # First and last slides always get illustrations
-    if slide_number == 1 or slide_number == total_slides:
-        return True
-    
-    # Standard text slides for points/lists (better for reading)
-    prefer_text = ["points", "list", "flow", "steps"]
-    if slide_type in prefer_text:
-        return random.random() < 0.3  # 30% chance for illustration
-    
-    # For everything else, 50/50 mix
-    return random.random() < 0.5
+    return True
 
 def select_illustration_template(slide_number: int, total_slides: int, slide_type: str) -> str:
     """
     Select an illustration template for variety.
-    Avoids using the same template consecutively.
+    Uses only 4 templates: center_hero, left_illustration, right_illustration, full_bleed
     """
     import random
     
-    templates = list(ILLUSTRATION_TEMPLATES.keys())
+    templates = ["center_hero", "left_illustration", "right_illustration", "full_bleed"]
     
     # First/last slides: prefer hero layouts
     if slide_number == 1 or slide_number == total_slides:
-        hero_templates = ["center_hero", "full_bleed", "background_overlay"]
+        hero_templates = ["center_hero", "full_bleed"]
         return random.choice(hero_templates)
     
-    # Concept slides: prefer center or full layouts
-    if slide_type in ["concept", "quote"]:
-        concept_templates = ["center_hero", "full_bleed"]
-        return random.choice(concept_templates)
-    
-    # Others: random selection with variety
+    # Others: random selection from all 4 templates
     return random.choice(templates)
 
 def should_include_text_in_illustration(slide_number: int, total_slides: int) -> bool:
