@@ -658,6 +658,40 @@ export default function Home() {
     }
   };
 
+  // Image Regeneration: Regenerate only the AI illustration for a slide
+  const handleImageRegenerate = async () => {
+    if (!selectedSlide || !slideFeedback.trim()) return;
+
+    setIsRegenerating(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/regenerate-image`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAPIHeaders()
+        },
+        body: JSON.stringify({
+          slide_number: selectedSlide,
+          feedback: slideFeedback
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Image regeneration failed");
+
+      // Update the slide preview with cache buster
+      const newPreviews = [...state.slidePreviews];
+      newPreviews[selectedSlide - 1] = `${API_URL}${data.preview_url}`;
+      updateState({ slidePreviews: newPreviews });
+
+      setSlideFeedback("");
+    } catch (err: any) {
+      updateState({ error: err.message });
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
   // Slide Undo: Restore previous version
   const handleSlideUndo = async () => {
     if (!selectedSlide || !slideCanUndo[selectedSlide]) return;
@@ -1545,13 +1579,21 @@ export default function Home() {
                                     </label>
                                   </div>
 
-                                  <div className="flex gap-2">
+                                  <div className="flex gap-2 flex-wrap">
                                     <button
                                       onClick={handleSlideFeedback}
                                       disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
                                       className="btn-primary flex-1 text-sm py-2"
                                     >
                                       {isRegenerating ? "再生成中..." : "🔄 適用"}
+                                    </button>
+                                    <button
+                                      onClick={handleImageRegenerate}
+                                      disabled={isRegenerating || !slideFeedback.trim()}
+                                      className="btn-secondary bg-purple-600/20 border-purple-500/30 hover:bg-purple-600/30 text-sm py-2"
+                                      title="イラストモードの画像のみを再生成"
+                                    >
+                                      {isRegenerating ? "..." : "🎨 画像再生成"}
                                     </button>
                                     {slideCanUndo[selectedSlide] && (
                                       <button
