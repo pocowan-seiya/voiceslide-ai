@@ -2603,3 +2603,107 @@ async def generate_slide_image(prompt: str, api_key: str, reference_image_path: 
         print(f"[Imagen] Error: {e}")
         return None
 
+
+async def regenerate_slide_illustration(
+    job_id: str,
+    slide_number: int,
+    feedback: str,
+    gemini_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Regenerate ONLY the illustration image for a specific slide based on feedback.
+    The slide layout and copy remain unchanged - only the image is regenerated.
+    """
+    import os
+    import base64
+    from playwright.async_api import async_playwright
+    from config import OUTPUT_DIR
+    
+    key = gemini_key or GEMINI_API_KEY
+    if not key:
+        return {"success": False, "error": "Gemini API key is required"}
+    
+    slide_data = get_slide_data(job_id)
+    if not slide_data:
+        return {"success": False, "error": f"Slide data not found for job {job_id}"}
+    
+    slides = slide_data.get("slides", [])
+    if slide_number < 1 or slide_number > len(slides):
+        return {"success": False, "error": f"Invalid slide number: {slide_number}"}
+    
+    slide = slides[slide_number - 1]
+    
+    # Get reference image path if exists
+    reference_image_path = None
+    ref_dir = os.path.join(OUTPUT_DIR, f"{job_id}_reference")
+    if os.path.exists(ref_dir):
+        for ext in ['.png', '.jpg', '.jpeg', '.webp']:
+            ref_path = os.path.join(ref_dir, f"reference{ext}")
+            if os.path.exists(ref_path):
+                reference_image_path = ref_path
+                break
+    
+    # Build improved prompt with user feedback
+    slide_copy = slide.get("slide_copy", {})
+    visual_suggestion = slide.get("visual_suggestion", {})
+    base_prompt = visual_suggestion.get("image_prompt") or visual_suggestion.get("description", "")
+    
+    if not base_prompt:
+        title = slide_copy.get("headline") or slide.get("title", "")
+        base_prompt = f"illustration for: {title}"
+    
+    feedback_prompt = f"""Create an explanatory diagram illustration.
+Original concept: {base_prompt}
+User feedback: {feedback}
+Please incorporate the feedback to improve the illustration."""
+    
+    print(f"[Image Regen] Regenerating image for slide {slide_number}...")
+    
+    img_data = await generate_slide_image(feedback_prompt, key, reference_image_path)
+    
+    if not img_data:
+        return {"success": False, "error": "Failed to generate new image"}
+    
+    slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+    os.makedirs(slides_dir, exist_ok=True)
+    
+    illustration_path = os.path.join(slides_dir, f"slide_illustration_{slide_number:03d}.png")
+    with open(illustration_path, "wb") as f:
+        f.write(img_data)
+    
+    current_html = get_html_content(job_id, slide_number)
+    if not current_html:
+        return {"success": False, "error": "Current HTML not found"}
+    
+    img_base64 = base64.b64encode(img_data).decode("utf-8")
+    new_data_url = f"data:image/png;base64,{img_base64}"
+    
+    import re
+    data_url_pattern = r'src="data:image/[^"]+base64,[^"]+"'
+    
+    if re.search(data_url_pattern, current_html):
+        new_html = re.sub(data_url_pattern, f'src="{new_data_url}"', current_html)
+    else:
+        file_url_pattern = r'src="[^"]*slide_illustration_\d+\.png[^"]*"'
+        if re.search(file_url_pattern, current_html):
+            new_html = re.sub(file_url_pattern, f'src="{new_data_url}"', current_html)
+        else:
+            return {"success": False, "error": "Could not find image to replace"}
+    
+    save_html_content(job_id, slide_number, new_html)
+    
+    output_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+        await page.set_content(new_html)
+        await page.wait_for_timeout(500)
+        await page.screenshot(path=output_path)
+        await browser.close()
+    
+    return {
+        "success": True,
+        "slide_number": slide_number,
+        "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png"
+    }

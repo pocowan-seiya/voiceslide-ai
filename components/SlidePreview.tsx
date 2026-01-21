@@ -8,10 +8,51 @@ interface SlidePreviewProps {
     apiUrl: string;
     isProcessing: boolean;
     onApprove: () => void;
+    jobId?: string;  // Added for image regeneration
+    geminiKey?: string;  // Optional API key
 }
 
-export function SlidePreview({ slides, slideImages, apiUrl, isProcessing, onApprove }: SlidePreviewProps) {
+export function SlidePreview({ slides, slideImages, apiUrl, isProcessing, onApprove, jobId, geminiKey }: SlidePreviewProps) {
     const [currentSlide, setCurrentSlide] = useState(0);
+    const [imageFeedback, setImageFeedback] = useState("");
+    const [isRegenerating, setIsRegenerating] = useState(false);
+    const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+
+    const handleRegenerateImage = async () => {
+        if (!jobId || !imageFeedback.trim()) return;
+
+        setIsRegenerating(true);
+        try {
+            const response = await fetch(`${apiUrl}/api/slides/${jobId}/regenerate-image`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(geminiKey ? { 'X-Gemini-Key': geminiKey } : {})
+                },
+                body: JSON.stringify({
+                    slide_number: currentSlide + 1,
+                    feedback: imageFeedback
+                })
+            });
+
+            if (response.ok) {
+                // Force refresh the image by updating the URL with a new timestamp
+                const result = await response.json();
+                // Trigger a re-render by updating slide (parent component should handle this)
+                window.location.reload();  // Simple approach for now
+            } else {
+                const error = await response.json();
+                alert(`画像再生成エラー: ${error.detail || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('Image regeneration failed:', error);
+            alert('画像の再生成に失敗しました');
+        } finally {
+            setIsRegenerating(false);
+            setImageFeedback("");
+            setShowFeedbackInput(false);
+        }
+    };
 
     if (isProcessing && slideImages.length === 0) {
         return (
@@ -107,6 +148,45 @@ export function SlidePreview({ slides, slideImages, apiUrl, isProcessing, onAppr
                     <h3 className="font-semibold text-lg">{slides[currentSlide].title}</h3>
                     {slides[currentSlide].subtitle && (
                         <p className="text-zinc-400 text-sm mt-1">{slides[currentSlide].subtitle}</p>
+                    )}
+                </div>
+            )}
+
+            {/* Image Regeneration UI */}
+            {jobId && (
+                <div className="bg-zinc-900 rounded-xl p-4 mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-semibold text-sm text-zinc-300">🎨 画像を再生成</h4>
+                        <button
+                            onClick={() => setShowFeedbackInput(!showFeedbackInput)}
+                            className="text-xs text-cyan-400 hover:text-cyan-300"
+                        >
+                            {showFeedbackInput ? "閉じる" : "フィードバックを入力"}
+                        </button>
+                    </div>
+
+                    {showFeedbackInput && (
+                        <div className="space-y-3">
+                            <textarea
+                                value={imageFeedback}
+                                onChange={(e) => setImageFeedback(e.target.value)}
+                                placeholder="例: もっと明るく、キャラクターを増やして、背景をシンプルに..."
+                                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500 focus:border-cyan-500 focus:outline-none"
+                                rows={2}
+                            />
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleRegenerateImage}
+                                    disabled={isRegenerating || !imageFeedback.trim()}
+                                    className="flex-1 px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:from-cyan-400 hover:to-purple-400 transition-all"
+                                >
+                                    {isRegenerating ? "再生成中..." : "🔄 この画像を再生成"}
+                                </button>
+                            </div>
+                            <p className="text-xs text-zinc-500">
+                                ※ イラストモードの画像のみ再生成できます
+                            </p>
+                        </div>
                     )}
                 </div>
             )}
