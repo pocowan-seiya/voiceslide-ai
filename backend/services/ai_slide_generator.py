@@ -1754,7 +1754,7 @@ Concept to illustrate: """
                 )
                 
                 # Step 3b-2: Inject AI illustration if not present in HTML (fallback)
-                if is_illustration_mode and image_info:
+                if is_illustration_mode_enabled and image_info:
                     img_url = image_info.get("url", "")
                     if img_url and img_url not in html:
                         print(f"[Generator] Injecting illustration into slide {slide_number}...")
@@ -1773,7 +1773,7 @@ Concept to illustrate: """
             
             # Step 3c: Self-review (skip for illustration mode as we use fixed template with base64 image)
             # Only run for standard slides to ensure no transcript/subtitle text remains
-            if not (is_illustration_mode and image_info):
+            if not (use_illustration_for_this_slide and image_info):
                 print(f"[Design Architect] Self-reviewing slide {slide_number}...")
                 html = await self_review_slide(
                     html=html,
