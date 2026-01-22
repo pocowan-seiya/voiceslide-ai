@@ -1579,6 +1579,11 @@ export default function Home() {
                                     </label>
                                   </div>
 
+                                  {/* 説明テキスト */}
+                                  <p className="text-xs text-zinc-500 mb-3">
+                                    💡 「適用」= スライド全体を再生成 ｜ 「画像再生成」= イラスト部分のみ再生成
+                                  </p>
+
                                   <div className="flex gap-2 flex-wrap">
                                     <button
                                       onClick={handleSlideFeedback}
@@ -1595,24 +1600,28 @@ export default function Home() {
                                     >
                                       {isRegenerating ? "..." : "🎨 画像再生成"}
                                     </button>
-                                    {slideCanUndo[selectedSlide] && (
-                                      <button
-                                        onClick={handleSlideUndo}
-                                        disabled={isUndoing || isRegenerating}
-                                        className="btn-secondary bg-amber-600/20 border-amber-500/30 hover:bg-amber-600/30 text-sm py-2"
-                                      >
-                                        {isUndoing ? "戻し中..." : "↩️ 戻す"}
-                                      </button>
-                                    )}
+                                  </div>
+
+                                  <div className="flex gap-2 mt-2">
+                                    <button
+                                      onClick={handleSlideUndo}
+                                      disabled={isUndoing || isRegenerating || !slideCanUndo[selectedSlide]}
+                                      className={`flex-1 text-sm py-2 rounded-lg transition-all ${slideCanUndo[selectedSlide]
+                                          ? 'bg-amber-600/20 border border-amber-500/30 text-amber-400 hover:bg-amber-600/30'
+                                          : 'bg-zinc-800/50 border border-zinc-700 text-zinc-500 cursor-not-allowed'
+                                        }`}
+                                    >
+                                      {isUndoing ? "戻し中..." : slideCanUndo[selectedSlide] ? "↩️ 前に戻す" : "↩️ 履歴なし"}
+                                    </button>
                                     <button
                                       onClick={() => {
                                         setSelectedSlide(null);
                                         setSlideFeedback("");
                                         setSlideImage({ file: null, preview: null });
                                       }}
-                                      className="btn-secondary text-sm py-2"
+                                      className="px-4 text-sm py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-700"
                                     >
-                                      ✕
+                                      ✕ 閉じる
                                     </button>
                                   </div>
                                 </div>

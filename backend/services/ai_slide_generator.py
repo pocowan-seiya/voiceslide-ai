@@ -384,9 +384,9 @@ def generate_illustration_template_html(
             align-items: center;
             padding: 50px 80px;
         }}
-        .title {{ font-size: 72px; font-weight: 900; text-align: center; margin-bottom: 24px; line-height: 1.2;
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 32px; color: #CBD5E1; text-align: center; margin-bottom: 30px; }}
+        .title {{ font-size: 96px; font-weight: 900; text-align: center; margin-bottom: 30px; line-height: 1.1;
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3); }}
+        .subtitle {{ font-size: 42px; color: #E2E8F0; text-align: center; margin-bottom: 40px; font-weight: 500; }}
         .illustration-container {{ flex: 1; display: flex; align-items: center; justify-content: center; }}
         .illustration {{ max-width: 85%; max-height: 100%; object-fit: contain; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }}
     </style>
@@ -412,12 +412,12 @@ def generate_illustration_template_html(
         .left {{ width: 55%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px; }}
         .illustration {{ max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
         .right {{ width: 45%; padding: 60px 50px; display: flex; flex-direction: column; justify-content: center; }}
-        .title {{ font-size: 56px; font-weight: 900; line-height: 1.2; margin-bottom: 24px;
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 28px; color: #CBD5E1; margin-bottom: 36px; line-height: 1.5; }}
-        .points {{ display: flex; flex-direction: column; gap: 20px; }}
-        .point {{ display: flex; align-items: center; gap: 14px; padding: 20px 24px; background: rgba(255,255,255,0.08); border-radius: 14px; border-left: 4px solid {primary}; font-size: 22px; }}
-        .icon {{ font-size: 24px; }}
+        .title {{ font-size: 72px; font-weight: 900; line-height: 1.1; margin-bottom: 30px;
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3); }}
+        .subtitle {{ font-size: 36px; color: #E2E8F0; margin-bottom: 40px; line-height: 1.4; font-weight: 500; }}
+        .points {{ display: flex; flex-direction: column; gap: 24px; }}
+        .point {{ display: flex; align-items: center; gap: 18px; padding: 24px 28px; background: rgba(255,255,255,0.1); border-radius: 16px; border-left: 5px solid {primary}; font-size: 28px; font-weight: 500; }}
+        .icon {{ font-size: 32px; }}
     </style>
 </head>
 <body>
@@ -444,12 +444,12 @@ def generate_illustration_template_html(
         .left {{ width: 45%; padding: 60px 50px; display: flex; flex-direction: column; justify-content: center; }}
         .right {{ width: 55%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px; }}
         .illustration {{ max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
-        .title {{ font-size: 56px; font-weight: 900; line-height: 1.2; margin-bottom: 24px;
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .subtitle {{ font-size: 28px; color: #CBD5E1; margin-bottom: 36px; line-height: 1.5; }}
-        .points {{ display: flex; flex-direction: column; gap: 20px; }}
-        .point {{ display: flex; align-items: center; gap: 14px; padding: 20px 24px; background: rgba(255,255,255,0.08); border-radius: 14px; border-left: 4px solid {primary}; font-size: 22px; }}
-        .icon {{ font-size: 24px; }}
+        .title {{ font-size: 72px; font-weight: 900; line-height: 1.1; margin-bottom: 30px;
+            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3); }}
+        .subtitle {{ font-size: 36px; color: #E2E8F0; margin-bottom: 40px; line-height: 1.4; font-weight: 500; }}
+        .points {{ display: flex; flex-direction: column; gap: 24px; }}
+        .point {{ display: flex; align-items: center; gap: 18px; padding: 24px 28px; background: rgba(255,255,255,0.1); border-radius: 16px; border-left: 5px solid {primary}; font-size: 28px; font-weight: 500; }}
+        .icon {{ font-size: 32px; }}
     </style>
 </head>
 <body>
