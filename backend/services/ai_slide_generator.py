@@ -1145,9 +1145,10 @@ h1, h2, .title, .headline {{
   white-space: normal;       /* 自然に折り返す（切れ禁止） */
   overflow: visible;         /* はみ出しを見せる（hidden禁止） */
   text-overflow: clip;       /* ellipsis禁止（...で切れない） */
-  font-size: clamp(2rem, 4vw, 4rem);  /* 画面幅に応じて自動調整 */
-  line-height: 1.2;
-  padding: 0 40px;           /* 左右の余白で切れ防止 */
+  font-size: clamp(1.5rem, 3.5vw, 3.5rem);  /* 文字数が多くても収まるサイズ */
+  line-height: 1.3;
+  max-width: 100%;           /* 幅制限なし */
+  padding: 0 20px;           /* 左右の余白 */
 }}
 
 /* サブタイトル・本文も同様 */
@@ -1156,13 +1157,14 @@ h3, p, .subtitle, .subheadline {{
   white-space: normal;
   overflow: visible;
   line-height: 1.4;
+  max-width: 100%;
 }}
 
-/* 必須: コンテンツが画面内に収まるように */
+/* 必須: コンテンツが画面内に収まるように（切れ禁止） */
 body {{
-  padding: 40px 60px !important;  /* 十分な内側余白 */
+  padding: 40px 50px !important;  /* 十分な内側余白 */
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible !important;  /* 切れ禁止（hiddenは使わない） */
 }}
 
 /* ポイントカードも切れないように */
@@ -1462,35 +1464,14 @@ async def generate_slide_html(
     # Format points (only clean bullet points, no transcript)
     points_str = "\n".join([f"- {p}" if isinstance(p, str) else f"- {p}" for p in raw_points]) if raw_points else "(なし)"
     
-    # Extract strategy (MUST be before text_style selection)
+    # Extract strategy
     style = strategy.get("design_style", {})
     analysis = strategy.get("content_analysis", {})
     colors = style.get("color_palette", {})
     
-    # NEW: Select sophisticated text style based on content analysis
-    text_style = select_text_style(strategy, slide)
-    
-    # Properly format CSS with primary color if placeholder exists
-    title_css_raw = text_style.get("title_css", "")
-    primary_color = colors.get("primary", "#F59E0B")
-    if "{primary}" in title_css_raw:
-        title_css = title_css_raw.replace("{primary}", primary_color)
-    else:
-        title_css = title_css_raw
-        
-    subtitle_css = text_style.get("subtitle_css", "")
-    print(f"[Design Architect] Slide {slide_number}: Using text style '{text_style['name']}'")
-    
-    # Build text style instruction for prompt
-    text_style_instruction = f"""
-/* Dynamic Text Style: {text_style['name']} */
-.title, h1, .headline {{
-    {title_css}
-}}
-.subtitle, h3, .subheadline {{
-    {subtitle_css}
-}}
-"""
+    # NOTE: Using standard slide text styling (same as non-illustration mode)
+    # No custom text_style_instruction - let AI use the same styling as standard slides
+    text_style_instruction = ""
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
     
@@ -2716,11 +2697,33 @@ FEEDBACK_REGENERATION_PROMPT = """# Role
 # フィードバックタイプ
 {feedback_type}
 
+# ⚠️ 最重要: コンテンツの保持（絶対ルール）
+
+**フィードバックで明示的に削除を依頼されない限り、以下の要素は必ず保持してください：**
+
+1. **タイトル（h1, .title, .headline）**: テキストをそのまま保持
+2. **サブタイトル（h3, .subtitle）**: テキストをそのまま保持
+3. **ポイント・箇条書き（.point, li）**: すべてのテキストを保持
+4. **画像（img タグ）**: src属性を変更せずにそのまま保持
+5. **イラスト（class="illustration"）**: 位置を変えてもsrcは保持
+
+**変更してよいもの：**
+✅ 位置・配置（レイアウト）
+✅ 色・フォントサイズ・スタイル
+✅ 装飾要素の追加・削除
+✅ ユーザーが明示的に依頼した変更
+
+**禁止事項：**
+❌ タイトルやポイントのテキストを勝手に削除・変更
+❌ 画像のsrc属性を空にする、または削除
+❌ コンテンツを「シンプルにする」ためにテキストを省略
+
 # 指示
 1. ユーザーのフィードバックを正確に理解してください
-2. 現在のデザインを基盤として、フィードバックを反映した改善を行ってください
-3. デザインの統一感（色、フォント、スタイル）は維持してください
-4. サイズは幅{width}px × 高さ{height}pxを維持してください
+2. **元のコンテンツ（テキスト・画像）は必ず保持**してください
+3. フィードバックを反映した改善を行ってください
+4. デザインの統一感（色、フォント、スタイル）は維持してください
+5. サイズは幅{width}px × 高さ{height}pxを維持してください
 
 # 出力
 改善されたHTMLを出力してください（<!DOCTYPE html>から</html>まで）。
