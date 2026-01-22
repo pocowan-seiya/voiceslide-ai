@@ -1128,43 +1128,52 @@ CSSはすべて<style>タグ内に記述。
 
 ## タイポグラフィの絶対ルール（必須CSS）
 
-**日本語の改行問題を防ぐため、以下のCSSを必ず適用してください：**
+**⚠️ テキストが途中で切れないように、以下のCSSを必ず適用してください：**
 
 ```css
-/* 必須: タイトルは1行で収める */
+/* 必須: タイトルは必ず全文表示（切れ禁止） */
 h1, h2, .title, .headline {{
   word-break: keep-all;      /* 日本語の単語を分割しない */
-  white-space: nowrap;       /* 必ず1行で表示 */
-  overflow: hidden;          /* はみ出しを隠す */
-  text-overflow: ellipsis;   /* 長すぎる場合は...で省略 */
-  max-width: 90%;            /* 幅制限 */
-  font-size: clamp(1.5rem, 5vw, 3.5rem);  /* サイズ自動調整 */
+  white-space: normal;       /* 自然に折り返す（切れ禁止） */
+  overflow: visible;         /* はみ出しを見せる（hidden禁止） */
+  text-overflow: clip;       /* ellipsis禁止（...で切れない） */
+  font-size: clamp(2rem, 4vw, 4rem);  /* 画面幅に応じて自動調整 */
+  line-height: 1.2;
+  padding: 0 40px;           /* 左右の余白で切れ防止 */
 }}
 
-/* サブタイトル・本文は折り返し可 */
+/* サブタイトル・本文も同様 */
 h3, p, .subtitle, .subheadline {{
   word-break: keep-all;
-  overflow-wrap: break-word;
+  white-space: normal;
+  overflow: visible;
   line-height: 1.4;
 }}
 
-/* 必須: テキストが切れないようにパディング */
+/* 必須: コンテンツが画面内に収まるように */
 body {{
-  padding: 5% !important;    /* 全辺に5%の余白 */
+  padding: 40px 60px !important;  /* 十分な内側余白 */
   box-sizing: border-box;
+  overflow: hidden;
 }}
 
-/* 必須: コンテンツがはみ出さないように */
-.slide-content {{
-  max-height: 90%;
-  overflow: visible;         /* 切れないように */
+/* ポイントカードも切れないように */
+.point, .card {{
+  white-space: normal;
+  overflow: visible;
+  word-break: keep-all;
 }}
 ```
 
-**絶対に守ること:**
-1. **単語の途中で改行しない**（「コーディン/グ」❌ →「コーディング」で1行 ✅）
-2. **テキストが画面端で切れない**（下部に十分なパディング）
-3. **タイトルが長すぎる場合はフォントサイズを小さくする**（改行より縮小優先）
+**⚠️ 絶対禁止（テキスト切れの原因）:**
+❌ `text-overflow: ellipsis` （...で切れる）
+❌ `overflow: hidden` + `white-space: nowrap` の組み合わせ
+❌ `max-height` で高さを制限してテキストを隠す
+
+**✅ 代わりにすること:**
+- テキストが長い場合は**フォントサイズを小さくする**
+- 必要なら**複数行に折り返す**
+- タイトルは**必ず全文表示**（省略禁止）
 
 
 ## レイアウトのバランス（重要）
