@@ -183,6 +183,149 @@ def should_include_text_in_illustration(slide_number: int, total_slides: int) ->
     return random.random() < 0.3
 
 
+# =============================================================================
+# Dynamic Text Styles for Illustration Mode
+# =============================================================================
+
+# 6 text style variations based on content/emotion
+TEXT_STYLES = {
+    "neon_glow": {
+        "name": "Neon Glow",
+        "emotions": ["exciting", "energetic", "innovative", "tech"],
+        "title_css": """
+            text-shadow: 0 0 20px {primary}, 0 0 40px {primary}, 0 0 60px {primary}; 
+            color: white;
+            -webkit-text-stroke: 1px {primary};
+        """,
+        "subtitle_css": "text-shadow: 0 0 10px rgba(255,255,255,0.5); color: #E2E8F0;"
+    },
+    "elegant_shadow": {
+        "name": "Elegant Shadow",
+        "emotions": ["professional", "serious", "corporate", "calm"],
+        "title_css": """
+            text-shadow: 4px 4px 0 rgba(0,0,0,0.3), 8px 8px 0 rgba(0,0,0,0.1);
+            background: linear-gradient(135deg, {primary}, #fff); 
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        """,
+        "subtitle_css": "text-shadow: 2px 2px 4px rgba(0,0,0,0.3); color: #E2E8F0;"
+    },
+    "cosmic": {
+        "name": "Cosmic",
+        "emotions": ["inspiring", "dreamy", "visionary", "creative"],
+        "title_css": """
+            background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            text-shadow: 0 4px 30px rgba(102, 126, 234, 0.5);
+            filter: drop-shadow(0 0 20px rgba(118, 75, 162, 0.4));
+        """,
+        "subtitle_css": "color: #CBD5E1; text-shadow: 0 2px 10px rgba(255,255,255,0.2);"
+    },
+    "warm_sunset": {
+        "name": "Warm Sunset",
+        "emotions": ["warm", "friendly", "passionate", "emotional"],
+        "title_css": """
+            background: linear-gradient(135deg, #f093fb, #f5576c, #f093fb);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            text-shadow: 0 4px 20px rgba(245, 87, 108, 0.4);
+        """,
+        "subtitle_css": "color: #FED7AA; text-shadow: 0 2px 10px rgba(251, 146, 60, 0.3);"
+    },
+    "minimal_clean": {
+        "name": "Minimal Clean",
+        "emotions": ["clean", "simple", "modern", "minimal"],
+        "title_css": """
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            letter-spacing: 0.05em;
+        """,
+        "subtitle_css": "color: #94A3B8; letter-spacing: 0.02em;"
+    },
+    "bold_impact": {
+        "name": "Bold Impact",
+        "emotions": ["powerful", "exciting", "action", "urgent"],
+        "title_css": """
+            color: white;
+            text-shadow: 
+                3px 3px 0 {primary},
+                6px 6px 0 rgba(0,0,0,0.3);
+            -webkit-text-stroke: 2px {primary};
+            paint-order: stroke fill;
+        """,
+        "subtitle_css": "color: #F1F5F9; text-shadow: 2px 2px 0 rgba(0,0,0,0.3);"
+    }
+}
+
+
+def select_text_style(strategy: Dict[str, Any], slide: Dict[str, Any] = None) -> Dict[str, str]:
+    """
+    Select appropriate text style based on content analysis.
+    Returns the selected style dict with CSS.
+    """
+    import random
+    
+    # Get emotional tone from strategy
+    content_analysis = strategy.get("content_analysis", {})
+    emotional_tone = content_analysis.get("emotional_tone", "").lower()
+    energy_level = slide.get("energy_level", "medium") if slide else "medium"
+    
+    # Mapping of emotions/tones to styles
+    style_mapping = {
+        # Energetic/exciting content
+        "exciting": "neon_glow",
+        "energetic": "neon_glow",
+        "innovative": "neon_glow",
+        "tech": "neon_glow",
+        "future": "neon_glow",
+        
+        # Professional/calm content
+        "professional": "elegant_shadow",
+        "serious": "elegant_shadow",
+        "corporate": "elegant_shadow",
+        "business": "elegant_shadow",
+        
+        # Inspiring/creative content
+        "inspiring": "cosmic",
+        "dreamy": "cosmic",
+        "visionary": "cosmic",
+        "creative": "cosmic",
+        
+        # Warm/emotional content
+        "warm": "warm_sunset",
+        "friendly": "warm_sunset",
+        "passionate": "warm_sunset",
+        "emotional": "warm_sunset",
+        "personal": "warm_sunset",
+        
+        # Clean/minimal content
+        "clean": "minimal_clean",
+        "simple": "minimal_clean",
+        "modern": "minimal_clean",
+        
+        # Powerful/action content
+        "powerful": "bold_impact",
+        "action": "bold_impact",
+        "urgent": "bold_impact",
+    }
+    
+    # Find matching style based on emotional tone
+    selected_style = None
+    for keyword, style_name in style_mapping.items():
+        if keyword in emotional_tone:
+            selected_style = style_name
+            break
+    
+    # Energy level override
+    if energy_level == "high" and not selected_style:
+        selected_style = random.choice(["neon_glow", "bold_impact"])
+    elif energy_level == "low" and not selected_style:
+        selected_style = random.choice(["minimal_clean", "elegant_shadow"])
+    
+    # Default: random selection
+    if not selected_style:
+        selected_style = random.choice(list(TEXT_STYLES.keys()))
+    
+    return TEXT_STYLES[selected_style]
+
 async def polish_copy_for_illustration(
     slide: Dict[str, Any],
     slide_number: int,
@@ -332,7 +475,8 @@ def generate_illustration_template_html(
     bg_end: str,
     primary: str,
     secondary: str,
-    title_font: str
+    title_font: str,
+    text_style: Dict[str, str] = None  # Dynamic text style
 ) -> str:
     """
     Generate HTML for illustration slides based on the selected template.
@@ -360,6 +504,13 @@ def generate_illustration_template_html(
         }}
     '''
     
+    # Get dynamic text styles
+    title_style_css = ""
+    subtitle_style_css = ""
+    if text_style:
+        title_style_css = text_style.get("title_css", "").format(primary=primary)
+        subtitle_style_css = text_style.get("subtitle_css", "")
+    
     # Build points HTML if available
     points_html = ""
     if points:
@@ -385,8 +536,11 @@ def generate_illustration_template_html(
             padding: 50px 80px;
         }}
         .title {{ font-size: 96px; font-weight: 900; text-align: center; margin-bottom: 30px; line-height: 1.1;
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3); }}
-        .subtitle {{ font-size: 42px; color: #E2E8F0; text-align: center; margin-bottom: 40px; font-weight: 500; }}
+            {title_style_css if title_style_css else f"background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3);"}
+        }}
+        .subtitle {{ font-size: 42px; text-align: center; margin-bottom: 40px; font-weight: 500;
+            {subtitle_style_css if subtitle_style_css else "color: #E2E8F0;"}
+        }}
         .illustration-container {{ flex: 1; display: flex; align-items: center; justify-content: center; }}
         .illustration {{ max-width: 85%; max-height: 100%; object-fit: contain; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }}
     </style>
@@ -413,8 +567,11 @@ def generate_illustration_template_html(
         .illustration {{ max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
         .right {{ width: 45%; padding: 60px 50px; display: flex; flex-direction: column; justify-content: center; }}
         .title {{ font-size: 72px; font-weight: 900; line-height: 1.1; margin-bottom: 30px;
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3); }}
-        .subtitle {{ font-size: 36px; color: #E2E8F0; margin-bottom: 40px; line-height: 1.4; font-weight: 500; }}
+            {title_style_css if title_style_css else f"background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3);"}
+        }}
+        .subtitle {{ font-size: 36px; margin-bottom: 40px; line-height: 1.4; font-weight: 500;
+            {subtitle_style_css if subtitle_style_css else "color: #E2E8F0;"}
+        }}
         .points {{ display: flex; flex-direction: column; gap: 24px; }}
         .point {{ display: flex; align-items: center; gap: 18px; padding: 24px 28px; background: rgba(255,255,255,0.1); border-radius: 16px; border-left: 5px solid {primary}; font-size: 28px; font-weight: 500; }}
         .icon {{ font-size: 32px; }}
@@ -445,8 +602,11 @@ def generate_illustration_template_html(
         .right {{ width: 55%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px; }}
         .illustration {{ max-width: 100%; max-height: 90%; object-fit: contain; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }}
         .title {{ font-size: 72px; font-weight: 900; line-height: 1.1; margin-bottom: 30px;
-            background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3); }}
-        .subtitle {{ font-size: 36px; color: #E2E8F0; margin-bottom: 40px; line-height: 1.4; font-weight: 500; }}
+            {title_style_css if title_style_css else f"background: linear-gradient(135deg, {primary}, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 4px 20px rgba(0,0,0,0.3);"}
+        }}
+        .subtitle {{ font-size: 36px; margin-bottom: 40px; line-height: 1.4; font-weight: 500;
+            {subtitle_style_css if subtitle_style_css else "color: #E2E8F0;"}
+        }}
         .points {{ display: flex; flex-direction: column; gap: 24px; }}
         .point {{ display: flex; align-items: center; gap: 18px; padding: 24px 28px; background: rgba(255,255,255,0.1); border-radius: 16px; border-left: 5px solid {primary}; font-size: 28px; font-weight: 500; }}
         .icon {{ font-size: 32px; }}
@@ -484,7 +644,7 @@ def generate_illustration_template_html(
         # Fallback to center_hero
         return generate_illustration_template_html(
             "center_hero", title, subtitle, points, img_src,
-            slide_number, total_slides, bg_start, bg_end, primary, secondary, title_font
+            slide_number, total_slides, bg_start, bg_end, primary, secondary, title_font, text_style
         )
 
 # =============================================================================
@@ -1760,6 +1920,9 @@ Concept to illustrate: """
                 # Use base64 data URL for reliable Playwright rendering
                 img_src = image_info.get("data_url", "")
                 
+                # Select dynamic text style based on content
+                text_style = select_text_style(strategy, slide)
+                
                 # Generate HTML based on selected template
                 html = generate_illustration_template_html(
                     template=selected_template,
@@ -1773,7 +1936,8 @@ Concept to illustrate: """
                     bg_end=bg_end,
                     primary=primary,
                     secondary=secondary,
-                    title_font=title_font
+                    title_font=title_font,
+                    text_style=text_style
                 )
             else:
                 # Standard mode: use AI-generated HTML
