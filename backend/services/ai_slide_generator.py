@@ -786,55 +786,59 @@ ILLUSTRATION_LAYOUT_TYPES = {
         "name": "Center Hero (Illustration)",
         "description": "イラストを中央大きく、タイトルは上部に",
         "css_hints": """
-            - AI生成イラスト（class="illustration"）を中央に配置（画面の50-60%）
-            - **重要**: object-fit: contain; を使用して画像全体を表示（切れないように）
-            - 画像の周りに10-20pxの余白を設ける
+            - AI生成イラスト（class="illustration"）を中央に大きく配置（画面の60-70%）
             - タイトルは上部に大きく（72-96px）
             - サブタイトルは控えめに
+            - 余白は最小限でイラストを目立たせる
             - ポイントは不要（あっても1-2個のみ）
-            - 画像例: <img class="illustration" src="..." style="max-width: 80%; max-height: 60%; object-fit: contain;">
         """,
-        "best_for": ["title", "closing", "concept"]
+        "best_for": ["title", "closing", "concept"],
+        "image_size": (1080, 720),  # 横長（フルサイズ）
+        "image_aspect": "landscape"
     },
     "left_illustration": {
         "name": "Left Illustration",
-        "description": "左にイラスト（全体表示）、右にテキスト",
+        "description": "左にイラスト（高さフル）、右にテキスト",
         "css_hints": """
-            - 左側（45-50%）にAI生成イラスト（class="illustration"）を配置
-            - **重要**: object-fit: contain; を使用して画像全体を表示（見切れ禁止）
-            - 画像は画面内に収まるサイズ: max-height: 80%; padding: 20px;
-            - 右側（50-55%）にテキストエリア
-            - タイトルは右側上部に大きく（64-72px）
+            - 左55%にAI生成イラスト（class="illustration"）を配置
+            - 右45%にテキストエリア
+            - タイトルは右側上部に大きく（72px）
             - サブタイトルとポイント（最大2個）を右側に
-            - 画像例: <img class="illustration" src="..." style="max-width: 90%; max-height: 80%; object-fit: contain; padding: 20px;">
+            - **重要**: イラストの右端にグラデーションオーバーレイ（背景色へフェード）を適用
+            - グラデーション例: linear-gradient(to right, transparent 80%, {background_color} 100%)
         """,
-        "best_for": ["points", "concept", "flow"]
+        "best_for": ["points", "concept", "flow"],
+        "image_size": (1100, 1080),  # 縦長（左側に収まるサイズ）
+        "image_aspect": "portrait"
     },
     "right_illustration": {
         "name": "Right Illustration",
-        "description": "右にイラスト（全体表示）、左にテキスト",
+        "description": "右にイラスト（高さフル）、左にテキスト",
         "css_hints": """
-            - 右側（45-50%）にAI生成イラスト（class="illustration"）を配置
-            - **重要**: object-fit: contain; を使用して画像全体を表示（見切れ禁止）
-            - 画像は画面内に収まるサイズ: max-height: 80%; padding: 20px;
-            - 左側（50-55%）にテキストエリア
-            - タイトルは左側上部に大きく（64-72px）
+            - 右55%にAI生成イラスト（class="illustration"）を配置
+            - 左45%にテキストエリア
+            - タイトルは左側上部に大きく（72px）
             - サブタイトルとポイント（最大2個）を左側に
-            - 画像例: <img class="illustration" src="..." style="max-width: 90%; max-height: 80%; object-fit: contain; padding: 20px;">
+            - **重要**: イラストの左端にグラデーションオーバーレイ（背景色へフェード）を適用
+            - グラデーション例: linear-gradient(to left, transparent 80%, {background_color} 100%)
         """,
-        "best_for": ["points", "concept", "comparison"]
+        "best_for": ["points", "concept", "comparison"],
+        "image_size": (1100, 1080),  # 縦長（右側に収まるサイズ）
+        "image_aspect": "portrait"
     },
     "full_bleed_illustration": {
         "name": "Full Bleed (Illustration)",
         "description": "イラスト全画面、テキスト最小",
         "css_hints": """
             - AI生成イラスト（class="illustration"）を背景として全画面配置
-            - width: 100%; height: 100%; object-fit: cover; （これはfull bleedなのでcoverでOK）
+            - width: 100%; height: 100%; object-fit: cover;
             - テキストはオーバーレイとして上部or下部に
             - タイトルのみ（サブタイトル、ポイント不要）
             - 半透明背景（backdrop-filter: blur）でテキスト可読性確保
         """,
-        "best_for": ["impact", "closing", "transition"]
+        "best_for": ["impact", "closing", "transition"],
+        "image_size": (1920, 1080),  # フルサイズ
+        "image_aspect": "landscape"
     }
 }
 
@@ -2029,12 +2033,15 @@ Concept to illustrate: """
                     
                     full_prompt = f"{diagram_instruction}{base_prompt}{user_style_part}{theme_part}"
                     
-                    print(f"[Generator] Generating illustration for slide {slide_number}...")
+                    # Determine image aspect based on layout
+                    layout_config = ILLUSTRATION_LAYOUT_TYPES.get(selected_template, {})
+                    image_aspect = layout_config.get("image_aspect", "landscape")
+                    print(f"[Generator] Generating illustration for slide {slide_number} (aspect: {image_aspect})...")
                     print(f"[Generator] Prompt: {full_prompt[:100]}...")
                     if progress_callback:
                         progress_callback(i, end_slide - start_slide + 2, f"イラスト生成中 ({slide_number}/{total_slides})...")
                     
-                    img_data = await generate_slide_image(full_prompt, gemini_key, reference_image_path)
+                    img_data = await generate_slide_image(full_prompt, gemini_key, reference_image_path, image_aspect)
                     
                     if img_data:
                         img_filename = f"slide_illustration_{slide_number:03d}.png"
@@ -2936,13 +2943,14 @@ async def regenerate_slide_with_feedback(
             "error": str(e)
         }
 
-async def generate_slide_image(prompt: str, api_key: str, reference_image_path: Optional[str] = None) -> Optional[bytes]:
+async def generate_slide_image(prompt: str, api_key: str, reference_image_path: Optional[str] = None, image_aspect: str = "landscape") -> Optional[bytes]:
     """Generates an image using Gemini 3 Pro Image Preview model.
     
     Args:
         prompt: The text prompt for image generation
         api_key: Gemini API key
         reference_image_path: Optional path to reference image for style guidance
+        image_aspect: "portrait" for tall images (left/right layout), "landscape" for wide images
     """
     if not api_key:
         return None
@@ -2983,10 +2991,12 @@ async def generate_slide_image(prompt: str, api_key: str, reference_image_path: 
             })
             
             # Modify prompt to reference the style
-            enhanced_prompt = f"Generate an illustration in the same artistic style as the reference image. {prompt}"
+            aspect_instruction = "Generate a PORTRAIT (tall) image suitable for a side panel layout." if image_aspect == "portrait" else "Generate a LANDSCAPE (wide) image."
+            enhanced_prompt = f"{aspect_instruction} Generate an illustration in the same artistic style as the reference image. {prompt}"
             content_parts.append(enhanced_prompt)
         else:
-            content_parts.append(prompt)
+            aspect_instruction = "Generate a PORTRAIT (tall) image suitable for a side panel layout." if image_aspect == "portrait" else "Generate a LANDSCAPE (wide) image."
+            content_parts.append(f"{aspect_instruction} {prompt}")
         
         print(f"[Imagen] Generating image with prompt: {prompt[:50]}...")
         response = model.generate_content(content_parts)
