@@ -193,40 +193,44 @@ TEXT_STYLES = {
         "name": "Neon Glow",
         "emotions": ["exciting", "energetic", "innovative", "tech"],
         "title_css": """
-            text-shadow: 0 0 20px {primary}, 0 0 40px {primary}, 0 0 60px {primary}; 
             color: white;
-            -webkit-text-stroke: 1px {primary};
+            text-shadow: 
+                0 0 20px {primary}, 
+                0 0 40px {primary}, 
+                0 0 60px rgba(255,255,255,0.3);
         """,
-        "subtitle_css": "text-shadow: 0 0 10px rgba(255,255,255,0.5); color: #E2E8F0;"
+        "subtitle_css": "color: #E2E8F0; text-shadow: 0 0 10px rgba(255,255,255,0.5);"
     },
-    "elegant_shadow": {
-        "name": "Elegant Shadow",
+    "elegant_gradient": {
+        "name": "Elegant Gradient",
         "emotions": ["professional", "serious", "corporate", "calm"],
         "title_css": """
-            text-shadow: 4px 4px 0 rgba(0,0,0,0.3), 8px 8px 0 rgba(0,0,0,0.1);
-            background: linear-gradient(135deg, {primary}, #fff); 
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background: linear-gradient(135deg, #fff 0%, {primary} 50%, #fff 100%);
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 4px 15px rgba(255,255,255,0.3));
         """,
-        "subtitle_css": "text-shadow: 2px 2px 4px rgba(0,0,0,0.3); color: #E2E8F0;"
+        "subtitle_css": "color: #E2E8F0; text-shadow: 0 2px 10px rgba(255,255,255,0.2);"
     },
     "cosmic": {
         "name": "Cosmic",
         "emotions": ["inspiring", "dreamy", "visionary", "creative"],
         "title_css": """
-            background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            text-shadow: 0 4px 30px rgba(102, 126, 234, 0.5);
-            filter: drop-shadow(0 0 20px rgba(118, 75, 162, 0.4));
+            background: linear-gradient(135deg, #60A5FA, #A78BFA, #F472B6);
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 30px rgba(139, 92, 246, 0.5));
         """,
-        "subtitle_css": "color: #CBD5E1; text-shadow: 0 2px 10px rgba(255,255,255,0.2);"
+        "subtitle_css": "color: #E0E7FF; text-shadow: 0 2px 10px rgba(139, 92, 246, 0.3);"
     },
     "warm_sunset": {
         "name": "Warm Sunset",
         "emotions": ["warm", "friendly", "passionate", "emotional"],
         "title_css": """
-            background: linear-gradient(135deg, #f093fb, #f5576c, #f093fb);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            text-shadow: 0 4px 20px rgba(245, 87, 108, 0.4);
+            background: linear-gradient(135deg, #FBBF24, #F97316, #FB7185);
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 25px rgba(251, 146, 60, 0.5));
         """,
         "subtitle_css": "color: #FED7AA; text-shadow: 0 2px 10px rgba(251, 146, 60, 0.3);"
     },
@@ -235,21 +239,21 @@ TEXT_STYLES = {
         "emotions": ["clean", "simple", "modern", "minimal"],
         "title_css": """
             color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            letter-spacing: 0.05em;
+            text-shadow: 0 4px 20px rgba(255,255,255,0.2);
+            letter-spacing: 0.03em;
         """,
-        "subtitle_css": "color: #94A3B8; letter-spacing: 0.02em;"
+        "subtitle_css": "color: #CBD5E1; letter-spacing: 0.02em;"
     },
-    "bold_impact": {
-        "name": "Bold Impact",
+    "bold_vibrant": {
+        "name": "Bold Vibrant",
         "emotions": ["powerful", "exciting", "action", "urgent"],
         "title_css": """
-            color: white;
-            text-shadow: 
-                0 4px 20px rgba(0,0,0,0.4),
-                0 0 40px {primary};
+            background: linear-gradient(135deg, #fff 0%, {primary} 100%);
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 30px {primary});
         """,
-        "subtitle_css": "color: #F1F5F9; text-shadow: 0 2px 10px rgba(0,0,0,0.3);"
+        "subtitle_css": "color: #F1F5F9; text-shadow: 0 2px 15px rgba(255,255,255,0.3);"
     }
 }
 
@@ -276,10 +280,10 @@ def select_text_style(strategy: Dict[str, Any], slide: Dict[str, Any] = None) ->
         "future": "neon_glow",
         
         # Professional/calm content
-        "professional": "elegant_shadow",
-        "serious": "elegant_shadow",
-        "corporate": "elegant_shadow",
-        "business": "elegant_shadow",
+        "professional": "elegant_gradient",
+        "serious": "elegant_gradient",
+        "corporate": "elegant_gradient",
+        "business": "elegant_gradient",
         
         # Inspiring/creative content
         "inspiring": "cosmic",
@@ -300,9 +304,9 @@ def select_text_style(strategy: Dict[str, Any], slide: Dict[str, Any] = None) ->
         "modern": "minimal_clean",
         
         # Powerful/action content
-        "powerful": "bold_impact",
-        "action": "bold_impact",
-        "urgent": "bold_impact",
+        "powerful": "bold_vibrant",
+        "action": "bold_vibrant",
+        "urgent": "bold_vibrant",
     }
     
     # Find matching style based on emotional tone
@@ -314,9 +318,9 @@ def select_text_style(strategy: Dict[str, Any], slide: Dict[str, Any] = None) ->
     
     # Energy level override
     if energy_level == "high" and not selected_style:
-        selected_style = random.choice(["neon_glow", "bold_impact"])
+        selected_style = random.choice(["neon_glow", "bold_vibrant"])
     elif energy_level == "low" and not selected_style:
-        selected_style = random.choice(["minimal_clean", "elegant_shadow"])
+        selected_style = random.choice(["minimal_clean", "elegant_gradient"])
     
     # Default: random selection
     if not selected_style:
