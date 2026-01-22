@@ -767,6 +767,61 @@ LAYOUT_TYPES = {
     }
 }
 
+# =============================================================================
+# Illustration Mode Layouts - 4 Image-Focused Layouts
+# =============================================================================
+
+ILLUSTRATION_LAYOUT_TYPES = {
+    "center_hero_illustration": {
+        "name": "Center Hero (Illustration)",
+        "description": "イラストを中央大きく、タイトルは上部に",
+        "css_hints": """
+            - AI生成イラスト（class="illustration"）を中央に大きく配置（画面の60-70%）
+            - タイトルは上部に大きく（96px）
+            - サブタイトルは控えめに
+            - 余白は最小限でイラストを目立たせる
+            - ポイントは不要（あっても1-2個のみ）
+        """,
+        "best_for": ["title", "closing", "concept"]
+    },
+    "left_illustration": {
+        "name": "Left Illustration",
+        "description": "左55%にイラスト、右にテキスト",
+        "css_hints": """
+            - 左55%にAI生成イラスト（class="illustration"）を配置
+            - 右45%にテキストエリア
+            - タイトルは右側上部に大きく（72px）
+            - サブタイトルとポイント（最大2個）を右側に
+            - イラストは画面高さいっぱいに
+        """,
+        "best_for": ["points", "concept", "flow"]
+    },
+    "right_illustration": {
+        "name": "Right Illustration",
+        "description": "右55%にイラスト、左にテキスト",
+        "css_hints": """
+            - 右55%にAI生成イラスト（class="illustration"）を配置
+            - 左45%にテキストエリア
+            - タイトルは左側上部に大きく（72px）
+            - サブタイトルとポイント（最大2個）を左側に
+            - イラストは画面高さいっぱいに
+        """,
+        "best_for": ["points", "concept", "comparison"]
+    },
+    "full_bleed_illustration": {
+        "name": "Full Bleed (Illustration)",
+        "description": "イラスト全画面、テキスト最小",
+        "css_hints": """
+            - AI生成イラスト（class="illustration"）を背景として全画面配置
+            - width: 100%; height: 100%; object-fit: cover;
+            - テキストはオーバーレイとして上部or下部に
+            - タイトルのみ（サブタイトル、ポイント不要）
+            - 半透明背景（backdrop-filter: blur）でテキスト可読性確保
+        """,
+        "best_for": ["impact", "closing", "transition"]
+    }
+}
+
 # Track used layouts to avoid repetition
 _used_layouts_cache: Dict[str, List[str]] = {}
 
@@ -775,11 +830,13 @@ def select_layout_for_slide(
     slide_number: int,
     total_slides: int,
     content_type: str,
-    num_points: int = 0
+    num_points: int = 0,
+    is_illustration_mode: bool = False  # NEW: illustration mode flag
 ) -> Dict[str, Any]:
     """
     Select an appropriate layout for each slide, ensuring variety.
     Avoids using the same layout consecutively.
+    For illustration mode, uses ILLUSTRATION_LAYOUT_TYPES.
     """
     # Initialize cache for this job
     if job_id not in _used_layouts_cache:
@@ -787,6 +844,37 @@ def select_layout_for_slide(
     
     used = _used_layouts_cache[job_id]
     
+    # Use illustration layouts for illustration mode
+    if is_illustration_mode:
+        # Title/closing slides use center_hero_illustration or full_bleed
+        if slide_number == 1:
+            layout_key = "center_hero_illustration"
+        elif slide_number == total_slides:
+            layout_key = "full_bleed_illustration" if len(used) > 0 and "center_hero" in used[-1] else "center_hero_illustration"
+        else:
+            # Alternate between left/right illustration for middle slides
+            illustration_layouts = ["left_illustration", "right_illustration", "center_hero_illustration"]
+            
+            # Remove last used to avoid repetition
+            if used:
+                last_used = used[-1]
+                available = [l for l in illustration_layouts if l != last_used]
+            else:
+                available = illustration_layouts
+            
+            # Cycle through layouts
+            layout_key = available[(slide_number - 2) % len(available)] if available else "left_illustration"
+        
+        # Track usage
+        used.append(layout_key)
+        _used_layouts_cache[job_id] = used[-10:]
+        
+        return {
+            "key": layout_key,
+            **ILLUSTRATION_LAYOUT_TYPES[layout_key]
+        }
+    
+    # Standard mode: original logic
     # Title slide - always center_hero
     if slide_number == 1:
         layout_key = "center_hero"
@@ -1318,10 +1406,12 @@ async def generate_slide_html(
     job_id: str,  # Added for layout tracking
     gemini_key: Optional[str] = None,
     image_info: Optional[Dict[str, str]] = None,
-    text_density: str = "standard"  # "simple" (title+headline) or "standard" (full)
+    text_density: str = "standard",  # "simple" (title+headline) or "standard" (full)
+    is_illustration_mode: bool = False  # NEW: Use illustration layouts
 ) -> str:
     """
-    Step 3: Generate individual slide HTML based on strategy
+    Step 3: Generate individual slide HTML based on strategy.
+    For illustration mode, uses ILLUSTRATION_LAYOUT_TYPES for image-focused designs.
     """
     key = gemini_key or GEMINI_API_KEY
     if not key:
@@ -1359,13 +1449,14 @@ async def generate_slide_html(
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
     
-    # Select layout for variety (NEW)
+    # Select layout for variety (uses ILLUSTRATION_LAYOUT_TYPES for illustration mode)
     layout = select_layout_for_slide(
         job_id=job_id,
         slide_number=slide_number,
         total_slides=total_slides,
         content_type=slide_type,
-        num_points=len(raw_points)
+        num_points=len(raw_points),
+        is_illustration_mode=is_illustration_mode  # NEW: Pass illustration mode flag
     )
     
     # Build layout instruction
@@ -1445,23 +1536,46 @@ async def generate_slide_html(
 文字が多いと失格です。ビジュアルで伝えてください。
 """
     
-    # Illustration mode instruction
+    # Illustration mode instruction (when generating illustration-focused slides)
     illustration_mode_instruction = ""
-    if is_ai_illustration:
+    if is_illustration_mode or is_ai_illustration:
         illustration_mode_instruction = """
 # 🎨 イラスト重視モード（※最優先ルール）
 
 AI生成されたイラストがこのスライドの主役です。以下の絶対ルールに従ってください：
 
-1. **画像を大きく配置**: 提供された画像をスライドの背景全体(`width: 100%; height: 100vh; object-fit: cover;`)、またはスライドの大部分に配置してください。
-2. **テキストは最小限**: 
-   - タイトルのみ、またはタイトル＋短い補足のみ。
-   - 箇条書きは原則禁止（画像の邪魔になるため）。
-3. **画像の上に文字を乗せる場合**:
-   - 文字の可読性を確保するために、`backdrop-filter: blur(10px)` や半透明の暗い背景 (`rgba(0,0,0,0.6)`) をテキストコンテナに適用してください。
-   - `text-shadow: 0 4px 12px rgba(0,0,0,0.8)` を強めにかけてください。
-   
-提供された `{{image_section}}` 内の画像タグを必ず使用してください。
+## 必須: イラスト画像の配置
+レイアウトに従って、必ず以下のような `<img class="illustration">` タグを含めてください：
+
+```html
+<img class="illustration" src="ILLUSTRATION_PLACEHOLDER" alt="AI Illustration" style="..." />
+```
+
+**重要**: `src="ILLUSTRATION_PLACEHOLDER"` はそのまま記述してください。後で実際の画像が注入されます。
+
+## レイアウト別配置例
+
+### Left / Right Illustration:
+- 左または右55%にイラスト画像
+- 反対側にテキスト（タイトル大きく、ポイントは最大2個）
+
+### Center Hero:
+- 中央にイラスト大きく
+- タイトルは上部に大きく（96px以上）
+
+### Full Bleed:
+- イラストを全画面背景（width: 100%; height: 100vh; object-fit: cover;）
+- テキストはオーバーレイで最小限
+
+## テキストルール
+1. **タイトルは大きく**（72-96px）、体言止めかキャッチコピー調
+2. **サブタイトルは簡潔**（15文字以内）
+3. **ポイントは最大2個**（各8文字以内）
+4. **話し言葉禁止**（「〜なんです」「〜だと思う」等）
+
+## 可読性確保
+- テキスト背景: `backdrop-filter: blur(10px)` または `rgba(0,0,0,0.6)`
+- text-shadow: `0 4px 12px rgba(0,0,0,0.8)`
 """
     
     # User images instruction
@@ -1915,55 +2029,54 @@ Concept to illustrate: """
                     print(f"[Generator] No prompt available for slide {slide_number}, skipping image generation")
             
             # Step 3b: Generate HTML
-            # For illustration mode with image, use dedicated template (bypass AI)
-            if use_illustration_for_this_slide and image_info:
-                print(f"[Generator] Using illustration template '{selected_template}' for slide {slide_number}")
+            # NEW: イラストモードでも標準と同じgenerate_slide_htmlを使用
+            # AI画像は生成後に注入する
+            
+            if use_illustration_for_this_slide:
+                print(f"[Generator] Using AI HTML generation with illustration layout for slide {slide_number}")
                 
-                # Polish slide copy using AI (same quality as standard mode)
-                polished = await polish_copy_for_illustration(
+                # Generate HTML using standard process (same copy quality)
+                # But with illustration-specific layout (image_info passed for injection later)
+                html = await generate_slide_html(
                     slide=slide,
                     slide_number=slide_number,
                     total_slides=total_slides,
                     strategy=strategy,
-                    gemini_key=gemini_key
+                    job_id=job_id,
+                    gemini_key=gemini_key,
+                    image_info=image_info,  # Pass image info for AI to include placeholder
+                    text_density=text_density,
+                    is_illustration_mode=True  # NEW: Tell generate_slide_html this is illustration mode
                 )
-                title = polished["title"]
-                subtitle = polished["subtitle"]
-                points = polished["points"]
                 
-                # Get colors from strategy
-                colors = strategy.get("colors", {})
-                bg_start = colors.get("background_start", "#0f172a")
-                bg_end = colors.get("background_end", "#1e293b")
-                primary = colors.get("primary", "#F59E0B")
-                secondary = colors.get("secondary", "#8B5CF6")
-                
-                # Get font from strategy
-                fonts = strategy.get("fonts", {})
-                title_font = fonts.get("title_font", "'Noto Sans JP', sans-serif")
-                
-                # Use base64 data URL for reliable Playwright rendering
-                img_src = image_info.get("data_url", "")
-                
-                # Select dynamic text style based on content
-                text_style = select_text_style(strategy, slide)
-                
-                # Generate HTML based on selected template
-                html = generate_illustration_template_html(
-                    template=selected_template,
-                    title=title,
-                    subtitle=subtitle,
-                    points=points,
-                    img_src=img_src,
-                    slide_number=slide_number,
-                    total_slides=total_slides,
-                    bg_start=bg_start,
-                    bg_end=bg_end,
-                    primary=primary,
-                    secondary=secondary,
-                    title_font=title_font,
-                    text_style=text_style
-                )
+                # Inject AI illustration into the generated HTML if image exists
+                if image_info and image_info.get("data_url"):
+                    img_data_url = image_info.get("data_url")
+                    
+                    # Check if illustration placeholder exists and replace it
+                    if 'class="illustration"' in html:
+                        import re
+                        # Replace src in illustration img tag with actual data URL
+                        html = re.sub(
+                            r'(<img[^>]*class="illustration"[^>]*src=")[^"]*(")',
+                            rf'\g<1>{img_data_url}\g<2>',
+                            html
+                        )
+                        print(f"[Generator] Injected illustration data URL into slide {slide_number}")
+                    else:
+                        # Fallback: inject illustration as background
+                        print(f"[Generator] No illustration placeholder found, injecting as background for slide {slide_number}")
+                        illustration_html = f'''
+<div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; overflow: hidden;">
+    <img src="{img_data_url}" class="illustration" alt="AI Illustration" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;">
+    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.5) 100%);"></div>
+</div>'''
+                        if '<body>' in html:
+                            html = html.replace('<body>', '<body>\n' + illustration_html, 1)
+                        elif '<body ' in html:
+                            # Find the end of <body tag and insert after
+                            import re
+                            html = re.sub(r'(<body[^>]*>)', r'\1\n' + illustration_html, html, count=1)
             else:
                 # Standard mode: use AI-generated HTML
                 html = await generate_slide_html(
