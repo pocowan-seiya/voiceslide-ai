@@ -382,15 +382,21 @@ async def polish_copy_for_illustration(
 ❌「〜なんですよね」「〜じゃないですか」
 ❌「〜できるようになってきた」
 ❌「〜っていうのも」「〜というか」
+❌「〜なんですと」「〜なんです」
+❌「〜わけですよ」「〜っていうわけで」
 
-### 曖昧表現
+### 曖昧・不明瞭表現
 ❌「〜とか」「〜など」「〜みたいな」
 ❌「できなくはない」「しかない」
+❌「何やら」「どうやら」「なんか」
+❌「いろいろ」「さまざま」「様々な」
+❌「ある意味」「結局」「そもそも」
 
 ### 冗長な接続
 ❌「それを〜することによって」
 ❌「〜をやることで」
 ❌「〜していくことが」
+❌「〜というところで」「ところが」
 
 ## ✅ 正しい変換例
 
@@ -572,9 +578,9 @@ def generate_illustration_template_html(
         .subtitle {{ font-size: 36px; margin-bottom: 40px; line-height: 1.4; font-weight: 500;
             {subtitle_style_css if subtitle_style_css else "color: #E2E8F0;"}
         }}
-        .points {{ display: flex; flex-direction: column; gap: 24px; }}
-        .point {{ display: flex; align-items: center; gap: 18px; padding: 24px 28px; background: rgba(255,255,255,0.1); border-radius: 16px; border-left: 5px solid {primary}; font-size: 28px; font-weight: 500; }}
-        .icon {{ font-size: 32px; }}
+        .points {{ display: flex; flex-direction: column; gap: 28px; }}
+        .point {{ display: flex; align-items: center; gap: 20px; padding: 28px 32px; background: rgba(255,255,255,0.12); border-radius: 18px; border-left: 6px solid {primary}; font-size: 40px; font-weight: 600; line-height: 1.3; }}
+        .icon {{ font-size: 44px; }}
     </style>
 </head>
 <body>
@@ -607,9 +613,9 @@ def generate_illustration_template_html(
         .subtitle {{ font-size: 36px; margin-bottom: 40px; line-height: 1.4; font-weight: 500;
             {subtitle_style_css if subtitle_style_css else "color: #E2E8F0;"}
         }}
-        .points {{ display: flex; flex-direction: column; gap: 24px; }}
-        .point {{ display: flex; align-items: center; gap: 18px; padding: 24px 28px; background: rgba(255,255,255,0.1); border-radius: 16px; border-left: 5px solid {primary}; font-size: 28px; font-weight: 500; }}
-        .icon {{ font-size: 32px; }}
+        .points {{ display: flex; flex-direction: column; gap: 28px; }}
+        .point {{ display: flex; align-items: center; gap: 20px; padding: 28px 32px; background: rgba(255,255,255,0.12); border-radius: 18px; border-left: 6px solid {primary}; font-size: 40px; font-weight: 600; line-height: 1.3; }}
+        .icon {{ font-size: 44px; }}
     </style>
 </head>
 <body>
