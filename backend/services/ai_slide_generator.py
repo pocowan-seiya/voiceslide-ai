@@ -1449,8 +1449,34 @@ async def generate_slide_html(
         key_message = ""  # No key message either
         print(f"[Design Architect] Slide {slide_number}: Simple mode (title + headline only)")
     else:
+        # Standard mode
         raw_points = slide_copy.get("bullet_points") or slide.get("points", [])
         key_message = slide_copy.get("key_message") or ""
+        
+    # NEW: Select sophisticated text style based on content analysis
+    text_style = select_text_style(strategy, slide)
+    
+    # Properly format CSS with primary color if placeholder exists
+    title_css_raw = text_style.get("title_css", "")
+    primary_color = colors.get("primary", "#F59E0B")
+    if "{primary}" in title_css_raw:
+        title_css = title_css_raw.replace("{primary}", primary_color)
+    else:
+        title_css = title_css_raw
+        
+    subtitle_css = text_style.get("subtitle_css", "")
+    print(f"[Design Architect] Slide {slide_number}: Using text style '{text_style['name']}'")
+    
+    # Build text style instruction for prompt
+    text_style_instruction = f"""
+/* Dynamic Text Style: {text_style['name']} */
+.title, h1, .headline {{
+    {title_css}
+}}
+.subtitle, h3, .subheadline {{
+    {subtitle_css}
+}}
+"""
     
     # IMPORTANT: Explicitly exclude these fields - they should NOT appear on slides
     # - speakers_words (transcript text)
@@ -1619,6 +1645,9 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
 - 画像が他の要素（テキストなど）と被らないように、左側のテキストエリア幅を調整してください（例: `max-width: 50%`）。
 """
     
+    # Generate prompt
+    base_font_instruction = style.get("font_instruction", "")
+    
     prompt = SLIDE_DESIGN_PROMPT.format(
         concept_name=style.get("concept_name", "Modern Professional"),
         concept_description=style.get("concept_description", ""),
@@ -1642,7 +1671,7 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
         width=VIDEO_WIDTH,
         height=VIDEO_HEIGHT,
         font_import=style.get("font_import", "Noto Sans JP:wght@400;700;900"),
-        font_instruction=style.get("font_instruction", "")
+        font_instruction=base_font_instruction + text_style_instruction  # Inject text style CSS here
     )
     
     try:
