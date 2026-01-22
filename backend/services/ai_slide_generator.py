@@ -174,12 +174,22 @@ def select_illustration_template(slide_number: int, total_slides: int, slide_typ
     # Others: random selection from all 4 templates
     return random.choice(templates)
 
-def should_include_text_in_illustration(slide_number: int, total_slides: int) -> bool:
+def should_include_text_in_illustration(slide_number: int, total_slides: int, layout: str = "") -> bool:
     """
     Determine if the illustration should include text labels (for diagram-style).
-    About 30% of slides get text in illustrations.
+    Returns False for left/right illustration layouts (text would be cut off).
     """
     import random
+    
+    # Left/Right layouts: NO text in illustration (text gets cut off at edges)
+    if layout in ["left_illustration", "right_illustration"]:
+        return False
+    
+    # Full bleed: minimal text (mostly covered by overlay)
+    if layout == "full_bleed_illustration":
+        return False
+    
+    # Center hero and others: 30% chance of text labels
     return random.random() < 0.3
 
 
@@ -187,30 +197,29 @@ def should_include_text_in_illustration(slide_number: int, total_slides: int) ->
 # Dynamic Text Styles for Illustration Mode
 # =============================================================================
 
-# 6 text style variations based on content/emotion
+# 6 text style variations based on content/emotion (no white to avoid muddiness)
 TEXT_STYLES = {
     "neon_glow": {
         "name": "Neon Glow",
         "emotions": ["exciting", "energetic", "innovative", "tech"],
         "title_css": """
-            color: white;
-            text-shadow: 
-                0 0 20px {primary}, 
-                0 0 40px {primary}, 
-                0 0 60px rgba(255,255,255,0.3);
+            background: linear-gradient(135deg, #22D3EE, #38BDF8, #60A5FA);
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 30px rgba(56, 189, 248, 0.6));
         """,
-        "subtitle_css": "color: #E2E8F0; text-shadow: 0 0 10px rgba(255,255,255,0.5);"
+        "subtitle_css": "color: #7DD3FC; text-shadow: 0 0 15px rgba(56, 189, 248, 0.4);"
     },
     "elegant_gradient": {
         "name": "Elegant Gradient",
         "emotions": ["professional", "serious", "corporate", "calm"],
         "title_css": """
-            background: linear-gradient(135deg, #fff 0%, {primary} 50%, #fff 100%);
+            background: linear-gradient(135deg, #C4B5FD, #A78BFA, #8B5CF6);
             -webkit-background-clip: text; 
             -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 4px 15px rgba(255,255,255,0.3));
+            filter: drop-shadow(0 0 25px rgba(139, 92, 246, 0.5));
         """,
-        "subtitle_css": "color: #E2E8F0; text-shadow: 0 2px 10px rgba(255,255,255,0.2);"
+        "subtitle_css": "color: #C4B5FD; text-shadow: 0 2px 15px rgba(139, 92, 246, 0.3);"
     },
     "cosmic": {
         "name": "Cosmic",
@@ -238,22 +247,23 @@ TEXT_STYLES = {
         "name": "Minimal Clean",
         "emotions": ["clean", "simple", "modern", "minimal"],
         "title_css": """
-            color: white;
-            text-shadow: 0 4px 20px rgba(255,255,255,0.2);
-            letter-spacing: 0.03em;
+            background: linear-gradient(135deg, #E0E7FF, #C7D2FE, #A5B4FC);
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 20px rgba(165, 180, 252, 0.4));
         """,
-        "subtitle_css": "color: #CBD5E1; letter-spacing: 0.02em;"
+        "subtitle_css": "color: #C7D2FE; letter-spacing: 0.02em;"
     },
     "bold_vibrant": {
         "name": "Bold Vibrant",
         "emotions": ["powerful", "exciting", "action", "urgent"],
         "title_css": """
-            background: linear-gradient(135deg, #fff 0%, {primary} 100%);
+            background: linear-gradient(135deg, #34D399, #10B981, #059669);
             -webkit-background-clip: text; 
             -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 30px {primary});
+            filter: drop-shadow(0 0 30px rgba(16, 185, 129, 0.5));
         """,
-        "subtitle_css": "color: #F1F5F9; text-shadow: 0 2px 15px rgba(255,255,255,0.3);"
+        "subtitle_css": "color: #6EE7B7; text-shadow: 0 2px 15px rgba(16, 185, 129, 0.3);"
     }
 }
 
@@ -1973,8 +1983,8 @@ async def generate_all_custom_slides(
                     # The core purpose is to help understanding and visualization of concepts
                     
                     # Base instruction: focus on conceptual visualization, not artistic beauty
-                    # Determine if this illustration should include text labels
-                    include_text_labels = should_include_text_in_illustration(slide_number, total_slides)
+                    # Determine if this illustration should include text labels (based on layout)
+                    include_text_labels = should_include_text_in_illustration(slide_number, total_slides, selected_template)
                     
                     text_instruction = "- NO text or labels in the image (text will be added separately on the slide)"
                     if include_text_labels:
