@@ -197,73 +197,71 @@ def should_include_text_in_illustration(slide_number: int, total_slides: int, la
 # Dynamic Text Styles for Illustration Mode
 # =============================================================================
 
-# 6 text style variations based on content/emotion (no white to avoid muddiness)
+# 6 text style variations - refined and elegant like standard slides
 TEXT_STYLES = {
-    "neon_glow": {
-        "name": "Neon Glow",
-        "emotions": ["exciting", "energetic", "innovative", "tech"],
+    "warm_coral": {
+        "name": "Warm Coral",
+        "emotions": ["exciting", "energetic", "innovative", "tech", "warm"],
         "title_css": """
-            background: linear-gradient(135deg, #22D3EE, #38BDF8, #60A5FA);
+            background: linear-gradient(135deg, #FF6B6B, #F97316, #FBBF24);
             -webkit-background-clip: text; 
             -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 30px rgba(56, 189, 248, 0.6));
+            filter: drop-shadow(0 2px 10px rgba(249, 115, 22, 0.3));
         """,
-        "subtitle_css": "color: #7DD3FC; text-shadow: 0 0 15px rgba(56, 189, 248, 0.4);"
+        "subtitle_css": "color: #FED7AA;"
     },
-    "elegant_gradient": {
-        "name": "Elegant Gradient",
+    "elegant_purple": {
+        "name": "Elegant Purple",
         "emotions": ["professional", "serious", "corporate", "calm"],
         "title_css": """
-            background: linear-gradient(135deg, #C4B5FD, #A78BFA, #8B5CF6);
+            background: linear-gradient(135deg, #C084FC, #A855F7, #9333EA);
             -webkit-background-clip: text; 
             -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 25px rgba(139, 92, 246, 0.5));
+            filter: drop-shadow(0 2px 10px rgba(168, 85, 247, 0.3));
         """,
-        "subtitle_css": "color: #C4B5FD; text-shadow: 0 2px 15px rgba(139, 92, 246, 0.3);"
+        "subtitle_css": "color: #E9D5FF;"
     },
-    "cosmic": {
-        "name": "Cosmic",
+    "ocean_blue": {
+        "name": "Ocean Blue",
         "emotions": ["inspiring", "dreamy", "visionary", "creative"],
         "title_css": """
-            background: linear-gradient(135deg, #60A5FA, #A78BFA, #F472B6);
+            background: linear-gradient(135deg, #38BDF8, #0EA5E9, #0284C7);
             -webkit-background-clip: text; 
             -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 30px rgba(139, 92, 246, 0.5));
+            filter: drop-shadow(0 2px 10px rgba(14, 165, 233, 0.3));
         """,
-        "subtitle_css": "color: #E0E7FF; text-shadow: 0 2px 10px rgba(139, 92, 246, 0.3);"
+        "subtitle_css": "color: #BAE6FD;"
     },
-    "warm_sunset": {
-        "name": "Warm Sunset",
-        "emotions": ["warm", "friendly", "passionate", "emotional"],
+    "sunset_rose": {
+        "name": "Sunset Rose",
+        "emotions": ["friendly", "passionate", "emotional", "personal"],
         "title_css": """
-            background: linear-gradient(135deg, #FBBF24, #F97316, #FB7185);
+            background: linear-gradient(135deg, #FB7185, #F43F5E, #E11D48);
             -webkit-background-clip: text; 
             -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 25px rgba(251, 146, 60, 0.5));
+            filter: drop-shadow(0 2px 10px rgba(244, 63, 94, 0.3));
         """,
-        "subtitle_css": "color: #FED7AA; text-shadow: 0 2px 10px rgba(251, 146, 60, 0.3);"
+        "subtitle_css": "color: #FECDD3;"
     },
-    "minimal_clean": {
-        "name": "Minimal Clean",
+    "clean_white": {
+        "name": "Clean White",
         "emotions": ["clean", "simple", "modern", "minimal"],
         "title_css": """
-            background: linear-gradient(135deg, #E0E7FF, #C7D2FE, #A5B4FC);
-            -webkit-background-clip: text; 
-            -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 20px rgba(165, 180, 252, 0.4));
+            color: #F8FAFC;
+            text-shadow: 0 2px 20px rgba(248, 250, 252, 0.15);
         """,
-        "subtitle_css": "color: #C7D2FE; letter-spacing: 0.02em;"
+        "subtitle_css": "color: #CBD5E1;"
     },
-    "bold_vibrant": {
-        "name": "Bold Vibrant",
-        "emotions": ["powerful", "exciting", "action", "urgent"],
+    "emerald_fresh": {
+        "name": "Emerald Fresh",
+        "emotions": ["powerful", "action", "urgent", "growth"],
         "title_css": """
             background: linear-gradient(135deg, #34D399, #10B981, #059669);
             -webkit-background-clip: text; 
             -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 30px rgba(16, 185, 129, 0.5));
+            filter: drop-shadow(0 2px 10px rgba(16, 185, 129, 0.3));
         """,
-        "subtitle_css": "color: #6EE7B7; text-shadow: 0 2px 15px rgba(16, 185, 129, 0.3);"
+        "subtitle_css": "color: #A7F3D0;"
     }
 }
 
@@ -283,40 +281,40 @@ def select_text_style(strategy: Dict[str, Any], slide: Dict[str, Any] = None) ->
     # Mapping of emotions/tones to styles
     style_mapping = {
         # Energetic/exciting content
-        "exciting": "neon_glow",
-        "energetic": "neon_glow",
-        "innovative": "neon_glow",
-        "tech": "neon_glow",
-        "future": "neon_glow",
+        "exciting": "warm_coral",
+        "energetic": "warm_coral",
+        "innovative": "warm_coral",
+        "tech": "warm_coral",
+        "future": "warm_coral",
         
         # Professional/calm content
-        "professional": "elegant_gradient",
-        "serious": "elegant_gradient",
-        "corporate": "elegant_gradient",
-        "business": "elegant_gradient",
+        "professional": "elegant_purple",
+        "serious": "elegant_purple",
+        "corporate": "elegant_purple",
+        "business": "elegant_purple",
         
         # Inspiring/creative content
-        "inspiring": "cosmic",
-        "dreamy": "cosmic",
-        "visionary": "cosmic",
-        "creative": "cosmic",
+        "inspiring": "ocean_blue",
+        "dreamy": "ocean_blue",
+        "visionary": "ocean_blue",
+        "creative": "ocean_blue",
         
         # Warm/emotional content
-        "warm": "warm_sunset",
-        "friendly": "warm_sunset",
-        "passionate": "warm_sunset",
-        "emotional": "warm_sunset",
-        "personal": "warm_sunset",
+        "warm": "sunset_rose",
+        "friendly": "sunset_rose",
+        "passionate": "sunset_rose",
+        "emotional": "sunset_rose",
+        "personal": "sunset_rose",
         
         # Clean/minimal content
-        "clean": "minimal_clean",
-        "simple": "minimal_clean",
-        "modern": "minimal_clean",
+        "clean": "clean_white",
+        "simple": "clean_white",
+        "modern": "clean_white",
         
         # Powerful/action content
-        "powerful": "bold_vibrant",
-        "action": "bold_vibrant",
-        "urgent": "bold_vibrant",
+        "powerful": "emerald_fresh",
+        "action": "emerald_fresh",
+        "urgent": "emerald_fresh",
     }
     
     # Find matching style based on emotional tone
@@ -328,9 +326,9 @@ def select_text_style(strategy: Dict[str, Any], slide: Dict[str, Any] = None) ->
     
     # Energy level override
     if energy_level == "high" and not selected_style:
-        selected_style = random.choice(["neon_glow", "bold_vibrant"])
+        selected_style = random.choice(["warm_coral", "emerald_fresh"])
     elif energy_level == "low" and not selected_style:
-        selected_style = random.choice(["minimal_clean", "elegant_gradient"])
+        selected_style = random.choice(["clean_white", "elegant_purple"])
     
     # Default: random selection
     if not selected_style:
