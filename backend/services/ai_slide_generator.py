@@ -246,12 +246,10 @@ TEXT_STYLES = {
         "title_css": """
             color: white;
             text-shadow: 
-                3px 3px 0 {primary},
-                6px 6px 0 rgba(0,0,0,0.3);
-            -webkit-text-stroke: 2px {primary};
-            paint-order: stroke fill;
+                0 4px 20px rgba(0,0,0,0.4),
+                0 0 40px {primary};
         """,
-        "subtitle_css": "color: #F1F5F9; text-shadow: 2px 2px 0 rgba(0,0,0,0.3);"
+        "subtitle_css": "color: #F1F5F9; text-shadow: 0 2px 10px rgba(0,0,0,0.3);"
     }
 }
 
@@ -2811,18 +2809,34 @@ async def regenerate_slide_with_feedback(
         
         # Re-inject existing illustration image if it was removed during regeneration
         if existing_illustration_dataurl:
-            # Check if the illustration class exists but has empty/placeholder src
-            if 'class="illustration"' in new_html:
-                # Replace any placeholder or empty src in illustration img with the original
-                new_html = re.sub(
-                    r'(<img[^>]*class="illustration"[^>]*src=")[^"]*(")',
-                    rf'\g<1>{existing_illustration_dataurl}\g<2>',
-                    new_html
-                )
-                print(f"[Feedback] Re-injected existing illustration image")
+            # Check if user explicitly requested to remove the image
+            remove_keywords = ["画像を消", "画像を削除", "イラストを消", "イラストを削除", "画像なし", "イラストなし"]
+            should_preserve = not any(kw in feedback.lower() for kw in remove_keywords)
+            
+            if should_preserve:
+                if 'class="illustration"' in new_html:
+                    # Replace any placeholder or empty src in illustration img with the original
+                    new_html = re.sub(
+                        r'(<img[^>]*class="illustration"[^>]*src=")[^"]*(")',
+                        rf'\g<1>{existing_illustration_dataurl}\g<2>',
+                        new_html
+                    )
+                    print(f"[Feedback] Re-injected existing illustration image into existing container")
+                else:
+                    # Illustration container was completely removed - force inject it
+                    print(f"[Feedback] Illustration container was removed, force-injecting as background...")
+                    illustration_html = f'''
+<div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; overflow: hidden;">
+    <img src="{existing_illustration_dataurl}" class="illustration" alt="AI Illustration" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;">
+    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.5) 100%);"></div>
+</div>'''
+                    if '<body>' in new_html:
+                        new_html = new_html.replace('<body>', '<body>\n' + illustration_html, 1)
+                    elif '<body ' in new_html:
+                        new_html = re.sub(r'(<body[^>]*>)', r'\1\n' + illustration_html, new_html, count=1)
+                    print(f"[Feedback] Force-injected illustration as background")
             else:
-                # If illustration image was completely removed, this is expected in non-illustration mode
-                print(f"[Feedback] No illustration container found - normal for standard slides")
+                print(f"[Feedback] User requested image removal, not preserving illustration")
         
         if not new_html.startswith("<!DOCTYPE") and not new_html.startswith("<html"):
             raise ValueError("Invalid HTML generated")
