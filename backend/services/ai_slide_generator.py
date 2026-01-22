@@ -410,6 +410,25 @@ async def polish_copy_for_illustration(
 | そうなってくると工程が大変 | 工程の複雑さ |
 | AIが出てきたことによっていろいろなことをAIができるようになってきた | AIで可能性が広がる |
 
+## 🔄 完全言い換えルール（最重要）
+
+**文字起こしの言葉をそのまま使わないでください。**
+
+必ず以下のプロセスで変換：
+1. 入力の**意味・メッセージ**を理解する
+2. そのメッセージを**全く新しい言葉**で表現する
+3. **スライドに最適化された短いフレーズ**にする
+
+### 絶対NG
+- 入力テキストの単語をそのままコピペ
+- 長い文をただ短くしただけ
+- 「〜がある」「〜ができる」で終わる文
+
+### 絶対OK
+- 2〜4語の名詞句（「AI×創造」「未来への扉」）
+- インパクトのある体言止め
+- キャッチコピーのような表現
+
 ## 最適化ルール
 
 ### タイトル
@@ -2587,6 +2606,16 @@ async def regenerate_slide_with_feedback(
     image_data_url = None  # Store for post-processing
     IMAGE_PLACEHOLDER = "USER_IMAGE_PLACEHOLDER_URL"
     
+    # Extract existing illustration image from current HTML for preservation
+    existing_illustration_dataurl = None
+    ILLUSTRATION_PLACEHOLDER = "EXISTING_ILLUSTRATION_URL"
+    import re
+    # Match data URL in img src (for AI-generated illustrations)
+    dataurl_match = re.search(r'<img[^>]+src="(data:image/[^"]+)"[^>]*class="illustration"', current_html)
+    if dataurl_match:
+        existing_illustration_dataurl = dataurl_match.group(1)
+        print(f"[Feedback] Preserving existing illustration image ({len(existing_illustration_dataurl)} chars)")
+    
     if image_base64 and image_filename:
         try:
             # Decode and save image
@@ -2666,6 +2695,21 @@ async def regenerate_slide_with_feedback(
         if image_data_url and IMAGE_PLACEHOLDER in new_html:
             new_html = new_html.replace(IMAGE_PLACEHOLDER, image_data_url)
             print(f"[Feedback] Replaced image placeholder with data URL ({len(image_data_url)} chars)")
+        
+        # Re-inject existing illustration image if it was removed during regeneration
+        if existing_illustration_dataurl:
+            # Check if the illustration class exists but has empty/placeholder src
+            if 'class="illustration"' in new_html:
+                # Replace any placeholder or empty src in illustration img with the original
+                new_html = re.sub(
+                    r'(<img[^>]*class="illustration"[^>]*src=")[^"]*(")',
+                    rf'\g<1>{existing_illustration_dataurl}\g<2>',
+                    new_html
+                )
+                print(f"[Feedback] Re-injected existing illustration image")
+            else:
+                # If illustration image was completely removed, this is expected in non-illustration mode
+                print(f"[Feedback] No illustration container found - normal for standard slides")
         
         if not new_html.startswith("<!DOCTYPE") and not new_html.startswith("<html"):
             raise ValueError("Invalid HTML generated")
