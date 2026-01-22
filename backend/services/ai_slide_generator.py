@@ -1452,7 +1452,21 @@ async def generate_slide_html(
         # Standard mode
         raw_points = slide_copy.get("bullet_points") or slide.get("points", [])
         key_message = slide_copy.get("key_message") or ""
-        
+    
+    # IMPORTANT: Explicitly exclude these fields - they should NOT appear on slides
+    # - speakers_words (transcript text)
+    # - call_to_action (not needed for display)
+    # - note_for_designer (internal note)
+    # - keywords (metadata only)
+    
+    # Format points (only clean bullet points, no transcript)
+    points_str = "\n".join([f"- {p}" if isinstance(p, str) else f"- {p}" for p in raw_points]) if raw_points else "(なし)"
+    
+    # Extract strategy (MUST be before text_style selection)
+    style = strategy.get("design_style", {})
+    analysis = strategy.get("content_analysis", {})
+    colors = style.get("color_palette", {})
+    
     # NEW: Select sophisticated text style based on content analysis
     text_style = select_text_style(strategy, slide)
     
@@ -1477,20 +1491,6 @@ async def generate_slide_html(
     {subtitle_css}
 }}
 """
-    
-    # IMPORTANT: Explicitly exclude these fields - they should NOT appear on slides
-    # - speakers_words (transcript text)
-    # - call_to_action (not needed for display)
-    # - note_for_designer (internal note)
-    # - keywords (metadata only)
-    
-    # Format points (only clean bullet points, no transcript)
-    points_str = "\n".join([f"- {p}" if isinstance(p, str) else f"- {p}" for p in raw_points]) if raw_points else "(なし)"
-    
-    # Extract strategy
-    style = strategy.get("design_style", {})
-    analysis = strategy.get("content_analysis", {})
-    colors = style.get("color_palette", {})
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
     
