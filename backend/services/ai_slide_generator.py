@@ -786,35 +786,41 @@ ILLUSTRATION_LAYOUT_TYPES = {
         "name": "Center Hero (Illustration)",
         "description": "イラストを中央大きく、タイトルは上部に",
         "css_hints": """
-            - AI生成イラスト（class="illustration"）を中央に大きく配置（画面の60-70%）
-            - タイトルは上部に大きく（96px）
+            - AI生成イラスト（class="illustration"）を中央に配置（画面の50-60%）
+            - **重要**: object-fit: contain; を使用して画像全体を表示（切れないように）
+            - 画像の周りに10-20pxの余白を設ける
+            - タイトルは上部に大きく（72-96px）
             - サブタイトルは控えめに
-            - 余白は最小限でイラストを目立たせる
             - ポイントは不要（あっても1-2個のみ）
+            - 画像例: <img class="illustration" src="..." style="max-width: 80%; max-height: 60%; object-fit: contain;">
         """,
         "best_for": ["title", "closing", "concept"]
     },
     "left_illustration": {
         "name": "Left Illustration",
-        "description": "左55%にイラスト、右にテキスト",
+        "description": "左にイラスト（全体表示）、右にテキスト",
         "css_hints": """
-            - 左55%にAI生成イラスト（class="illustration"）を配置
-            - 右45%にテキストエリア
-            - タイトルは右側上部に大きく（72px）
+            - 左側（45-50%）にAI生成イラスト（class="illustration"）を配置
+            - **重要**: object-fit: contain; を使用して画像全体を表示（見切れ禁止）
+            - 画像は画面内に収まるサイズ: max-height: 80%; padding: 20px;
+            - 右側（50-55%）にテキストエリア
+            - タイトルは右側上部に大きく（64-72px）
             - サブタイトルとポイント（最大2個）を右側に
-            - イラストは画面高さいっぱいに
+            - 画像例: <img class="illustration" src="..." style="max-width: 90%; max-height: 80%; object-fit: contain; padding: 20px;">
         """,
         "best_for": ["points", "concept", "flow"]
     },
     "right_illustration": {
         "name": "Right Illustration",
-        "description": "右55%にイラスト、左にテキスト",
+        "description": "右にイラスト（全体表示）、左にテキスト",
         "css_hints": """
-            - 右55%にAI生成イラスト（class="illustration"）を配置
-            - 左45%にテキストエリア
-            - タイトルは左側上部に大きく（72px）
+            - 右側（45-50%）にAI生成イラスト（class="illustration"）を配置
+            - **重要**: object-fit: contain; を使用して画像全体を表示（見切れ禁止）
+            - 画像は画面内に収まるサイズ: max-height: 80%; padding: 20px;
+            - 左側（50-55%）にテキストエリア
+            - タイトルは左側上部に大きく（64-72px）
             - サブタイトルとポイント（最大2個）を左側に
-            - イラストは画面高さいっぱいに
+            - 画像例: <img class="illustration" src="..." style="max-width: 90%; max-height: 80%; object-fit: contain; padding: 20px;">
         """,
         "best_for": ["points", "concept", "comparison"]
     },
@@ -823,7 +829,7 @@ ILLUSTRATION_LAYOUT_TYPES = {
         "description": "イラスト全画面、テキスト最小",
         "css_hints": """
             - AI生成イラスト（class="illustration"）を背景として全画面配置
-            - width: 100%; height: 100%; object-fit: cover;
+            - width: 100%; height: 100%; object-fit: cover; （これはfull bleedなのでcoverでOK）
             - テキストはオーバーレイとして上部or下部に
             - タイトルのみ（サブタイトル、ポイント不要）
             - 半透明背景（backdrop-filter: blur）でテキスト可読性確保
