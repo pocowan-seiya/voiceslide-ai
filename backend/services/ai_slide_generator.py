@@ -1124,6 +1124,34 @@ CSSで表現する**質感と雰囲気**：
 - `border-radius`（大きめ）for softness
 - `transform: rotate/skew` for dynamic elements
 
+## ⚠️ タイトル・テキストの色（絶対ルール）
+
+**タイトルやサブタイトルに暗い色を使用しないでください！**
+
+❌ **絶対禁止の色:**
+- 黒（#000000, #111, #222 など）
+- 茶色（brown, #8B4513, #A0522D など）
+- 暗いグレー（#333, #444, #555 など）
+- 暗い色のグラデーション
+
+✅ **使って良い色:**
+- 白（#FFFFFF, #F8FAFC）
+- 明るいグラデーション（オレンジ→ゴールド, ピンク→パープル など）
+- パステルカラー
+- Primary/Secondary/Accentカラー（明るいもの）
+
+**正しい例:**
+```css
+.title {{ color: white; }}
+.title {{ background: linear-gradient(135deg, #FF6B6B, #F97316); -webkit-background-clip: text; }}
+```
+
+**間違った例（使用禁止）:**
+```css
+.title {{ color: #333; }}  /* ←暗すぎる！ */
+.title {{ background: linear-gradient(to bottom, #8B4513, #5D2E0C); }}  /* ←茶色は禁止！ */
+```
+
 # Output
 完全なHTML（<!DOCTYPE html>から</html>まで）を出力してください。
 CSSはすべて<style>タグ内に記述。
