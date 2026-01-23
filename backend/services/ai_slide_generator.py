@@ -2112,10 +2112,30 @@ Concept to illustrate: """
             if use_illustration_for_this_slide:
                 print(f"[Generator] Using AI HTML generation with illustration layout for slide {slide_number}")
                 
-                # Generate HTML using standard process (same copy quality)
+                # NEW: イラストモード専用 - 話し言葉を修正してスライド用コピーに変換
+                polished_copy = await polish_copy_for_illustration(
+                    slide=slide,
+                    slide_number=slide_number,
+                    total_slides=total_slides,
+                    strategy=strategy,
+                    gemini_key=gemini_key
+                )
+                
+                # 整形されたコピーをslideに反映（元のslideを上書きしないようにコピー）
+                polished_slide = slide.copy()
+                if "slide_copy" not in polished_slide:
+                    polished_slide["slide_copy"] = {}
+                polished_slide["slide_copy"] = polished_slide["slide_copy"].copy()
+                polished_slide["slide_copy"]["headline"] = polished_copy["title"]
+                polished_slide["slide_copy"]["subheadline"] = polished_copy["subtitle"]
+                polished_slide["slide_copy"]["bullet_points"] = polished_copy["points"]
+                
+                print(f"[Generator] Polished copy for illustration: '{polished_copy['title']}'")
+                
+                # Generate HTML using standard process with polished copy
                 # But with illustration-specific layout (image_info passed for injection later)
                 html = await generate_slide_html(
-                    slide=slide,
+                    slide=polished_slide,  # Use polished copy
                     slide_number=slide_number,
                     total_slides=total_slides,
                     strategy=strategy,
