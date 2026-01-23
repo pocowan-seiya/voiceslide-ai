@@ -2969,25 +2969,23 @@ async def regenerate_slide_with_feedback(
             should_preserve = not any(kw in feedback.lower() for kw in remove_keywords)
             
             if should_preserve:
-                if 'class="illustration"' in new_html:
-                    # First, try to find img with illustration class and replace its src
-                    # This handles both attribute orders
-                    illustration_match = re.search(r'<img[^>]*class="illustration"[^>]*>', new_html)
-                    if illustration_match:
-                        old_img = illustration_match.group(0)
-                        # Check if src is already correct
-                        if existing_illustration_dataurl not in old_img:
-                            # Replace the src value
-                            new_img = re.sub(r'src="[^"]*"', f'src="{existing_illustration_dataurl}"', old_img)
-                            new_html = new_html.replace(old_img, new_img)
-                            print(f"[Feedback] ✅ Re-injected existing illustration image into existing container")
-                        else:
-                            print(f"[Feedback] ✅ Illustration image already correct, no change needed")
+                # Try to find an existing img tag with illustration class
+                illustration_match = re.search(r'<img[^>]*class="illustration"[^>]*>', new_html)
+                
+                if illustration_match:
+                    old_img = illustration_match.group(0)
+                    # Check if src is already correct
+                    if existing_illustration_dataurl not in old_img:
+                        # Replace the src value
+                        new_img = re.sub(r'src="[^"]*"', f'src="{existing_illustration_dataurl}"', old_img)
+                        new_html = new_html.replace(old_img, new_img)
+                        print(f"[Feedback] ✅ Re-injected existing illustration image into existing container")
                     else:
-                        print(f"[Feedback] ⚠️ class='illustration' found but no img tag matched")
+                        print(f"[Feedback] ✅ Illustration image already correct, no change needed")
                 else:
-                    # Illustration container was completely removed - force inject it
-                    print(f"[Feedback] ⚠️ Illustration container was removed, force-injecting as background...")
+                    # No img tag with illustration class found - ALWAYS force inject
+                    # This handles cases where AI removed the img or used a different element
+                    print(f"[Feedback] ⚠️ No img.illustration found, force-injecting as background...")
                     illustration_html = f'''
 <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; overflow: hidden;">
     <img src="{existing_illustration_dataurl}" class="illustration" alt="AI Illustration" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;">
