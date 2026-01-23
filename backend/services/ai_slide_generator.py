@@ -2781,17 +2781,19 @@ FEEDBACK_REGENERATION_PROMPT = """# Role
 4. **画像**: img タグの src 属性を変更禁止（特に data:image/... は絶対保持）
 5. **イラスト**: class="illustration" の img タグを削除禁止、srcも保持
 
-## 変更してよいもの（デザインのみ）:
-✅ レイアウト・位置（上下左右の入れ替え）
+## 変更してよいもの（デザイン調整のみ）:
 ✅ 色・フォントサイズ・スタイリング
 ✅ 背景・装飾要素
-✅ ユーザーが具体的に依頼した変更
+✅ ユーザーが具体的に依頼した変更のみ
 
-## 絶対禁止:
+## 絶対禁止（レイアウト保持）:
 ❌ テキストコンテンツの削除・省略・変更
 ❌ 画像srcを空にする、削除する、変更する
 ❌ 「シンプルに」を理由にコンテンツを減らす
 ❌ 元にないテキストを追加する
+❌ **レイアウトの変更**（ユーザーが明示的に依頼しない限り）
+❌ **画像の位置変更**（左→右、中央→背景など）
+❌ **画像を背景に移動する**（元の配置を保持）
 
 # タイトル色のルール（絶対順守）
 
@@ -3195,7 +3197,7 @@ Please incorporate the feedback to improve the illustration."""
         else:
             return {"success": False, "error": "Could not find image to replace"}
     
-    save_html_content(job_id, slide_number, new_html)
+    update_html_content(job_id, slide_number, new_html)
     
     output_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
     
