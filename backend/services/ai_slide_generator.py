@@ -2854,11 +2854,28 @@ async def regenerate_slide_with_feedback(
     existing_illustration_dataurl = None
     ILLUSTRATION_PLACEHOLDER = "EXISTING_ILLUSTRATION_URL"
     import re
-    # Match data URL in img src (for AI-generated illustrations)
+    
+    # Match data URL in img src with class="illustration" - handle both attribute orders
+    # Pattern 1: src comes before class
     dataurl_match = re.search(r'<img[^>]+src="(data:image/[^"]+)"[^>]*class="illustration"', current_html)
-    if dataurl_match:
+    # Pattern 2: class comes before src  
+    if not dataurl_match:
+        dataurl_match = re.search(r'<img[^>]+class="illustration"[^>]*src="(data:image/[^"]+)"', current_html)
+    # Pattern 3: Look for any img with illustration class and data URL anywhere in the tag
+    if not dataurl_match:
+        # Find all img tags with illustration class, then extract data URL
+        illustration_match = re.search(r'<img[^>]*class="illustration"[^>]*>', current_html)
+        if illustration_match:
+            img_tag = illustration_match.group(0)
+            src_match = re.search(r'src="(data:image/[^"]+)"', img_tag)
+            if src_match:
+                existing_illustration_dataurl = src_match.group(1)
+    
+    if dataurl_match and not existing_illustration_dataurl:
         existing_illustration_dataurl = dataurl_match.group(1)
-        print(f"[Feedback] Preserving existing illustration image ({len(existing_illustration_dataurl)} chars)")
+    
+    if existing_illustration_dataurl:
+        print(f"[Feedback] ✅ Preserving existing illustration image ({len(existing_illustration_dataurl)} chars)")
     
     if image_base64 and image_filename:
         try:
@@ -2948,16 +2965,24 @@ async def regenerate_slide_with_feedback(
             
             if should_preserve:
                 if 'class="illustration"' in new_html:
-                    # Replace any placeholder or empty src in illustration img with the original
-                    new_html = re.sub(
-                        r'(<img[^>]*class="illustration"[^>]*src=")[^"]*(")',
-                        rf'\g<1>{existing_illustration_dataurl}\g<2>',
-                        new_html
-                    )
-                    print(f"[Feedback] Re-injected existing illustration image into existing container")
+                    # First, try to find img with illustration class and replace its src
+                    # This handles both attribute orders
+                    illustration_match = re.search(r'<img[^>]*class="illustration"[^>]*>', new_html)
+                    if illustration_match:
+                        old_img = illustration_match.group(0)
+                        # Check if src is already correct
+                        if existing_illustration_dataurl not in old_img:
+                            # Replace the src value
+                            new_img = re.sub(r'src="[^"]*"', f'src="{existing_illustration_dataurl}"', old_img)
+                            new_html = new_html.replace(old_img, new_img)
+                            print(f"[Feedback] ✅ Re-injected existing illustration image into existing container")
+                        else:
+                            print(f"[Feedback] ✅ Illustration image already correct, no change needed")
+                    else:
+                        print(f"[Feedback] ⚠️ class='illustration' found but no img tag matched")
                 else:
                     # Illustration container was completely removed - force inject it
-                    print(f"[Feedback] Illustration container was removed, force-injecting as background...")
+                    print(f"[Feedback] ⚠️ Illustration container was removed, force-injecting as background...")
                     illustration_html = f'''
 <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; overflow: hidden;">
     <img src="{existing_illustration_dataurl}" class="illustration" alt="AI Illustration" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;">
@@ -2967,7 +2992,7 @@ async def regenerate_slide_with_feedback(
                         new_html = new_html.replace('<body>', '<body>\n' + illustration_html, 1)
                     elif '<body ' in new_html:
                         new_html = re.sub(r'(<body[^>]*>)', r'\1\n' + illustration_html, new_html, count=1)
-                    print(f"[Feedback] Force-injected illustration as background")
+                    print(f"[Feedback] ✅ Force-injected illustration as background")
             else:
                 print(f"[Feedback] User requested image removal, not preserving illustration")
         
