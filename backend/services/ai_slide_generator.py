@@ -2978,20 +2978,86 @@ async def regenerate_slide_with_feedback(
         except Exception as e:
             print(f"[Feedback] Failed to process image: {e}")
     
-    # Generate improved HTML based on feedback
-    genai.configure(api_key=key)
+    # Process based on feedback type - Different prompts for different goals
     
-    prompt = FEEDBACK_REGENERATION_PROMPT.format(
-        current_html=current_html,
-        concept_name=style.get("concept_name", ""),
-        primary=colors.get("primary", "#F59E0B"),
-        secondary=colors.get("secondary", "#8B5CF6"),
-        accent=colors.get("accent", "#06B6D4"),
-        feedback=feedback + image_instruction,
-        feedback_type=feedback_type,
-        width=VIDEO_WIDTH,
-        height=VIDEO_HEIGHT
-    )
+    # 1. Image Only Mode
+    if feedback_type == "image" or feedback_type == "regenerate_image":
+        print(f"[Feedback] Mode: Image Only - Regenerating illustration for slide {slide_number}")
+        # Call specific image regeneration function
+        from services.ai_slide_generator import regenerate_slide_illustration
+        return await regenerate_slide_illustration(
+            job_id=job_id,
+            slide_number=slide_number,
+            feedback=feedback,
+            gemini_key=gemini_key
+        )
+        
+    # Configure Gemini for other modes
+    genai.configure(api_key=key)
+    prompt = ""
+    
+    # 2. Copy Only Mode
+    if feedback_type == "copy" or feedback_type == "regenerate_copy":
+        print(f"[Feedback] Mode: Copy Only - Changing text for slide {slide_number}")
+        prompt = f"""# Role
+あなたはHTMLエディターです。既存のHTML構造とデザインを**完全に維持**したまま、テキストのみを修正してください。
+
+# ユーザーの要望（テキスト修正のみ）
+{feedback}
+
+# 現在のHTML
+```html
+{current_html}
+```
+
+# ⚠️ 絶対ルール（厳守）
+1. **レイアウト変更禁止**: div構造、class、styleは一切変更しないでください。
+2. **画像変更禁止**: imgタグのsrcは絶対に触らないでください（{ILLUSTRATION_PLACEHOLDER} もそのまま）。
+3. **テキストのみ変更**: タイトル、サブタイトル、箇条書きの**中身のテキスト**のみを変更してください。
+4. **追加・削除禁止**: 新しい要素を追加したり、既存の装飾を削除しないでください。
+
+# 出力
+修正後の完全なHTMLのみを出力してください。
+"""
+        
+    # 3. Layout Only Mode
+    elif feedback_type == "layout" or feedback_type == "fix_layout":
+        print(f"[Feedback] Mode: Layout Only - Changing layout for slide {slide_number}")
+        prompt = f"""# Role
+あなたはWebデザイナーです。スライドのコンテンツ（テキストと画像）はそのままに、レイアウトのみを変更してください。
+
+# ユーザーの要望（レイアウト変更）
+{feedback}
+
+# 現在のHTML
+```html
+{current_html}
+```
+
+# ⚠️ 絶対ルール（厳守）
+1. **テキスト変更禁止**: タイトル、サブタイトル、ポイントの文章は一言一句変更しないでください。
+2. **画像保持**: 既存の画像（{ILLUSTRATION_PLACEHOLDER} または data URL）は必ず新しいレイアウトにも含めてください。
+3. **レイアウト変更**: CSSグリッド、Flexbox、配置、配色を変更して要望に応えてください。
+
+# 出力
+修正後の完全なHTMLのみを出力してください。
+"""
+
+    # 4. General Mode (Layout & Copy)
+    else:
+        print(f"[Feedback] Mode: General (Layout & Copy) - Regenerating slide {slide_number}")
+        prompt = FEEDBACK_REGENERATION_PROMPT.format(
+            current_html=current_html,
+            concept_name=style.get("concept_name", ""),
+            primary=colors.get("primary", "#F59E0B"),
+            secondary=colors.get("secondary", "#8B5CF6"),
+            accent=colors.get("accent", "#06B6D4"),
+            feedback=feedback + image_instruction,
+            feedback_type="レイアウトとコピーの修正（画像は保持）",
+            width=VIDEO_WIDTH,
+            height=VIDEO_HEIGHT
+        )
+
     
     try:
         # Gemini 3 Flash for regeneration

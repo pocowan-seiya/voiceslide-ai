@@ -609,8 +609,13 @@ export default function Home() {
   };
 
   // Slide Feedback: Regenerate a slide based on user feedback
-  const handleSlideFeedback = async () => {
-    if (!selectedSlide || (!slideFeedback.trim() && !slideImage.file)) return;
+  const handleSlideFeedback = async (type: string = "general") => {
+    if (!selectedSlide) return;
+
+    // For general/copy/layout updates, need text feedback. For image regen, feedback is optional but recommended.
+    // If regenerating image, we allow empty feedback if user just wants "new variant"
+    const isImageRegen = type === "image" || type === "regenerate_image";
+    if (!isImageRegen && !slideFeedback.trim() && !slideImage.file) return;
 
     setIsRegenerating(true);
 
@@ -633,8 +638,8 @@ export default function Home() {
         },
         body: JSON.stringify({
           slide_number: selectedSlide,
-          feedback: slideFeedback || "この画像を追加してください",
-          feedback_type: slideImage.file ? "add_image" : "general",
+          feedback: slideFeedback || (isImageRegen ? "Create a variation" : "Fix this"),
+          feedback_type: slideImage.file ? "add_image" : type,
           image_base64: imageBase64,
           image_filename: slideImage.file?.name || null,
         })
@@ -1998,22 +2003,49 @@ export default function Home() {
                         placeholder="例：タイトルを変更、背景をもっと明るく、ポイントを追加..."
                         className="w-full h-20 bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-white resize-none mb-2 text-sm"
                       />
-                      <div className="flex gap-2">
+                      <div className="grid grid-cols-2 gap-2 mb-2">
                         <button
-                          onClick={handleSlideFeedback}
+                          onClick={() => handleSlideFeedback('copy')}
                           disabled={isRegenerating || !slideFeedback.trim()}
-                          className="btn-primary text-sm py-2 flex-1"
+                          className="bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
+                          title="画像とレイアウトはそのままで、テキストのみ修正します"
                         >
-                          {isRegenerating ? "再生成中..." : "🔄 修正適用"}
+                          📝 コピー再生成
                         </button>
+                        <button
+                          onClick={() => handleSlideFeedback('layout')}
+                          disabled={isRegenerating || !slideFeedback.trim()}
+                          className="bg-blue-600/80 hover:bg-blue-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
+                          title="テキストと画像はそのままで、配置のみ修正します"
+                        >
+                          📐 レイアウトのみ
+                        </button>
+                        <button
+                          onClick={() => handleSlideFeedback('general')}
+                          disabled={isRegenerating || !slideFeedback.trim()}
+                          className="bg-purple-600/80 hover:bg-purple-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
+                          title="画像はそのままで、レイアウトとテキストを修正します"
+                        >
+                          ✨ レイアウト&コピー
+                        </button>
+                        <button
+                          onClick={() => handleSlideFeedback('image')}
+                          disabled={isRegenerating}
+                          className="bg-pink-600/80 hover:bg-pink-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
+                          title="レイアウトとテキストはそのままで、画像のみ再生成します"
+                        >
+                          🎨 画像再生成
+                        </button>
+                      </div>
+                      <div className="flex justify-end">
                         <button
                           onClick={() => {
                             setSelectedSlide(null);
                             setSlideFeedback("");
                           }}
-                          className="btn-secondary text-sm py-2"
+                          className="text-zinc-500 hover:text-zinc-300 text-xs py-1 px-2 flex items-center gap-1 transition-colors"
                         >
-                          ✕
+                          ✕ キャンセル
                         </button>
                       </div>
                     </div>
