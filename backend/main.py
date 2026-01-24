@@ -835,6 +835,8 @@ class BatchGenerateRequest(BaseModel):
     batch_size: int = 5   # Increased with upgraded Railway memory
     design_preference: Optional[str] = None  # User design requirements
     text_density: str = "standard"  # "simple" (title+headline) or "standard" (full)
+    add_illustrations: bool = False  # Whether to add AI-generated illustrations
+    illustration_percentage: int = 50  # Percentage of slides to add illustrations (10-100)
 
 
 @app.post("/api/generate-slides-batch/{job_id}")
@@ -904,7 +906,9 @@ async def generate_slides_batch_endpoint(
                 start_slide=start,
                 end_slide=end,
                 reference_image_path=getattr(pipeline, 'reference_image', None),
-                illustration_request=getattr(pipeline, 'illustration_request', None)
+                illustration_request=getattr(pipeline, 'illustration_request', None),
+                add_illustrations=request.add_illustrations,
+                illustration_percentage=request.illustration_percentage
             )
             
             # パイプラインに保存

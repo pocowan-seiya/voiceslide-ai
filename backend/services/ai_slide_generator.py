@@ -150,25 +150,67 @@ ILLUSTRATION_TEMPLATES = {
     }
 }
 
-def should_use_illustration(slide_type: str, slide_number: int, total_slides: int) -> bool:
+
+
+def should_use_illustration_by_percentage(slide_type: str, slide_number: int, total_slides: int, percentage: int) -> bool:
     """
-    Always return True - all slides use illustrations in illustration mode.
-    (MIX strategy removed per user feedback)
+    Determine if a slide should have an illustration based on percentage.
+    Uses a deterministic distribution strategy to ensure even coverage.
+    
+    Strategy:
+    1. Always include first (Title) and last (Conclusion) slides if percentage >= 20%
+    2. Distribute remaining slots evenly across the middle slides
     """
-    return True
+    if percentage <= 0:
+        return False
+    if percentage >= 100:
+        return True
+        
+    # Calculate target number of illustrations
+    target_count = max(1, round(total_slides * (percentage / 100)))
+    
+    # Priority slides determined by deterministic logic (simulating AI decision)
+    selected_indices = set()
+    
+    # Always include first slide
+    if target_count >= 1:
+        selected_indices.add(1)
+        
+    # Always include last slide if we have enough budget and more than 1 slide
+    if target_count >= 2 and total_slides > 1:
+        selected_indices.add(total_slides)
+        
+    # Fill remaining slots using even distribution across middle slides
+    remaining_slots = target_count - len(selected_indices)
+    
+    if remaining_slots > 0:
+        # Available middle slides
+        middle_slides = [i for i in range(2, total_slides) if i not in selected_indices]
+        
+        if middle_slides:
+            # Calculate step size to distribute evenly
+            import math
+            step = len(middle_slides) / remaining_slots
+            for i in range(remaining_slots):
+                # Use math.floor to distribute from the beginning
+                index = math.floor(i * step)
+                if index < len(middle_slides):
+                    selected_indices.add(middle_slides[index])
+    
+    return slide_number in selected_indices
 
 def select_illustration_template(slide_number: int, total_slides: int, slide_type: str) -> str:
     """
     Select an illustration template for variety.
-    Uses only 4 templates: center_hero, left_illustration, right_illustration, full_bleed
+    Uses new layout names integrated into LAYOUT_TYPES.
     """
     import random
     
-    templates = ["center_hero", "left_illustration", "right_illustration", "full_bleed"]
+    templates = ["center_hero_with_image", "left_image", "right_image", "full_screen_image"]
     
-    # First/last slides: prefer hero layouts
+    # First/last slides: prefer hero/full screen layouts
     if slide_number == 1 or slide_number == total_slides:
-        hero_templates = ["center_hero", "full_bleed"]
+        hero_templates = ["center_hero_with_image", "full_screen_image"]
         return random.choice(hero_templates)
     
     # Others: random selection from all 4 templates
@@ -177,20 +219,15 @@ def select_illustration_template(slide_number: int, total_slides: int, slide_typ
 def should_include_text_in_illustration(slide_number: int, total_slides: int, layout: str = "") -> bool:
     """
     Determine if the illustration should include text labels (for diagram-style).
-    Returns False for left/right illustration layouts (text would be cut off).
+    Returns False for image-heavy layouts where text would decrease visual impact.
     """
-    import random
-    
-    # Left/Right layouts: NO text in illustration (text gets cut off at edges)
-    if layout in ["left_illustration", "right_illustration"]:
+    # Don't include text in left/right illustration layouts (too small/cutoff risk)
+    if layout in ["left_image", "right_image", "center_hero_with_image", "full_screen_image"]:
         return False
-    
-    # Full bleed: minimal text (mostly covered by overlay)
-    if layout == "full_bleed_illustration":
-        return False
-    
-    # Center hero and others: 30% chance of text labels
-    return random.random() < 0.3
+        
+    # By default in standard mode + illustration, let's keep illustrations clean (no text)
+    # This avoids conflict with slide content
+    return False
 
 
 # =============================================================================
@@ -777,16 +814,11 @@ LAYOUT_TYPES = {
             - hover効果的なshadow
         """,
         "best_for": ["points", "concept", "flow", "comparison"]
-    }
-}
-
-# =============================================================================
-# Illustration Mode Layouts - 4 Image-Focused Layouts
-# =============================================================================
-
-ILLUSTRATION_LAYOUT_TYPES = {
-    "center_hero_illustration": {
-        "name": "Center Hero (Illustration)",
+    },
+    
+    # Illustration Layouts (integrated)
+    "center_hero_with_image": {
+        "name": "Center Hero (with Illustration)",
         "description": "イラストを中央大きく、タイトルは上部に",
         "css_hints": """
             - AI生成イラスト（class="illustration"）を中央に大きく配置（画面の60-70%）
@@ -796,54 +828,60 @@ ILLUSTRATION_LAYOUT_TYPES = {
             - ポイントは不要（あっても1-2個のみ）
         """,
         "best_for": ["title", "closing", "concept"],
-        "image_size": (1080, 720),  # 横長（フルサイズ）
+        "has_image": True,
+        "image_size": (1080, 720),
         "image_aspect": "landscape"
     },
-    "left_illustration": {
+    "left_image": {
         "name": "Left Illustration",
         "description": "左にイラスト（高さフル）、右にテキスト",
         "css_hints": """
             - 左55%にAI生成イラスト（class="illustration"）を配置
             - 右45%にテキストエリア
             - タイトルは右側上部に大きく（72px）
-            - サブタイトルとポイント（最大2個）を右側に
-            - **重要**: イラストの右端にグラデーションオーバーレイ（背景色へフェード）を適用
-            - グラデーション例: linear-gradient(to right, transparent 80%, {background_color} 100%)
+            - ポイントは右側中央〜下部に配置
+            - 境界線はぼかすかグラデーションで繋ぐ
+            - 画像のアスペクト比は縦長（3:4）
         """,
-        "best_for": ["points", "concept", "flow"],
-        "image_size": (1100, 1080),  # 縦長（左側に収まるサイズ）
+        "best_for": ["introduction", "points", "comparison"],
+        "has_image": True,
+        "image_size": (540, 720),
         "image_aspect": "portrait"
     },
-    "right_illustration": {
+    "right_image": {
         "name": "Right Illustration",
         "description": "右にイラスト（高さフル）、左にテキスト",
         "css_hints": """
             - 右55%にAI生成イラスト（class="illustration"）を配置
             - 左45%にテキストエリア
             - タイトルは左側上部に大きく（72px）
-            - サブタイトルとポイント（最大2個）を左側に
-            - **重要**: イラストの左端にグラデーションオーバーレイ（背景色へフェード）を適用
-            - グラデーション例: linear-gradient(to left, transparent 80%, {background_color} 100%)
+            - ポイントは左側中央〜下部に配置
+            - 境界線はぼかすかグラデーションで繋ぐ
+            - 画像のアスペクト比は縦長（3:4）
         """,
-        "best_for": ["points", "concept", "comparison"],
-        "image_size": (1100, 1080),  # 縦長（右側に収まるサイズ）
+        "best_for": ["introduction", "points", "comparison"],
+        "has_image": True,
+        "image_size": (540, 720),
         "image_aspect": "portrait"
     },
-    "full_bleed_illustration": {
-        "name": "Full Bleed (Illustration)",
-        "description": "イラスト全画面、テキスト最小",
+    "full_screen_image": {
+        "name": "Full Screen Image",
+        "description": "全面イラスト、テキストはオーバーレイ",
         "css_hints": """
-            - AI生成イラスト（class="illustration"）を背景として全画面配置
-            - width: 100%; height: 100%; object-fit: cover;
-            - テキストはオーバーレイとして上部or下部に
-            - タイトルのみ（サブタイトル、ポイント不要）
-            - 半透明背景（backdrop-filter: blur）でテキスト可読性確保
+            - 画面全体にイラストを配置（100%幅・高さ）
+            - テキストには必ず半透明の黒背景（backdrop-filter: blur）を追加し可読性確保
+            - タイトルは中央または下部に配置
+            - 映画ポスターのようなレイアウト
+            - コンテンツは最小限に
         """,
-        "best_for": ["impact", "closing", "transition"],
-        "image_size": (1920, 1080),  # フルサイズ
+        "best_for": ["title", "closing", "powerful_message"],
+        "has_image": True,
+        "image_size": (1080, 720),
         "image_aspect": "landscape"
     }
 }
+
+
 
 # Track used layouts to avoid repetition
 _used_layouts_cache: Dict[str, List[str]] = {}
@@ -859,7 +897,11 @@ def select_layout_for_slide(
     """
     Select an appropriate layout for each slide, ensuring variety.
     Avoids using the same layout consecutively.
-    For illustration mode, uses ILLUSTRATION_LAYOUT_TYPES.
+    Standard layouts focus on typography and readability.
+    For illustration-enhanced slides, uses integrated image-focused layouts.
+    
+    If no cached layout is found (new design or regeneration), generates one using AI 
+    or fallback logic based on content type.
     """
     # Initialize cache for this job
     if job_id not in _used_layouts_cache:
@@ -867,75 +909,73 @@ def select_layout_for_slide(
     
     used = _used_layouts_cache[job_id]
     
-    # Use illustration layouts for illustration mode
+    # Determine available layouts based on illustration mode
+    available_layouts = []
     if is_illustration_mode:
-        # Title/closing slides use center_hero_illustration or full_bleed
+        # Filter for layouts that have "has_image": True
+        available_layouts = [key for key, layout in LAYOUT_TYPES.items() if layout.get("has_image")]
+        # Prioritize specific layouts for title/closing in illustration mode
         if slide_number == 1:
-            layout_key = "center_hero_illustration"
+            layout_key = "center_hero_with_image"
         elif slide_number == total_slides:
-            layout_key = "full_bleed_illustration" if len(used) > 0 and "center_hero" in used[-1] else "center_hero_illustration"
+            # Alternate full_screen_image and center_hero_with_image for closing
+            layout_key = "full_screen_image" if len(used) > 0 and "center_hero_with_image" in used[-1] else "center_hero_with_image"
         else:
-            # Alternate between left/right illustration for middle slides
-            illustration_layouts = ["left_illustration", "right_illustration", "center_hero_illustration"]
+            # Alternate between left_image, right_image, center_hero_with_image for middle slides
+            illustration_specific_layouts = ["left_image", "right_image", "center_hero_with_image"]
             
             # Remove last used to avoid repetition
             if used:
                 last_used = used[-1]
-                available = [l for l in illustration_layouts if l != last_used]
+                available_for_cycle = [l for l in illustration_specific_layouts if l != last_used]
             else:
-                available = illustration_layouts
+                available_for_cycle = illustration_specific_layouts
             
             # Cycle through layouts
-            layout_key = available[(slide_number - 2) % len(available)] if available else "left_illustration"
-        
-        # Track usage
-        used.append(layout_key)
-        _used_layouts_cache[job_id] = used[-10:]
-        
-        return {
-            "key": layout_key,
-            **ILLUSTRATION_LAYOUT_TYPES[layout_key]
-        }
-    
-    # Standard mode: original logic
-    # Title slide - always center_hero
-    if slide_number == 1:
-        layout_key = "center_hero"
-    # Closing slide - center_hero or minimal
-    elif slide_number == total_slides:
-        layout_key = "minimal" if len(used) > 0 and used[-1] == "center_hero" else "center_hero"
+            layout_key = available_for_cycle[(slide_number - 2) % len(available_for_cycle)] if available_for_cycle else "left_image"
     else:
-        # Get suitable layouts for this content type
-        suitable = []
-        for key, layout in LAYOUT_TYPES.items():
-            if content_type in layout.get("best_for", []):
-                suitable.append(key)
+        # Standard mode: filter for layouts that do NOT have "has_image"
+        available_layouts = [key for key, layout in LAYOUT_TYPES.items() if not layout.get("has_image")]
         
-        # If no suitable layouts, use all except center_hero
-        if not suitable:
-            suitable = ["left_heavy", "right_heavy", "split_horizontal", 
-                       "split_vertical", "diagonal", "cards"]
-        
-        # Add minimal for slides with few points
-        if num_points <= 2:
-            suitable.append("minimal")
-        
-        # Remove the last used layout to avoid repetition
-        if used:
-            last_used = used[-1]
-            suitable = [l for l in suitable if l != last_used]
-        
-        # Also try to avoid the second-to-last to increase variety
-        if len(used) >= 2:
-            second_last = used[-2]
-            suitable = [l for l in suitable if l != second_last] or suitable
-        
-        # Select based on slide position for more variety
-        if suitable:
-            # Use slide_number to cycle through suitable layouts
-            layout_key = suitable[(slide_number - 2) % len(suitable)]
+        # Title slide - always center_hero
+        if slide_number == 1:
+            layout_key = "center_hero"
+        # Closing slide - center_hero or minimal
+        elif slide_number == total_slides:
+            layout_key = "minimal" if len(used) > 0 and used[-1] == "center_hero" else "center_hero"
         else:
-            layout_key = "left_heavy"
+            # Get suitable layouts for this content type from non-image layouts
+            suitable = []
+            for key in available_layouts:
+                layout = LAYOUT_TYPES[key]
+                if content_type in layout.get("best_for", []):
+                    suitable.append(key)
+            
+            # If no suitable layouts, use a default set of non-image layouts
+            if not suitable:
+                suitable = ["left_heavy", "right_heavy", "split_horizontal", 
+                           "split_vertical", "diagonal", "cards"]
+            
+            # Add minimal for slides with few points
+            if num_points <= 2:
+                suitable.append("minimal")
+            
+            # Remove the last used layout to avoid repetition
+            if used:
+                last_used = used[-1]
+                suitable = [l for l in suitable if l != last_used]
+            
+            # Also try to avoid the second-to-last to increase variety
+            if len(used) >= 2:
+                second_last = used[-2]
+                suitable = [l for l in suitable if l != second_last] or suitable
+            
+            # Select based on slide position for more variety
+            if suitable:
+                # Use slide_number to cycle through suitable layouts
+                layout_key = suitable[(slide_number - 2) % len(suitable)]
+            else:
+                layout_key = "left_heavy"
     
     # Track usage
     used.append(layout_key)
@@ -1525,7 +1565,7 @@ async def generate_slide_html(
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
     
-    # Select layout for variety (uses ILLUSTRATION_LAYOUT_TYPES for illustration mode)
+    # Select layout for variety (uses image-specific layouts for illustration slides)
     layout = select_layout_for_slide(
         job_id=job_id,
         slide_number=slide_number,
@@ -1879,7 +1919,9 @@ async def generate_all_custom_slides(
     start_slide: int = 1,  # Batch: start from this slide (1-indexed)
     end_slide: Optional[int] = None,  # Batch: end at this slide (inclusive), None = all
     reference_image_path: Optional[str] = None,  # Reference image for illustration style
-    illustration_request: Optional[str] = None  # User's text request for illustrations
+    illustration_request: Optional[str] = None,  # User's text request for illustrations
+    add_illustrations: bool = False,  # Whether to add AI-generated illustrations to slides
+    illustration_percentage: int = 50  # Percentage of slides to add illustrations (10-100)
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -2005,16 +2047,17 @@ async def generate_all_custom_slides(
             # Step 3a: Image generation
             image_info = None
             
-            # Check for illustration mode settings
-            is_illustration_mode_enabled = False
-            if design_preference and ("illustration" in design_preference.lower() or "イラスト" in design_preference):
-                is_illustration_mode_enabled = True
+            # Check for illustration settings from new parameters
+            is_illustration_mode_enabled = add_illustrations
             
-            # Apply MIX strategy: not all slides need illustrations
+            # Apply percentage-based strategy: not all slides need illustrations
             use_illustration_for_this_slide = False
             selected_template = None
             if is_illustration_mode_enabled:
-                use_illustration_for_this_slide = should_use_illustration(slide_type, slide_number, total_slides)
+                # Use percentage-based selection
+                use_illustration_for_this_slide = should_use_illustration_by_percentage(
+                    slide_type, slide_number, total_slides, illustration_percentage
+                )
                 if use_illustration_for_this_slide:
                     selected_template = select_illustration_template(slide_number, total_slides, slide_type)
                     print(f"[Generator] Slide {slide_number}: Using illustration (template: {selected_template})")
@@ -2074,7 +2117,7 @@ Concept to illustrate: """
                     full_prompt = f"{diagram_instruction}{base_prompt}{user_style_part}{theme_part}"
                     
                     # Determine image aspect based on layout
-                    layout_config = ILLUSTRATION_LAYOUT_TYPES.get(selected_template, {})
+                    layout_config = LAYOUT_TYPES.get(selected_template, {})
                     image_aspect = layout_config.get("image_aspect", "landscape")
                     print(f"[Generator] Generating illustration for slide {slide_number} (aspect: {image_aspect})...")
                     print(f"[Generator] Prompt: {full_prompt[:100]}...")
