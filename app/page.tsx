@@ -1626,7 +1626,6 @@ export default function Home() {
                                       🎨 画像再生成
                                     </button>
                                   </div>
-                                  </div>
 
                                   <div className="flex gap-2 mt-2">
                                     <button
@@ -1651,351 +1650,621 @@ export default function Home() {
                                     </button>
                                   </div>
                                 </div>
-                          )
-                        }
+                              )
+                              }
                             </div>
-                      );
+                          );
                         })}
-                    </div>
-                </>
+                      </div>
+                    </>
+                  )}
+
+
+
+                  <div className="flex gap-4 flex-wrap">
+                    <button
+                      onClick={handleGenerateVideo}
+                      disabled={state.isProcessing}
+                      className="btn-primary flex-1"
+                    >
+                      {state.isProcessing ? "動画生成中..." : "🎬 動画を生成"}
+                    </button>
+                    <button
+                      onClick={() => updateState({ step: 5 as Step })}
+                      disabled={state.isProcessing}
+                      className="btn-secondary"
+                    >
+                      🔄 スライド再生成
+                    </button>
+                    <button
+                      onClick={() => {
+                        const downloadUrl = `${API_URL}/api/download-slides/${state.jobId}`;
+                        window.open(downloadUrl, '_blank');
+                      }}
+                      className="btn-secondary"
+                      title="スライド画像をZIPでダウンロード"
+                    >
+                      📥 画像一括DL
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // ハイブリッドモード: アウトライン出力
+                <div>
+                  <h2 className="text-2xl font-bold mb-4 gradient-text">アウトライン出力</h2>
+                  <p className="text-zinc-400 mb-4">
+                    このアウトラインをコピーして、お好きなツール（Canva、PowerPoint等）でスライドを作成してください。
+                  </p>
+                  <textarea
+                    readOnly
+                    value={formatOutlineForCopy()}
+                    className="w-full h-64 bg-zinc-900 border border-zinc-700 rounded-xl p-4 text-white resize-none"
+                  />
+                  <div className="flex justify-between mt-4">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(formatOutlineForCopy())}
+                      className="btn-secondary"
+                    >
+                      📋 コピー
+                    </button>
+                    <button onClick={handleExportComplete} className="btn-primary">
+                      ✅ スライド作成完了 → 次へ
+                    </button>
+                  </div>
+                </div>
               )}
-
-
-
-              <div className="flex gap-4 flex-wrap">
-                <button
-                  onClick={handleGenerateVideo}
-                  disabled={state.isProcessing}
-                  className="btn-primary flex-1"
-                >
-                  {state.isProcessing ? "動画生成中..." : "🎬 動画を生成"}
-                </button>
-                <button
-                  onClick={() => updateState({ step: 5 as Step })}
-                  disabled={state.isProcessing}
-                  className="btn-secondary"
-                >
-                  🔄 スライド再生成
-                </button>
-                <button
-                  onClick={() => {
-                    const downloadUrl = `${API_URL}/api/download-slides/${state.jobId}`;
-                    window.open(downloadUrl, '_blank');
-                  }}
-                  className="btn-secondary"
-                  title="スライド画像をZIPでダウンロード"
-                >
-                  📥 画像一括DL
-                </button>
-              </div>
             </div>
-          ) : (
-          // ハイブリッドモード: アウトライン出力
-          <div>
-            <h2 className="text-2xl font-bold mb-4 gradient-text">アウトライン出力</h2>
-            <p className="text-zinc-400 mb-4">
-              このアウトラインをコピーして、お好きなツール（Canva、PowerPoint等）でスライドを作成してください。
-            </p>
-            <textarea
-              readOnly
-              value={formatOutlineForCopy()}
-              className="w-full h-64 bg-zinc-900 border border-zinc-700 rounded-xl p-4 text-white resize-none"
-            />
-            <div className="flex justify-between mt-4">
-              <button
-                onClick={() => navigator.clipboard.writeText(formatOutlineForCopy())}
-                className="btn-secondary"
-              >
-                📋 コピー
-              </button>
-              <button onClick={handleExportComplete} className="btn-primary">
-                ✅ スライド作成完了 → 次へ
-              </button>
-            </div>
-          </div>
-              )}
-        </div>
           )}
 
-        {/* Step 5 (Full AI): Generate Slides */}
-        {state.step === 5 && state.workflowMode === "full-ai" && (
-          <div className="text-center">
-            <h2 className="text-2xl font-bold mb-6 gradient-text">🎨 AIスライド生成</h2>
-            <p className="text-zinc-400 mb-6">
-              アウトラインを元に、AIがスライドを自動デザインします。
-            </p>
+          {/* Step 5 (Full AI): Generate Slides */}
+          {state.step === 5 && state.workflowMode === "full-ai" && (
+            <div className="text-center">
+              <h2 className="text-2xl font-bold mb-6 gradient-text">🎨 AIスライド生成</h2>
+              <p className="text-zinc-400 mb-6">
+                アウトラインを元に、AIがスライドを自動デザインします。
+              </p>
 
-            {/* Slide Settings */}
+              {/* Slide Settings */}
 
-            <div className="border-t border-zinc-700 pt-6">
-              {/* ===== SLIDE OPTIONS ===== */}
-              <>
-                {/* Color Theme Selector */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-zinc-400 mb-2">
-                    🎨 カラーテーマ
-                  </label>
-                  <select
-                    value={selectedColorTheme}
-                    onChange={(e) => setSelectedColorTheme(e.target.value)}
-                    className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
-                  >
-                    <option value="">AIにおまかせ（コンテンツに最適な配色）</option>
-                    <option value="cosmic">🌌 Cosmic Dark - 宇宙的な深みと神秘感</option>
-                    <option value="warm">🌅 Warm Sunset - 温かみのあるオレンジ・ゴールド</option>
-                    <option value="elegant">💜 Elegant Purple - エレガントな紫・ピンク</option>
-                    <option value="nature">🌿 Nature Green - 自然とリラックス</option>
-                    <option value="ocean">🌊 Ocean Blue - 海のような開放感</option>
-                    <option value="mono">⚫ Monochrome - シンプルでクリーン</option>
-                  </select>
-                </div>
-
-                {/* Font Style Selector */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-zinc-400 mb-2">
-                    ✒️ フォントスタイル
-                  </label>
-                  <select
-                    value={selectedFontStyle}
-                    onChange={(e) => setSelectedFontStyle(e.target.value)}
-                    className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
-                  >
-                    <option value="">AIにおまかせ（コンテンツに最適なフォント）</option>
-                    <option value="gothic">🔲 ゴシック体 - モダンでクリーン</option>
-                    <option value="mincho">📜 明朝体 - 上品でエレガント</option>
-                    <option value="pop">🎈 ポップ体 - カジュアルで親しみやすい</option>
-                    <option value="handwritten">✍️ 手書き風 - 温かみと個性</option>
-                  </select>
-                </div>
-
-                {/* User Image Upload for Slides */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-zinc-400 mb-2">
-                    🖼️ スライドに使う画像（任意・複数可）
-                  </label>
-                  <div className="w-full max-w-md mx-auto">
-                    <label className="block cursor-pointer">
-                      <div className="border-2 border-dashed border-zinc-600 hover:border-zinc-500 rounded-lg p-4 text-center transition-all">
-                        <span className="text-sm text-zinc-500">📎 クリックして画像を選択（複数OK）</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => {
-                            const files = Array.from(e.target.files || []);
-                            const newImages = files.map(file => ({
-                              file,
-                              preview: URL.createObjectURL(file)
-                            }));
-                            setUserImages(prev => [...prev, ...newImages]);
-                          }}
-                        />
-                      </div>
+              <div className="border-t border-zinc-700 pt-6">
+                {/* ===== SLIDE OPTIONS ===== */}
+                <>
+                  {/* Color Theme Selector */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      🎨 カラーテーマ
                     </label>
-                    {userImages.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {userImages.map((img, idx) => (
-                          <div key={idx} className="relative group">
-                            <img
-                              src={img.preview}
-                              alt={`Upload ${idx + 1}`}
-                              className="w-16 h-16 object-cover rounded border border-zinc-600"
-                            />
-                            <button
-                              onClick={() => setUserImages(prev => prev.filter((_, i) => i !== idx))}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Design Preference Input */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-zinc-400 mb-2">
-                    📝 デザイン要望（任意）
-                  </label>
-                  <textarea
-                    value={designPreference}
-                    onChange={(e) => setDesignPreference(e.target.value)}
-                    placeholder="例: 背景は白で、シンプルでミニマルなデザイン"
-                    className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white resize-none"
-                    rows={2}
-                  />
-                </div>
-
-                {/* Text Density Selector */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-zinc-400 mb-2">
-                    📋 テキスト量
-                  </label>
-                  <div className="flex justify-center gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setTextDensity("simple")}
-                      className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "simple"
-                        ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                        }`}
+                    <select
+                      value={selectedColorTheme}
+                      onChange={(e) => setSelectedColorTheme(e.target.value)}
+                      className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
                     >
-                      📌 シンプル
-                      <span className="block text-xs mt-1 opacity-70">タイトル + 見出し</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTextDensity("standard")}
-                      className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "standard"
-                        ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                        }`}
-                    >
-                      📝 標準
-                      <span className="block text-xs mt-1 opacity-70">タイトル + 見出し + ポイント</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* ===== ILLUSTRATION TOGGLE & OPTIONS ===== */}
-                <div className="mb-6 border-t border-zinc-700 pt-6">
-                  <div className="flex items-center justify-between max-w-md mx-auto mb-4">
-                    <div>
-                      <label className="block text-sm font-medium text-white">
-                        🎨 イラストを追加
-                      </label>
-                      <p className="text-xs text-zinc-500">AIがスライドにイラストを生成します</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAddIllustrations(!addIllustrations)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${addIllustrations ? "bg-purple-600" : "bg-zinc-600"
-                        }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${addIllustrations ? "translate-x-6" : "translate-x-1"
-                          }`}
-                      />
-                    </button>
+                      <option value="">AIにおまかせ（コンテンツに最適な配色）</option>
+                      <option value="cosmic">🌌 Cosmic Dark - 宇宙的な深みと神秘感</option>
+                      <option value="warm">🌅 Warm Sunset - 温かみのあるオレンジ・ゴールド</option>
+                      <option value="elegant">💜 Elegant Purple - エレガントな紫・ピンク</option>
+                      <option value="nature">🌿 Nature Green - 自然とリラックス</option>
+                      <option value="ocean">🌊 Ocean Blue - 海のような開放感</option>
+                      <option value="mono">⚫ Monochrome - シンプルでクリーン</option>
+                    </select>
                   </div>
 
-                  {/* Illustration Options (shown when toggle is ON) */}
-                  {addIllustrations && (
-                    <div className="bg-zinc-800/50 rounded-xl p-4 max-w-md mx-auto border border-purple-500/30">
-                      {/* Illustration Percentage Slider */}
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-zinc-300 mb-2">
-                          📊 イラストの割合: <span className="text-purple-400">{illustrationPercentage}%</span>
-                        </label>
-                        <input
-                          type="range"
-                          min="10"
-                          max="100"
-                          step="10"
-                          value={illustrationPercentage}
-                          onChange={(e) => setIllustrationPercentage(Number(e.target.value))}
-                          className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                        />
-                        <div className="flex justify-between text-xs text-zinc-500 mt-1">
-                          <span>10%</span>
-                          <span>50%</span>
-                          <span>100%</span>
+                  {/* Font Style Selector */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      ✒️ フォントスタイル
+                    </label>
+                    <select
+                      value={selectedFontStyle}
+                      onChange={(e) => setSelectedFontStyle(e.target.value)}
+                      className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
+                    >
+                      <option value="">AIにおまかせ（コンテンツに最適なフォント）</option>
+                      <option value="gothic">🔲 ゴシック体 - モダンでクリーン</option>
+                      <option value="mincho">📜 明朝体 - 上品でエレガント</option>
+                      <option value="pop">🎈 ポップ体 - カジュアルで親しみやすい</option>
+                      <option value="handwritten">✍️ 手書き風 - 温かみと個性</option>
+                    </select>
+                  </div>
+
+                  {/* User Image Upload for Slides */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      🖼️ スライドに使う画像（任意・複数可）
+                    </label>
+                    <div className="w-full max-w-md mx-auto">
+                      <label className="block cursor-pointer">
+                        <div className="border-2 border-dashed border-zinc-600 hover:border-zinc-500 rounded-lg p-4 text-center transition-all">
+                          <span className="text-sm text-zinc-500">📎 クリックして画像を選択（複数OK）</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              const newImages = files.map(file => ({
+                                file,
+                                preview: URL.createObjectURL(file)
+                              }));
+                              setUserImages(prev => [...prev, ...newImages]);
+                            }}
+                          />
                         </div>
-                        <p className="text-xs text-zinc-500 mt-2">
-                          AIが「ここにイラストがあるとわかりやすい」と判断したスライドに追加します
-                        </p>
-                      </div>
-
-                      {/* Reference Image Upload */}
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-zinc-300 mb-2">
-                          🖼️ リファレンス画像（任意）
-                        </label>
-                        <label className="block cursor-pointer">
-                          <div className="border-2 border-dashed border-purple-600 hover:border-purple-500 rounded-lg p-3 text-center transition-all">
-                            <span className="text-sm text-zinc-400">📎 スタイルの参考画像をアップロード</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  setReferenceImage({
-                                    file,
-                                    preview: URL.createObjectURL(file)
-                                  });
-                                }
-                              }}
-                            />
-                          </div>
-                        </label>
-                        {referenceImage && (
-                          <div className="mt-2 flex justify-center">
-                            <div className="relative group">
+                      </label>
+                      {userImages.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {userImages.map((img, idx) => (
+                            <div key={idx} className="relative group">
                               <img
-                                src={referenceImage.preview}
-                                alt="Reference"
-                                className="w-24 h-24 object-cover rounded-lg border-2 border-purple-500"
+                                src={img.preview}
+                                alt={`Upload ${idx + 1}`}
+                                className="w-16 h-16 object-cover rounded border border-zinc-600"
                               />
                               <button
-                                onClick={() => setReferenceImage(null)}
+                                onClick={() => setUserImages(prev => prev.filter((_, i) => i !== idx))}
                                 className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                               >
                                 ✕
                               </button>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                      {/* Illustration Request Text */}
+                  {/* Design Preference Input */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      📝 デザイン要望（任意）
+                    </label>
+                    <textarea
+                      value={designPreference}
+                      onChange={(e) => setDesignPreference(e.target.value)}
+                      placeholder="例: 背景は白で、シンプルでミニマルなデザイン"
+                      className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white resize-none"
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Text Density Selector */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      📋 テキスト量
+                    </label>
+                    <div className="flex justify-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setTextDensity("simple")}
+                        className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "simple"
+                          ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                          : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                          }`}
+                      >
+                        📌 シンプル
+                        <span className="block text-xs mt-1 opacity-70">タイトル + 見出し</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTextDensity("standard")}
+                        className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "standard"
+                          ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                          : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                          }`}
+                      >
+                        📝 標準
+                        <span className="block text-xs mt-1 opacity-70">タイトル + 見出し + ポイント</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ===== ILLUSTRATION TOGGLE & OPTIONS ===== */}
+                  <div className="mb-6 border-t border-zinc-700 pt-6">
+                    <div className="flex items-center justify-between max-w-md mx-auto mb-4">
                       <div>
-                        <label className="block text-sm font-medium text-zinc-300 mb-2">
-                          💬 イラストへのリクエスト（任意）
+                        <label className="block text-sm font-medium text-white">
+                          🎨 イラストを追加
                         </label>
-                        <textarea
-                          value={illustrationRequest}
-                          onChange={(e) => setIllustrationRequest(e.target.value)}
-                          placeholder="例: このキャラクターを使って、水彩画風に..."
-                          className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-white placeholder-zinc-500 resize-none text-sm"
-                          rows={2}
+                        <p className="text-xs text-zinc-500">AIがスライドにイラストを生成します</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAddIllustrations(!addIllustrations)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${addIllustrations ? "bg-purple-600" : "bg-zinc-600"
+                          }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${addIllustrations ? "translate-x-6" : "translate-x-1"
+                            }`}
                         />
+                      </button>
+                    </div>
+
+                    {/* Illustration Options (shown when toggle is ON) */}
+                    {addIllustrations && (
+                      <div className="bg-zinc-800/50 rounded-xl p-4 max-w-md mx-auto border border-purple-500/30">
+                        {/* Illustration Percentage Slider */}
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-zinc-300 mb-2">
+                            📊 イラストの割合: <span className="text-purple-400">{illustrationPercentage}%</span>
+                          </label>
+                          <input
+                            type="range"
+                            min="10"
+                            max="100"
+                            step="10"
+                            value={illustrationPercentage}
+                            onChange={(e) => setIllustrationPercentage(Number(e.target.value))}
+                            className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                          />
+                          <div className="flex justify-between text-xs text-zinc-500 mt-1">
+                            <span>10%</span>
+                            <span>50%</span>
+                            <span>100%</span>
+                          </div>
+                          <p className="text-xs text-zinc-500 mt-2">
+                            AIが「ここにイラストがあるとわかりやすい」と判断したスライドに追加します
+                          </p>
+                        </div>
+
+                        {/* Reference Image Upload */}
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-zinc-300 mb-2">
+                            🖼️ リファレンス画像（任意）
+                          </label>
+                          <label className="block cursor-pointer">
+                            <div className="border-2 border-dashed border-purple-600 hover:border-purple-500 rounded-lg p-3 text-center transition-all">
+                              <span className="text-sm text-zinc-400">📎 スタイルの参考画像をアップロード</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    setReferenceImage({
+                                      file,
+                                      preview: URL.createObjectURL(file)
+                                    });
+                                  }
+                                }}
+                              />
+                            </div>
+                          </label>
+                          {referenceImage && (
+                            <div className="mt-2 flex justify-center">
+                              <div className="relative group">
+                                <img
+                                  src={referenceImage.preview}
+                                  alt="Reference"
+                                  className="w-24 h-24 object-cover rounded-lg border-2 border-purple-500"
+                                />
+                                <button
+                                  onClick={() => setReferenceImage(null)}
+                                  className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Illustration Request Text */}
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-300 mb-2">
+                            💬 イラストへのリクエスト（任意）
+                          </label>
+                          <textarea
+                            value={illustrationRequest}
+                            onChange={(e) => setIllustrationRequest(e.target.value)}
+                            placeholder="例: このキャラクターを使って、水彩画風に..."
+                            className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-white placeholder-zinc-500 resize-none text-sm"
+                            rows={2}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              </div>
+
+              <button
+                onClick={() => handleGenerateSlides(1)}
+                disabled={state.isProcessing}
+                className="btn-primary"
+              >
+                {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成（5枚ずつ）"}
+              </button>
+
+              {/* Batch progress indicator and continue button */}
+              {!batchState.isComplete && batchState.nextStart && (
+                <div className="mt-6 p-4 bg-zinc-800/50 rounded-xl border border-zinc-700">
+                  <div className="text-lg font-semibold text-amber-400 mb-3">
+                    📊 進捗: {batchState.slidesCompleted}/{batchState.totalSlides}枚 生成完了
+                  </div>
+
+                  {/* Slide preview grid for current batch */}
+                  {state.slidePreviews.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm text-gray-400 mb-2">生成済みスライド（クリックで選択してフィードバック）</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {state.slidePreviews.map((preview, i) => (
+                          <div
+                            key={i}
+                            onClick={() => setSelectedSlide(i + 1)}
+                            className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
+                              ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
+                              : 'border-zinc-700 hover:border-zinc-500'
+                              }`}
+                          >
+                            <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
+                            <div className="bg-zinc-800 text-center text-xs py-1">
+                              {i + 1}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
+
+                  {/* Feedback input for selected slide */}
+                  {selectedSlide && (
+                    <div className="bg-zinc-900/50 rounded-lg p-3 mb-4 border border-zinc-600">
+                      <h4 className="font-semibold mb-2 text-amber-400">
+                        📝 スライド {selectedSlide} を修正
+                      </h4>
+                      <textarea
+                        value={slideFeedback}
+                        onChange={(e) => setSlideFeedback(e.target.value)}
+                        placeholder="例：タイトルを変更、背景をもっと明るく、ポイントを追加..."
+                        className="w-full h-20 bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-white resize-none mb-2 text-sm"
+                      />
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <button
+                          onClick={() => handleSlideFeedback('copy')}
+                          disabled={isRegenerating || !slideFeedback.trim()}
+                          className="bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
+                          title="画像とレイアウトはそのままで、テキストのみ修正します"
+                        >
+                          📝 コピー再生成
+                        </button>
+                        <button
+                          onClick={() => handleSlideFeedback('layout')}
+                          disabled={isRegenerating || !slideFeedback.trim()}
+                          className="bg-blue-600/80 hover:bg-blue-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
+                          title="テキストと画像はそのままで、配置のみ修正します"
+                        >
+                          📐 レイアウトのみ
+                        </button>
+                        <button
+                          onClick={() => handleSlideFeedback('general')}
+                          disabled={isRegenerating || !slideFeedback.trim()}
+                          className="bg-purple-600/80 hover:bg-purple-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
+                          title="画像はそのままで、レイアウトとテキストを修正します"
+                        >
+                          ✨ レイアウト&コピー
+                        </button>
+                        <button
+                          onClick={() => handleSlideFeedback('image')}
+                          disabled={isRegenerating}
+                          className="bg-pink-600/80 hover:bg-pink-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
+                          title="レイアウトとテキストはそのままで、画像のみ再生成します"
+                        >
+                          🎨 画像再生成
+                        </button>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => {
+                            setSelectedSlide(null);
+                            setSlideFeedback("");
+                          }}
+                          className="text-zinc-500 hover:text-zinc-300 text-xs py-1 px-2 flex items-center gap-1 transition-colors"
+                        >
+                          ✕ キャンセル
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Continue to next batch button */}
+                  <button
+                    onClick={() => handleGenerateSlides(batchState.nextStart!)}
+                    disabled={state.isProcessing}
+                    className="btn-primary w-full"
+                  >
+                    {state.isProcessing
+                      ? "生成中..."
+                      : `➡️ 次のバッチへ（${batchState.nextStart}-${Math.min(batchState.nextStart + 4, batchState.totalSlides)}枚目を生成）`}
+                  </button>
                 </div>
-              </>
+              )}
             </div>
+          )}
 
-            <button
-              onClick={() => handleGenerateSlides(1)}
-              disabled={state.isProcessing}
-              className="btn-primary"
-            >
-              {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成（5枚ずつ）"}
-            </button>
+          {/* Step 7: User Creates Slides (instruction) */}
+          {state.step === 7 && (
+            <div>
+              <h2 className="text-2xl font-bold mb-4 gradient-text">スライドをアップロード</h2>
+              <p className="text-zinc-400 mb-6">
+                作成したスライドをPDFまたは画像ファイルでアップロードしてください。
+              </p>
+              <label
+                className={`upload-zone flex flex-col items-center justify-center w-full h-48 rounded-xl cursor-pointer transition-all ${isDragging ? 'border-cyan-500 bg-cyan-500/10 scale-[1.02]' : ''}`}
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  const files = e.dataTransfer.files;
+                  if (files?.length) {
+                    handleUploadSlides(files);
+                  }
+                }}
+              >
+                <span className="text-5xl mb-4">{isDragging ? '📎' : '📥'}</span>
+                <p className="text-lg">{isDragging ? 'ここにドロップ！' : 'PDF または 画像ファイル'}</p>
+                <p className="text-sm text-zinc-500">✨ 複数画像をまとめてドラッグ可能</p>
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => e.target.files?.length && handleUploadSlides(e.target.files)}
+                  disabled={state.isProcessing}
+                />
+              </label>
+            </div>
+          )}
 
-            {/* Batch progress indicator and continue button */}
-            {!batchState.isComplete && batchState.nextStart && (
-              <div className="mt-6 p-4 bg-zinc-800/50 rounded-xl border border-zinc-700">
-                <div className="text-lg font-semibold text-amber-400 mb-3">
-                  📊 進捗: {batchState.slidesCompleted}/{batchState.totalSlides}枚 生成完了
+          {/* Step 8: Slides Uploaded */}
+          {state.step === 8 && state.slideCount > 0 && (
+            <div>
+              <h2 className="text-2xl font-bold mb-4 gradient-text">スライド読み込み完了</h2>
+              <p className="mb-4">{state.slideCount}枚のスライドを検出しました</p>
+              <div className="grid grid-cols-4 gap-2 mb-6">
+                {state.slidePreviews.slice(0, 8).map((url, i) => (
+                  <img
+                    key={i}
+                    src={`${API_URL}${url}`}
+                    alt={`Slide ${i + 1}`}
+                    className="w-full aspect-video object-cover rounded-lg"
+                  />
+                ))}
+              </div>
+              <button onClick={handleMapSlides} disabled={state.isProcessing} className="btn-primary w-full">
+                {state.isProcessing ? "処理中..." : "🤖 AIでタイミングを自動マッピング"}
+              </button>
+            </div>
+          )}
+
+          {/* Step 9: Timing Map */}
+          {state.step === 9 && state.timingMap.length > 0 && (
+            <div>
+              <h2 className="text-2xl font-bold mb-4 gradient-text">🤖 AIマッピング結果</h2>
+
+              {/* 合計時間の表示 */}
+              <div className="mb-4 p-3 bg-zinc-900 rounded-lg flex items-center justify-between">
+                <span className="text-sm text-zinc-400">音声の長さ:</span>
+                <span className="text-cyan-400 font-bold">
+                  {state.timingMap.length > 0 && state.timingMap[state.timingMap.length - 1].end_time
+                    ? `${Math.floor(state.timingMap[state.timingMap.length - 1].end_time / 60)}:${String(Math.floor(state.timingMap[state.timingMap.length - 1].end_time % 60)).padStart(2, '0')}`
+                    : '--:--'}
+                </span>
+              </div>
+
+              {/* タイムライン表示 */}
+              <div className="mb-6 p-4 bg-zinc-900 rounded-lg">
+                <div className="flex h-8 rounded-lg overflow-hidden mb-2">
+                  {state.timingMap.map((item, i) => {
+                    const totalDuration = state.timingMap[state.timingMap.length - 1]?.end_time || 1;
+                    const width = ((item.end_time - item.start_time) / totalDuration) * 100;
+                    const colors = ['bg-cyan-600', 'bg-purple-600', 'bg-orange-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-600'];
+                    return (
+                      <div
+                        key={i}
+                        className={`${colors[i % colors.length]} flex items-center justify-center text-xs font-bold border-r border-zinc-800`}
+                        style={{ width: `${width}%`, minWidth: '20px' }}
+                        title={`スライド${item.slide_number}: ${item.start_time?.toFixed(1)}s - ${item.end_time?.toFixed(1)}s`}
+                      >
+                        {item.slide_number}
+                      </div>
+                    );
+                  })}
                 </div>
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>0:00</span>
+                  <span>
+                    {state.timingMap.length > 0 && state.timingMap[state.timingMap.length - 1].end_time
+                      ? `${Math.floor(state.timingMap[state.timingMap.length - 1].end_time / 60)}:${String(Math.floor(state.timingMap[state.timingMap.length - 1].end_time % 60)).padStart(2, '0')}`
+                      : '--:--'}
+                  </span>
+                </div>
+              </div>
 
-                {/* Slide preview grid for current batch */}
+              {/* 詳細リスト */}
+              <div className="space-y-2 mb-6 max-h-64 overflow-y-auto">
+                {state.timingMap.map((item, i) => {
+                  const duration = (item.end_time || 0) - (item.start_time || 0);
+                  return (
+                    <div key={i} className="flex items-center gap-4 p-3 bg-zinc-900 rounded-lg border-l-4 border-cyan-500">
+                      <span className="w-10 h-10 bg-cyan-500 rounded-full flex items-center justify-center font-bold text-lg">
+                        {item.slide_number}
+                      </span>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <span className="text-cyan-400 font-mono">
+                            {Math.floor((item.start_time || 0) / 60)}:{String(Math.floor((item.start_time || 0) % 60)).padStart(2, '0')}
+                          </span>
+                          <span className="text-zinc-600">→</span>
+                          <span className="text-cyan-400 font-mono">
+                            {Math.floor((item.end_time || 0) / 60)}:{String(Math.floor((item.end_time || 0) % 60)).padStart(2, '0')}
+                          </span>
+                          <span className="text-zinc-500 text-sm">
+                            ({duration.toFixed(1)}秒)
+                          </span>
+                        </div>
+                        {(item.match_reason || item.reason) && (
+                          <div className="text-xs text-zinc-400 mt-1">
+                            💡 {item.match_reason || item.reason}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={handleGenerateVideo} disabled={state.isProcessing} className="btn-primary w-full">
+                {state.isProcessing ? "処理中..." : "🎬 動画を生成"}
+              </button>
+            </div>
+          )}
+
+          {/* Step 10: Complete */}
+          {state.step === 10 && state.videoUrl && (
+            <div>
+              <div className="text-center">
+                <span className="text-6xl">🎉</span>
+                <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
+              </div>
+
+              <video src={state.videoUrl} controls className="w-full rounded-xl mb-6" />
+
+              <div className="flex justify-center gap-4 mb-8">
+                <button
+                  onClick={() => handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`)}
+                  className="btn-primary"
+                >
+                  📥 ダウンロード
+                </button>
+                <button onClick={handleReset} className="btn-secondary">
+                  🔄 新規作成
+                </button>
+              </div>
+
+              {/* Video Feedback Section */}
+              <div className="border-t border-zinc-700 pt-6">
+                <h3 className="text-xl font-semibold mb-4">💡 修正したい場合</h3>
+                <p className="text-zinc-400 mb-4">
+                  スライドをクリックして修正し、動画を再生成できます。
+                </p>
+
+                {/* Slide Previews for Feedback */}
                 {state.slidePreviews.length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-sm text-gray-400 mb-2">生成済みスライド（クリックで選択してフィードバック）</h4>
-                    <div className="grid grid-cols-5 gap-2">
+                  <>
+                    <p className="text-sm text-zinc-500 mb-2">
+                      クリックで選択、ダブルクリックまたは🔍で拡大表示
+                    </p>
+                    <div className="grid grid-cols-4 gap-3 mb-6">
                       {state.slidePreviews.map((preview, i) => (
                         <div
                           key={i}
                           onClick={() => setSelectedSlide(i + 1)}
-                          className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedSlide === i + 1
+                          onDoubleClick={() => setZoomedSlide(i)}
+                          className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all relative group ${selectedSlide === i + 1
                             ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
                             : 'border-zinc-700 hover:border-zinc-500'
                             }`}
@@ -2004,23 +2273,30 @@ export default function Home() {
                           <div className="bg-zinc-800 text-center text-xs py-1">
                             {i + 1}
                           </div>
+                          {/* Zoom button */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setZoomedSlide(i); }}
+                            className="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            🔍
+                          </button>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </>
                 )}
 
-                {/* Feedback input for selected slide */}
+                {/* Feedback Input */}
                 {selectedSlide && (
-                  <div className="bg-zinc-900/50 rounded-lg p-3 mb-4 border border-zinc-600">
+                  <div className="bg-zinc-800/50 rounded-xl p-4 mb-4 border border-zinc-700">
                     <h4 className="font-semibold mb-2 text-amber-400">
-                      📝 スライド {selectedSlide} を修正
+                      📝 スライド {selectedSlide} を編集
                     </h4>
                     <textarea
                       value={slideFeedback}
                       onChange={(e) => setSlideFeedback(e.target.value)}
-                      placeholder="例：タイトルを変更、背景をもっと明るく、ポイントを追加..."
-                      className="w-full h-20 bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-white resize-none mb-2 text-sm"
+                      placeholder="修正したい内容を入力..."
+                      className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
                     />
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <button
@@ -2062,415 +2338,138 @@ export default function Home() {
                           setSelectedSlide(null);
                           setSlideFeedback("");
                         }}
-                        className="text-zinc-500 hover:text-zinc-300 text-xs py-1 px-2 flex items-center gap-1 transition-colors"
+                        className="btn-secondary"
                       >
-                        ✕ キャンセル
+                        ✕
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* Continue to next batch button */}
+                {/* Regenerate Video Button */}
                 <button
-                  onClick={() => handleGenerateSlides(batchState.nextStart!)}
+                  onClick={() => {
+                    setSelectedSlide(null);
+                    handleGenerateVideo();
+                  }}
                   disabled={state.isProcessing}
-                  className="btn-primary w-full"
+                  className="btn-secondary w-full"
                 >
-                  {state.isProcessing
-                    ? "生成中..."
-                    : `➡️ 次のバッチへ（${batchState.nextStart}-${Math.min(batchState.nextStart + 4, batchState.totalSlides)}枚目を生成）`}
+                  🎬 動画を再生成
                 </button>
-              </div>
-            )}
-          </div>
-        )}
 
-        {/* Step 7: User Creates Slides (instruction) */}
-        {state.step === 7 && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 gradient-text">スライドをアップロード</h2>
-            <p className="text-zinc-400 mb-6">
-              作成したスライドをPDFまたは画像ファイルでアップロードしてください。
-            </p>
-            <label
-              className={`upload-zone flex flex-col items-center justify-center w-full h-48 rounded-xl cursor-pointer transition-all ${isDragging ? 'border-cyan-500 bg-cyan-500/10 scale-[1.02]' : ''}`}
-              onDragEnter={handleDragEnter}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-                const files = e.dataTransfer.files;
-                if (files?.length) {
-                  handleUploadSlides(files);
-                }
-              }}
-            >
-              <span className="text-5xl mb-4">{isDragging ? '📎' : '📥'}</span>
-              <p className="text-lg">{isDragging ? 'ここにドロップ！' : 'PDF または 画像ファイル'}</p>
-              <p className="text-sm text-zinc-500">✨ 複数画像をまとめてドラッグ可能</p>
-              <input
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg"
-                multiple
-                className="hidden"
-                onChange={(e) => e.target.files?.length && handleUploadSlides(e.target.files)}
-                disabled={state.isProcessing}
-              />
-            </label>
-          </div>
-        )}
+                {/* OP/ED Video Section */}
+                <div className="border-t border-zinc-700 pt-4 mt-4">
+                  <h4 className="font-semibold mb-3 text-lg">📽️ YouTube用 OP/ED追加</h4>
+                  <p className="text-zinc-500 text-sm mb-3">
+                    オープニング・エンディング動画をアップロードして結合できます
+                  </p>
 
-        {/* Step 8: Slides Uploaded */}
-        {state.step === 8 && state.slideCount > 0 && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 gradient-text">スライド読み込み完了</h2>
-            <p className="mb-4">{state.slideCount}枚のスライドを検出しました</p>
-            <div className="grid grid-cols-4 gap-2 mb-6">
-              {state.slidePreviews.slice(0, 8).map((url, i) => (
-                <img
-                  key={i}
-                  src={`${API_URL}${url}`}
-                  alt={`Slide ${i + 1}`}
-                  className="w-full aspect-video object-cover rounded-lg"
-                />
-              ))}
-            </div>
-            <button onClick={handleMapSlides} disabled={state.isProcessing} className="btn-primary w-full">
-              {state.isProcessing ? "処理中..." : "🤖 AIでタイミングを自動マッピング"}
-            </button>
-          </div>
-        )}
-
-        {/* Step 9: Timing Map */}
-        {state.step === 9 && state.timingMap.length > 0 && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 gradient-text">🤖 AIマッピング結果</h2>
-
-            {/* 合計時間の表示 */}
-            <div className="mb-4 p-3 bg-zinc-900 rounded-lg flex items-center justify-between">
-              <span className="text-sm text-zinc-400">音声の長さ:</span>
-              <span className="text-cyan-400 font-bold">
-                {state.timingMap.length > 0 && state.timingMap[state.timingMap.length - 1].end_time
-                  ? `${Math.floor(state.timingMap[state.timingMap.length - 1].end_time / 60)}:${String(Math.floor(state.timingMap[state.timingMap.length - 1].end_time % 60)).padStart(2, '0')}`
-                  : '--:--'}
-              </span>
-            </div>
-
-            {/* タイムライン表示 */}
-            <div className="mb-6 p-4 bg-zinc-900 rounded-lg">
-              <div className="flex h-8 rounded-lg overflow-hidden mb-2">
-                {state.timingMap.map((item, i) => {
-                  const totalDuration = state.timingMap[state.timingMap.length - 1]?.end_time || 1;
-                  const width = ((item.end_time - item.start_time) / totalDuration) * 100;
-                  const colors = ['bg-cyan-600', 'bg-purple-600', 'bg-orange-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-600'];
-                  return (
-                    <div
-                      key={i}
-                      className={`${colors[i % colors.length]} flex items-center justify-center text-xs font-bold border-r border-zinc-800`}
-                      style={{ width: `${width}%`, minWidth: '20px' }}
-                      title={`スライド${item.slide_number}: ${item.start_time?.toFixed(1)}s - ${item.end_time?.toFixed(1)}s`}
-                    >
-                      {item.slide_number}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    {/* Intro Video */}
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-1">🎬 オープニング</label>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={(e) => setIntroVideo(e.target.files?.[0] || null)}
+                        className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-zinc-700 file:text-white"
+                      />
+                      {introVideo && (
+                        <p className="text-xs text-cyan-400 mt-1 truncate">{introVideo.name}</p>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-              <div className="flex justify-between text-xs text-zinc-500">
-                <span>0:00</span>
-                <span>
-                  {state.timingMap.length > 0 && state.timingMap[state.timingMap.length - 1].end_time
-                    ? `${Math.floor(state.timingMap[state.timingMap.length - 1].end_time / 60)}:${String(Math.floor(state.timingMap[state.timingMap.length - 1].end_time % 60)).padStart(2, '0')}`
-                    : '--:--'}
-                </span>
-              </div>
-            </div>
 
-            {/* 詳細リスト */}
-            <div className="space-y-2 mb-6 max-h-64 overflow-y-auto">
-              {state.timingMap.map((item, i) => {
-                const duration = (item.end_time || 0) - (item.start_time || 0);
-                return (
-                  <div key={i} className="flex items-center gap-4 p-3 bg-zinc-900 rounded-lg border-l-4 border-cyan-500">
-                    <span className="w-10 h-10 bg-cyan-500 rounded-full flex items-center justify-center font-bold text-lg">
-                      {item.slide_number}
-                    </span>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <span className="text-cyan-400 font-mono">
-                          {Math.floor((item.start_time || 0) / 60)}:{String(Math.floor((item.start_time || 0) % 60)).padStart(2, '0')}
-                        </span>
-                        <span className="text-zinc-600">→</span>
-                        <span className="text-cyan-400 font-mono">
-                          {Math.floor((item.end_time || 0) / 60)}:{String(Math.floor((item.end_time || 0) % 60)).padStart(2, '0')}
-                        </span>
-                        <span className="text-zinc-500 text-sm">
-                          ({duration.toFixed(1)}秒)
-                        </span>
-                      </div>
-                      {(item.match_reason || item.reason) && (
-                        <div className="text-xs text-zinc-400 mt-1">
-                          💡 {item.match_reason || item.reason}
-                        </div>
+                    {/* Outro Video */}
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-1">🎬 エンディング</label>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={(e) => setOutroVideo(e.target.files?.[0] || null)}
+                        className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-zinc-700 file:text-white"
+                      />
+                      {outroVideo && (
+                        <p className="text-xs text-cyan-400 mt-1 truncate">{outroVideo.name}</p>
                       )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-            <button onClick={handleGenerateVideo} disabled={state.isProcessing} className="btn-primary w-full">
-              {state.isProcessing ? "処理中..." : "🎬 動画を生成"}
-            </button>
-          </div>
-        )}
 
-        {/* Step 10: Complete */}
-        {state.step === 10 && state.videoUrl && (
-          <div>
-            <div className="text-center">
-              <span className="text-6xl">🎉</span>
-              <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
-            </div>
+                  <button
+                    onClick={handleConcatVideo}
+                    disabled={isConcatenating || (!introVideo && !outroVideo)}
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white py-2 px-4 rounded-lg transition-all"
+                  >
+                    {isConcatenating ? "⏳ 結合中..." : "🎞️ OP/EDを結合"}
+                  </button>
 
-            <video src={state.videoUrl} controls className="w-full rounded-xl mb-6" />
-
-            <div className="flex justify-center gap-4 mb-8">
-              <button
-                onClick={() => handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`)}
-                className="btn-primary"
-              >
-                📥 ダウンロード
-              </button>
-              <button onClick={handleReset} className="btn-secondary">
-                🔄 新規作成
-              </button>
-            </div>
-
-            {/* Video Feedback Section */}
-            <div className="border-t border-zinc-700 pt-6">
-              <h3 className="text-xl font-semibold mb-4">💡 修正したい場合</h3>
-              <p className="text-zinc-400 mb-4">
-                スライドをクリックして修正し、動画を再生成できます。
-              </p>
-
-              {/* Slide Previews for Feedback */}
-              {state.slidePreviews.length > 0 && (
-                <>
-                  <p className="text-sm text-zinc-500 mb-2">
-                    クリックで選択、ダブルクリックまたは🔍で拡大表示
-                  </p>
-                  <div className="grid grid-cols-4 gap-3 mb-6">
-                    {state.slidePreviews.map((preview, i) => (
-                      <div
-                        key={i}
-                        onClick={() => setSelectedSlide(i + 1)}
-                        onDoubleClick={() => setZoomedSlide(i)}
-                        className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all relative group ${selectedSlide === i + 1
-                          ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
-                          : 'border-zinc-700 hover:border-zinc-500'
-                          }`}
+                  {/* Concatenated Video Preview */}
+                  {concatVideoUrl && (
+                    <div className="mt-4 p-3 bg-zinc-800/50 rounded-lg">
+                      <p className="text-sm text-green-400 mb-2">✅ 結合完了！</p>
+                      <video
+                        src={concatVideoUrl}
+                        controls
+                        className="w-full rounded-lg"
+                      />
+                      <button
+                        onClick={() => handleDownloadVideo(concatVideoUrl, "voiceslide_youtube.mp4")}
+                        className="block w-full mt-2 text-center bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg"
                       >
-                        <img src={preview} alt={`Slide ${i + 1}`} className="w-full h-auto" />
-                        <div className="bg-zinc-800 text-center text-xs py-1">
-                          {i + 1}
-                        </div>
-                        {/* Zoom button */}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setZoomedSlide(i); }}
-                          className="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          🔍
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {/* Feedback Input */}
-              {selectedSlide && (
-                <div className="bg-zinc-800/50 rounded-xl p-4 mb-4 border border-zinc-700">
-                  <h4 className="font-semibold mb-2 text-amber-400">
-                    📝 スライド {selectedSlide} を編集
-                  </h4>
-                  <textarea
-                    value={slideFeedback}
-                    onChange={(e) => setSlideFeedback(e.target.value)}
-                    placeholder="修正したい内容を入力..."
-                    className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
-                  />
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    <button
-                      onClick={() => handleSlideFeedback('copy')}
-                      disabled={isRegenerating || !slideFeedback.trim()}
-                      className="bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                      title="画像とレイアウトはそのままで、テキストのみ修正します"
-                    >
-                      📝 コピー再生成
-                    </button>
-                    <button
-                      onClick={() => handleSlideFeedback('layout')}
-                      disabled={isRegenerating || !slideFeedback.trim()}
-                      className="bg-blue-600/80 hover:bg-blue-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                      title="テキストと画像はそのままで、配置のみ修正します"
-                    >
-                      📐 レイアウトのみ
-                    </button>
-                    <button
-                      onClick={() => handleSlideFeedback('general')}
-                      disabled={isRegenerating || !slideFeedback.trim()}
-                      className="bg-purple-600/80 hover:bg-purple-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                      title="画像はそのままで、レイアウトとテキストを修正します"
-                    >
-                      ✨ レイアウト&コピー
-                    </button>
-                    <button
-                      onClick={() => handleSlideFeedback('image')}
-                      disabled={isRegenerating}
-                      className="bg-pink-600/80 hover:bg-pink-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                      title="レイアウトとテキストはそのままで、画像のみ再生成します"
-                    >
-                      🎨 画像再生成
-                    </button>
-                  </div>
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => {
-                        setSelectedSlide(null);
-                        setSlideFeedback("");
-                      }}
-                      className="btn-secondary"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                        📥 YouTube用動画をダウンロード
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-
-              {/* Regenerate Video Button */}
-              <button
-                onClick={() => {
-                  setSelectedSlide(null);
-                  handleGenerateVideo();
-                }}
-                disabled={state.isProcessing}
-                className="btn-secondary w-full"
-              >
-                🎬 動画を再生成
-              </button>
-
-              {/* OP/ED Video Section */}
-              <div className="border-t border-zinc-700 pt-4 mt-4">
-                <h4 className="font-semibold mb-3 text-lg">📽️ YouTube用 OP/ED追加</h4>
-                <p className="text-zinc-500 text-sm mb-3">
-                  オープニング・エンディング動画をアップロードして結合できます
-                </p>
-
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  {/* Intro Video */}
-                  <div>
-                    <label className="block text-sm text-zinc-400 mb-1">🎬 オープニング</label>
-                    <input
-                      type="file"
-                      accept="video/*"
-                      onChange={(e) => setIntroVideo(e.target.files?.[0] || null)}
-                      className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-zinc-700 file:text-white"
-                    />
-                    {introVideo && (
-                      <p className="text-xs text-cyan-400 mt-1 truncate">{introVideo.name}</p>
-                    )}
-                  </div>
-
-                  {/* Outro Video */}
-                  <div>
-                    <label className="block text-sm text-zinc-400 mb-1">🎬 エンディング</label>
-                    <input
-                      type="file"
-                      accept="video/*"
-                      onChange={(e) => setOutroVideo(e.target.files?.[0] || null)}
-                      className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-zinc-700 file:text-white"
-                    />
-                    {outroVideo && (
-                      <p className="text-xs text-cyan-400 mt-1 truncate">{outroVideo.name}</p>
-                    )}
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleConcatVideo}
-                  disabled={isConcatenating || (!introVideo && !outroVideo)}
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white py-2 px-4 rounded-lg transition-all"
-                >
-                  {isConcatenating ? "⏳ 結合中..." : "🎞️ OP/EDを結合"}
-                </button>
-
-                {/* Concatenated Video Preview */}
-                {concatVideoUrl && (
-                  <div className="mt-4 p-3 bg-zinc-800/50 rounded-lg">
-                    <p className="text-sm text-green-400 mb-2">✅ 結合完了！</p>
-                    <video
-                      src={concatVideoUrl}
-                      controls
-                      className="w-full rounded-lg"
-                    />
-                    <button
-                      onClick={() => handleDownloadVideo(concatVideoUrl, "voiceslide_youtube.mp4")}
-                      className="block w-full mt-2 text-center bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg"
-                    >
-                      📥 YouTube用動画をダウンロード
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Processing Indicator with Enhanced Progress */}
-        {state.isProcessing && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-zinc-900 rounded-2xl p-8 text-center min-w-[350px]">
-              <div className="text-5xl mb-4 animate-bounce">⚙️</div>
+          {/* Processing Indicator with Enhanced Progress */}
+          {state.isProcessing && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-zinc-900 rounded-2xl p-8 text-center min-w-[350px]">
+                <div className="text-5xl mb-4 animate-bounce">⚙️</div>
 
-              {/* Progress bar */}
-              {progress.percent > 0 && (
-                <div className="mb-4">
-                  <div className="bg-zinc-700 rounded-full h-4 overflow-hidden">
-                    <div
-                      className="bg-gradient-to-r from-amber-500 to-orange-500 h-full transition-all duration-500"
-                      style={{ width: `${progress.percent}%` }}
-                    />
-                  </div>
+                {/* Progress bar */}
+                {progress.percent > 0 && (
+                  <div className="mb-4">
+                    <div className="bg-zinc-700 rounded-full h-4 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-amber-500 to-orange-500 h-full transition-all duration-500"
+                        style={{ width: `${progress.percent}%` }}
+                      />
+                    </div>
 
-                  {/* Detailed Progress Info */}
-                  <div className="flex justify-between items-center mt-3">
-                    <p className="text-3xl font-bold text-amber-400">{Math.round(progress.percent)}%</p>
-                    {batchState.totalSlides > 0 && (
-                      <p className="text-sm text-zinc-400">
-                        {batchState.slidesCompleted || Math.round(progress.percent / 100 * batchState.totalSlides)} / {batchState.totalSlides} 枚
+                    {/* Detailed Progress Info */}
+                    <div className="flex justify-between items-center mt-3">
+                      <p className="text-3xl font-bold text-amber-400">{Math.round(progress.percent)}%</p>
+                      {batchState.totalSlides > 0 && (
+                        <p className="text-sm text-zinc-400">
+                          {batchState.slidesCompleted || Math.round(progress.percent / 100 * batchState.totalSlides)} / {batchState.totalSlides} 枚
+                        </p>
+                      )}
+                    </div>
+
+                    {/* ETA */}
+                    {batchState.totalSlides > 0 && progress.percent > 5 && (
+                      <p className="text-xs text-zinc-500 mt-2">
+                        残り約 {Math.round((100 - progress.percent) / progress.percent * (batchState.totalSlides * 8) / 60)} 分
                       </p>
                     )}
                   </div>
+                )}
 
-                  {/* ETA */}
-                  {batchState.totalSlides > 0 && progress.percent > 5 && (
-                    <p className="text-xs text-zinc-500 mt-2">
-                      残り約 {Math.round((100 - progress.percent) / progress.percent * (batchState.totalSlides * 8) / 60)} 分
-                    </p>
-                  )}
-                </div>
-              )}
+                <p className="text-lg text-zinc-300">{progress.message || "処理中..."}</p>
 
-              <p className="text-lg text-zinc-300">{progress.message || "処理中..."}</p>
-
-              {/* Keep-awake notice */}
-              <p className="text-xs text-zinc-600 mt-4">
-                💡 生成中はこのタブを開いたままにしてください
-              </p>
+                {/* Keep-awake notice */}
+                <p className="text-xs text-zinc-600 mt-4">
+                  💡 生成中はこのタブを開いたままにしてください
+                </p>
+              </div>
             </div>
-          </div>
-        )}
-    </div>
+          )}
+        </div>
       </main >
     </div >
   );
