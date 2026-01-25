@@ -14,7 +14,6 @@ from config import OPENAI_API_KEY, GEMINI_API_KEY
 
 # Initialize clients
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
-genai.configure(api_key=GEMINI_API_KEY)
 
 
 def repair_and_parse_json(text: str, source: str = "API") -> Dict[str, Any]:
@@ -545,22 +544,15 @@ async def generate_outline(
 ) -> Dict[str, Any]:
     """
     高精度タイムスタンプ同期のスライドアウトラインを生成
-    
-    Args:
-        transcript: ユーザーが編集した可能性のある文字起こし（これを優先）
-        segments: 元のタイムスタンプ情報（タイミング用）
-        gemini_key: Optional Gemini API key from user
-        slide_count_mode: "auto", "fewer", "more", or "custom"
-        custom_slide_count: Target slide count when mode is "custom"
     """
     
     # Configure Gemini with provided key or default
-    if gemini_key:
-        genai.configure(api_key=gemini_key)
-    elif GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-    else:
-        raise ValueError("Gemini API key is required. Please set it in settings.")
+    from services.transcription import get_available_gemini_model
+    
+    key = gemini_key or GEMINI_API_KEY
+    if not key:
+        print("[Outline] No Gemini API key available in settings or request")
+        # Fallback logic could go here, but for now we expect a key
     
     if not segments:
         return create_fallback_outline(transcript)
@@ -574,11 +566,11 @@ async def generate_outline(
     # スライド枚数の指示を生成
     slide_count_instruction = ""
     if slide_count_mode == "fewer":
-        slide_count_instruction = "\n\n⚠️ スライド枚数の指示: **少なめ（5-7枚）** でまとめてください。トピックを大きくグループ化し、簡潔なスライドにしてください。\n"
+        slide_count_instruction = "\\n\\n⚠️ スライド枚数の指示: **少なめ（5-7枚）** でまとめてください。トピックを大きくグループ化し、簡潔なスライドにしてください。\\n"
     elif slide_count_mode == "more":
-        slide_count_instruction = "\n\n⚠️ スライド枚数の指示: **多め（15枚以上）** で細かく分割してください。各ポイントを個別のスライドにし、詳細な説明を含めてください。\n"
+        slide_count_instruction = "\\n\\n⚠️ スライド枚数の指示: **多め（15枚以上）** で細かく分割してください。各ポイントを個別のスライドにし、詳細な説明を含めてください。\\n"
     elif slide_count_mode == "custom":
-        slide_count_instruction = f"\n\n⚠️ スライド枚数の指示: **ちょうど{custom_slide_count}枚** になるように調整してください。\n"
+        slide_count_instruction = f"\\n\\n⚠️ スライド枚数の指示: **ちょうど{custom_slide_count}枚** になるように調整してください。\\n"
     
     # 編集されたトランスクリプトを追加（ユーザー編集を反映）
     edited_transcript_section = f"""
@@ -601,31 +593,21 @@ async def generate_outline(
     )
     
     try:
-        # Gemini で高精度生成 (複数モデルを試行)
-        model_names = ["gemini-2.0-flash-exp", "gemini-1.5-flash-latest", "gemini-pro"]
-        response = None
+        # Get available model name
+        model_name = get_available_gemini_model(key)
+        print(f"[Outline] Using model: {model_name}")
         
-        for model_name in model_names:
-            try:
-                print(f"[Outline] Trying model: {model_name}")
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json",
-                        temperature=0.1,
-                        max_output_tokens=16384  # Support long audio (10+ minutes)
-                    )
-                )
-                print(f"[Outline] Success with {model_name}!")
-                break
-            except Exception as e:
-                print(f"[Outline] Model {model_name} failed: {str(e)[:100]}")
-                continue
-        
-        if response is None:
-            raise ValueError("All Gemini models failed")
-        
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+                max_output_tokens=16384  # Support long audio (10+ minutes)
+            )
+        )
+        print(f"[Outline] Success!")
         result = repair_and_parse_json(response.text, "Gemini")
         
     except Exception as e:
@@ -676,26 +658,19 @@ async def polish_outline(outline: Dict[str, Any]) -> Dict[str, Any]:
     )
     
     try:
-        model_names = ["gemini-2.0-flash-exp", "gemini-1.5-flash-latest", "gemini-pro"]
-        response = None
+        from services.transcription import get_available_gemini_model
+        key = GEMINI_API_KEY
+        model_name = get_available_gemini_model(key)
         
-        for model_name in model_names:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json",
-                        max_output_tokens=16384  # Support long audio
-                    )
-                )
-                break
-            except Exception as e:
-                print(f"[Polish Outline] Model {model_name} failed: {str(e)[:100]}")
-                continue
-        
-        if response is None:
-            raise ValueError("All Gemini models failed")
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                max_output_tokens=16384  # Support long audio
+            )
+        )
         
         result = json.loads(response.text)
         
@@ -954,4 +929,3 @@ def format_outline_for_export(outline: Dict[str, Any]) -> str:
         lines.append("")
     
     return "\n".join(lines)
-

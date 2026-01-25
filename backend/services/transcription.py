@@ -103,17 +103,21 @@ def get_openai_client(api_key: Optional[str] = None) -> OpenAI:
     """Get OpenAI client with provided or default API key"""
     key = api_key or OPENAI_API_KEY
     if not key:
+        print("[OpenAI] No API key available in settings or request")
         raise ValueError("OpenAI API key is required. Please set it in settings.")
     return OpenAI(api_key=key)
 
 
 def get_available_gemini_model(api_key: str) -> str:
     """Find an available Gemini model for content generation"""
-    print(f"[Gemini] Configuring with key: {api_key[:10]}...{api_key[-4:]}")
-    genai.configure(api_key=api_key)
+    print(f"[Gemini] Configuring with key: {str(api_key)[:10]}...{str(api_key)[-4:]}")
+    if not api_key:
+        print("[Gemini] No API key provided to get_available_gemini_model")
+        return "gemini-1.5-flash"
     
     # Try to list available models
     try:
+        genai.configure(api_key=api_key)
         available_models = []
         for model in genai.list_models():
             if 'generateContent' in str(model.supported_generation_methods):
@@ -210,7 +214,8 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
     """Synchronous polishing (runs in thread pool)"""
     key = gemini_key or GEMINI_API_KEY
     if not key:
-        raise ValueError("Gemini API key is required. Please set it in settings.")
+        print("[Polish] No Gemini API key available in settings or request")
+        return text # Return original text instead of crashing if possible, or raise clearer error
     
     print(f"[Polish] Starting with key: {key[:10]}...{key[-4:] if len(key) > 10 else '***'}")
     
@@ -219,7 +224,7 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
         model_name = get_available_gemini_model(key)
         print(f"[Polish] Using model: {model_name}")
         
-        prompt = f"""以下の文字起こしテキストを読みやすく整形してください。
+        prompt = f\"\"\"以下の文字起こしテキストを読みやすく整形してください。
     
 要件:
 - 「えー」「あー」などのフィラーを削除
@@ -231,7 +236,7 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
 元のテキスト:
 {text}
 
-整形後:"""
+整形後:\"\"\"
         
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(prompt)
