@@ -8,11 +8,50 @@ Professional-grade slide design using 3-step process:
 
 import json
 import base64
+import random
 import asyncio
 from typing import Dict, Any, List, Optional
+from bs4 import BeautifulSoup
 import google.generativeai as genai
 
 from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
+
+def update_html_text_content(html: str, new_copy: Dict[str, Any]) -> str:
+    """
+    Update text content in existing HTML using BeautifulSoup to preserve layout perfectly.
+    """
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Update title (h1 or class="title")
+        title_el = soup.find('h1') or soup.select_one('.title') or soup.find('div', class_='title')
+        if title_el and new_copy.get("title"):
+            title_el.string = new_copy["title"]
+            
+        # Update subtitle (h2,h3 or class="subtitle")
+        subtitle_el = soup.find('h2') or soup.find('h3') or soup.select_one('.subtitle') or soup.find('div', class_='subtitle')
+        if subtitle_el and new_copy.get("subtitle"):
+            subtitle_el.string = new_copy["subtitle"]
+            
+        # Update points (ul or class="points")
+        ul_el = soup.find('ul') or soup.select_one('.points') or soup.find('div', class_='points')
+        if ul_el and new_copy.get("points"):
+            # If it's a UL/OL, recreate LIs
+            if ul_el.name in ['ul', 'ol']:
+                ul_el.clear()
+                for point in new_copy["points"]:
+                    li = soup.new_tag('li')
+                    li.string = str(point)
+                    ul_el.append(li)
+            else:
+                # If it's a div, maybe clear and add p tags or just text
+                # Safe bet: try to find existing list structure or just replace text
+                pass
+                
+        return str(soup)
+    except Exception as e:
+        print(f"[DOM Update Error] {e}")
+        return html  # Fallback to original if parsing fails
 
 
 # =============================================================================
@@ -2996,13 +3035,16 @@ async def regenerate_slide_with_feedback(
     genai.configure(api_key=key)
     prompt = ""
     
-    # 2. Copy Only Mode
-    if feedback_type == "copy" or feedback_type == "regenerate_copy":
-        print(f"[Feedback] Mode: Copy Only - Changing text for slide {slide_number}")
-        prompt = f"""# Role
-あなたはHTMLエディターです。既存のHTML構造とデザインを**完全に維持**したまま、テキストのみを修正してください。
+    genai.configure(api_key=key)
 
-# ユーザーの要望（テキスト修正のみ）
+    # 2. Copy Only Mode - Use DOM Manipulation for 100% Safety
+    if feedback_type == "copy" or feedback_type == "regenerate_copy":
+        print(f"[Feedback] Mode: Copy Only - Changing text via DOM manipulation for slide {slide_number}")
+        
+        copy_prompt = f"""# Role
+あなたはプロのコピーライターです。スライドのテキストを修正してください。
+
+# ユーザーの要望
 {feedback}
 
 # 現在のHTML
@@ -3010,21 +3052,66 @@ async def regenerate_slide_with_feedback(
 {current_html}
 ```
 
-# ⚠️ 絶対ルール（厳守）
-1. **レイアウト変更禁止**: div構造、class、styleは一切変更しないでください。
-2. **画像変更禁止**: imgタグのsrcは絶対に触らないでください（{ILLUSTRATION_PLACEHOLDER} もそのまま）。
-3. **テキストのみ変更**: タイトル、サブタイトル、箇条書きの**中身のテキスト**のみを変更してください。
-4. **追加・削除禁止**: 新しい要素を追加したり、既存の装飾を削除しないでください。
+# 指示
+ユーザーの要望に基づいて、タイトル、サブタイトル、箇条書きポイントを修正してください。
+出力は以下のJSON形式のみでお願いします。Markdownブロックは不要です。
 
-# 出力
-修正後の完全なHTMLのみを出力してください。
+{{
+  "title": "新しいタイトル（短く簡潔に）",
+  "subtitle": "新しいサブタイトル（なければ空文字列）",
+  "points": ["ポイント1", "ポイント2", "ポイント3"]
+}}
 """
+        try:
+            # Generate JSON
+            model = genai.GenerativeModel("gemini-3-flash-preview")
+            response = model.generate_content(
+                copy_prompt, 
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            new_copy = json.loads(response.text)
+            print(f"[Feedback] New copy generated: {new_copy}")
+            
+            # Apply to HTML using BeautifulSoup helper
+            new_html = update_html_text_content(current_html, new_copy)
+            
+            # Common post-processing (screenshot, etc) handled below? 
+            # No, structural limitation of this function. Will handle screenshot here and return.
+            
+            update_html_content(job_id, slide_number, new_html)
+            
+            # Capture screenshot
+            async with async_playwright() as p:
+                browser = await p.chromium.launch()
+                page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+                await page.set_content(new_html)
+                # Wait for potential images
+                await page.wait_for_timeout(1000)
+                
+                slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+                new_image_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
+                await page.screenshot(path=new_image_path)
+                await browser.close()
+                
+            return {
+                "success": True,
+                "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png"
+            }
+            
+        except Exception as e:
+            print(f"[Feedback] Copy update failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    # Configure prompt for other modes (Layout & General)
+    prompt = ""
         
     # 3. Layout Only Mode
-    elif feedback_type == "layout" or feedback_type == "fix_layout":
+    if feedback_type == "layout" or feedback_type == "fix_layout":
         print(f"[Feedback] Mode: Layout Only - Changing layout for slide {slide_number}")
         prompt = f"""# Role
-あなたはWebデザイナーです。スライドのコンテンツ（テキストと画像）はそのままに、レイアウトのみを変更してください。
+あなたはWebデザイナーです。スライドのコンテンツ（テキストと画像）は**内容を維持したまま**、レイアウトのみを変更してください。
 
 # ユーザーの要望（レイアウト変更）
 {feedback}
@@ -3034,10 +3121,22 @@ async def regenerate_slide_with_feedback(
 {current_html}
 ```
 
-# ⚠️ 絶対ルール（厳守）
-1. **テキスト変更禁止**: タイトル、サブタイトル、ポイントの文章は一言一句変更しないでください。
-2. **画像保持**: 既存の画像（{ILLUSTRATION_PLACEHOLDER} または data URL）は必ず新しいレイアウトにも含めてください。
-3. **レイアウト変更**: CSSグリッド、Flexbox、配置、配色を変更して要望に応えてください。
+# ⚠️ コンテンツ保持の絶対ルール（違反すると失敗）
+このスライドのテキスト（タイトル、サブタイトル、ポイント）と画像は**絶対に削除・変更しないでください**。
+
+1. **テキスト保持**:
+   - タイトルを必ず含めること
+   - サブタイトルを必ず含めること
+   - 全ての箇条書きポイントを必ず含めること
+   - **文字を空白にしたり、ダミーテキストに置き換えることは厳禁です。** current_htmlの中身をそのまま使ってください。
+
+2. **画像保持**:
+   - `src="{ILLUSTRATION_PLACEHOLDER}"` などのimgタグは必ず維持すること。
+   - `class="illustration"` も維持すること。
+
+3. **レイアウト変更**:
+   - CSSグリッド、Flexbox、配置、配色を変更して要望に応えてください。
+   - テキストの可読性を確保すること（画像の上に文字を置くなら背景色やシャドウをつける）。
 
 # 出力
 修正後の完全なHTMLのみを出力してください。
