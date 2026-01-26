@@ -1252,7 +1252,7 @@ async def generate_all_custom_slides(
             image_paths.append(existing_path)
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch()
+        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
         
         for i, slide in enumerate(slides):
             slide_number = i + 1
@@ -1498,7 +1498,7 @@ async def generate_all_custom_slides(
                         except:
                             pass
                         await asyncio.sleep(1)
-                        browser = await p.chromium.launch()
+                        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
                         page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
                     
                     await page.set_content(html)
@@ -1523,7 +1523,7 @@ async def generate_all_custom_slides(
                         except:
                             pass
                         await asyncio.sleep(1)
-                        browser = await p.chromium.launch()
+                        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
                         print(f"[Browser] Restarted for retry {render_attempt + 2}")
             
             if not render_success:
@@ -2162,7 +2162,7 @@ async def regenerate_slide_with_feedback(
         slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
         
         async with async_playwright() as p:
-            browser = await p.chromium.launch()
+            browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
             page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
             await page.set_content(new_html)
             await page.wait_for_timeout(1500)
