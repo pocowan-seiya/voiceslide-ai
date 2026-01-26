@@ -14,6 +14,10 @@ import google.generativeai as genai
 
 from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
 
+# Global semaphore to limit concurrent browser instances
+# Railway limits: prevents "Resource temporarily unavailable" (pthread_create)
+BROWSER_SEMAPHORE = asyncio.Semaphore(3)  # Conservative limit for stability
+
 
 # =============================================================================
 # STEP 1 & 2: Design Strategy Generation
@@ -1251,7 +1255,7 @@ async def generate_all_custom_slides(
         if os.path.exists(existing_path):
             image_paths.append(existing_path)
     
-    async with async_playwright() as p:
+    async with BROWSER_SEMAPHORE, async_playwright() as p:
         browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
         
         for i, slide in enumerate(slides):
@@ -2161,7 +2165,7 @@ async def regenerate_slide_with_feedback(
         # Render new version
         slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
         
-        async with async_playwright() as p:
+        async with BROWSER_SEMAPHORE, async_playwright() as p:
             browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
             page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
             await page.set_content(new_html)
