@@ -299,7 +299,7 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
                             borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
                         }}
                     >
-                        <div className="flex items-center gap-3 mb-3">
+                        <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center">
                                 <span className="text-xl">🤖</span>
                             </div>
@@ -308,242 +308,156 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
                                 <p className="text-xs text-gray-400">AIがお手伝いします</p>
                             </div>
                         </div>
-
-                        {/* タブ切り替え */}
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => setActiveTab("chat")}
-                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab === "chat"
-                                    ? "bg-indigo-500/30 text-indigo-300"
-                                    : "text-gray-400 hover:text-gray-300"
-                                    }`}
-                            >
-                                💬 チャット
-                            </button>
-                            <button
-                                onClick={() => setActiveTab("feedback")}
-                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab === "feedback"
-                                    ? "bg-indigo-500/30 text-indigo-300"
-                                    : "text-gray-400 hover:text-gray-300"
-                                    }`}
-                            >
-                                📩 フィードバック
-                            </button>
-                        </div>
                     </div>
 
-                    {/* チャットタブ */}
-                    {activeTab === "chat" && (
-                        <>
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                                {messages.length === 0 && (
-                                    <div className="text-center text-gray-500 py-8">
-                                        <p className="text-4xl mb-3">👋</p>
-                                        <p className="text-sm">こんにちは！</p>
-                                        <p className="text-sm">エラーや操作について、お気軽にご質問ください。</p>
-                                    </div>
-                                )}
+                    {/* チャットエリア */}
+                    <>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            {messages.length === 0 && (
+                                <div className="text-center text-gray-500 py-8">
+                                    <p className="text-4xl mb-3">👋</p>
+                                    <p className="text-sm">こんにちは！</p>
+                                    <p className="text-sm">エラーや操作について、お気軽にご質問ください。</p>
+                                </div>
+                            )}
 
-                                {messages.map((msg, idx) => (
+                            {messages.map((msg, idx) => (
+                                <div
+                                    key={idx}
+                                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                                >
                                     <div
-                                        key={idx}
-                                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                                    >
-                                        <div
-                                            className={`
+                                        className={`
                     max-w-[80%] px-4 py-3 rounded-2xl
                     ${msg.role === "user"
-                                                    ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-br-md"
-                                                    : "bg-zinc-800 text-gray-100 rounded-bl-md"
-                                                }
+                                                ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-br-md"
+                                                : "bg-zinc-800 text-gray-100 rounded-bl-md"
+                                            }
                   `}
-                                        >
-                                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                                            <p className="text-xs opacity-50 mt-1">
-                                                {msg.timestamp.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-
-                                {isLoading && (
-                                    <div className="flex justify-start">
-                                        <div className="bg-zinc-800 px-4 py-3 rounded-2xl rounded-bl-md">
-                                            <div className="flex gap-1">
-                                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div ref={messagesEndRef} />
-                            </div>
-
-                            <div className="p-4" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.1)" }}>
-                                <div className="flex gap-2">
-                                    <input
-                                        ref={inputRef}
-                                        type="text"
-                                        value={input}
-                                        onChange={(e) => setInput(e.target.value)}
-                                        onKeyPress={handleKeyPress}
-                                        placeholder="メッセージを入力..."
-                                        disabled={isLoading}
-                                        className="flex-1 px-4 py-3 rounded-xl bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50"
-                                    />
-                                    <button
-                                        onClick={() => sendMessage(input)}
-                                        disabled={isLoading || !input.trim()}
-                                        className="px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                        </svg>
-                                    </button>
+                                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                                        <p className="text-xs opacity-50 mt-1">
+                                            {msg.timestamp.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                                        </p>
+                                    </div>
                                 </div>
+                            ))}
 
-                                {/* フィードバックを送信ボタン */}
-                                {messages.length > 0 && (
-                                    <div className="mt-2">
-                                        {chatFeedbackSent ? (
-                                            <p className="text-center text-sm text-green-400">✅ フィードバックを送信しました！</p>
-                                        ) : (
-                                            <button
-                                                onClick={sendChatAsFeedback}
-                                                disabled={isSendingFeedback}
-                                                className="w-full py-2 px-3 rounded-lg text-sm text-gray-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                                            >
-                                                <span>📩</span>
-                                                <span>{isSendingFeedback ? "送信中..." : "この会話をフィードバックとして送信"}</span>
-                                            </button>
-                                        )}
+                            {isLoading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-zinc-800 px-4 py-3 rounded-2xl rounded-bl-md">
+                                        <div className="flex gap-1">
+                                            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                                            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                                            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                                        </div>
                                     </div>
-                                )}
+                                </div>
+                            )}
 
-                                {/* エスカレーションセクション */}
-                                {messages.length >= 4 && !escalationSent && (
-                                    <div className="mt-3 pt-3" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.05)" }}>
-                                        {!showEscalation ? (
-                                            <button
-                                                onClick={() => setShowEscalation(true)}
-                                                className="w-full py-2 px-3 rounded-lg text-sm text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 transition-colors flex items-center justify-center gap-2"
-                                            >
-                                                <span>🆘</span>
-                                                <span>解決しない場合はメールでサポートを依頼</span>
-                                            </button>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                <p className="text-xs text-gray-400">
-                                                    メールアドレスを入力してください。サポートチームから直接ご連絡いたします。
-                                                </p>
-                                                <input
-                                                    type="email"
-                                                    value={userEmail}
-                                                    onChange={(e) => setUserEmail(e.target.value)}
-                                                    placeholder="your@email.com"
-                                                    className="w-full px-3 py-2 rounded-lg bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-orange-500 text-sm"
-                                                />
-                                                <textarea
-                                                    value={issueSummary}
-                                                    onChange={(e) => setIssueSummary(e.target.value)}
-                                                    placeholder="問題の概要（任意）"
-                                                    rows={2}
-                                                    className="w-full px-3 py-2 rounded-lg bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-orange-500 text-sm resize-none"
-                                                />
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => setShowEscalation(false)}
-                                                        className="flex-1 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-zinc-800 transition-colors"
-                                                    >
-                                                        キャンセル
-                                                    </button>
-                                                    <button
-                                                        onClick={sendEscalation}
-                                                        disabled={!userEmail.trim() || isSendingEscalation}
-                                                        className="flex-1 py-2 rounded-lg text-sm text-white bg-gradient-to-r from-orange-500 to-red-500 hover:opacity-90 transition-opacity disabled:opacity-50"
-                                                    >
-                                                        {isSendingEscalation ? "送信中..." : "サポートを依頼"}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                            <div ref={messagesEndRef} />
+                        </div>
 
-                                {/* エスカレーション完了メッセージ */}
-                                {escalationSent && (
-                                    <div className="mt-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
-                                        <p className="text-sm text-green-400">✅ サポートチームにエスカレーションしました</p>
-                                        <p className="text-xs text-gray-400 mt-1">メールで回答いたします</p>
-                                    </div>
-                                )}
+                        <div className="p-4" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.1)" }}>
+                            <div className="flex gap-2">
+                                <input
+                                    ref={inputRef}
+                                    type="text"
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyPress={handleKeyPress}
+                                    placeholder="メッセージを入力..."
+                                    disabled={isLoading}
+                                    className="flex-1 px-4 py-3 rounded-xl bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50"
+                                />
+                                <button
+                                    onClick={() => sendMessage(input)}
+                                    disabled={isLoading || !input.trim()}
+                                    className="px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                    </svg>
+                                </button>
                             </div>
-                        </>
-                    )}
 
-                    {/* フィードバックタブ */}
-                    {activeTab === "feedback" && (
-                        <div className="flex-1 overflow-y-auto p-4">
-                            {feedbackSent ? (
-                                <div className="text-center py-12">
-                                    <p className="text-5xl mb-4">✅</p>
-                                    <p className="text-lg text-white font-medium">送信しました！</p>
-                                    <p className="text-sm text-gray-400 mt-2">貴重なご意見をありがとうございます。</p>
+                            {/* フィードバックを送信ボタン */}
+                            {messages.length > 0 && (
+                                <div className="mt-2">
+                                    {chatFeedbackSent ? (
+                                        <p className="text-center text-sm text-green-400">✅ フィードバックを送信しました！</p>
+                                    ) : (
+                                        <button
+                                            onClick={sendChatAsFeedback}
+                                            disabled={isSendingFeedback}
+                                            className="w-full py-2 px-3 rounded-lg text-sm text-gray-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                                        >
+                                            <span>📩</span>
+                                            <span>{isSendingFeedback ? "送信中..." : "この会話をフィードバックとして送信"}</span>
+                                        </button>
+                                    )}
                                 </div>
-                            ) : (
-                                <>
-                                    <p className="text-sm text-gray-400 mb-4">
-                                        ご意見・ご要望をお聞かせください。開発チームに直接届きます。
-                                    </p>
+                            )}
 
-                                    {/* カテゴリ選択 */}
-                                    <div className="space-y-2 mb-4">
-                                        {(Object.keys(categoryLabels) as FeedbackCategory[]).map((cat) => (
-                                            <button
-                                                key={cat}
-                                                onClick={() => setFeedbackCategory(cat)}
-                                                className={`w-full py-3 px-4 rounded-xl text-left flex items-center gap-3 transition-colors ${feedbackCategory === cat
-                                                    ? "bg-indigo-500/20 border border-indigo-500/50 text-white"
-                                                    : "bg-zinc-800 border border-zinc-700 text-gray-400 hover:text-white"
-                                                    }`}
-                                            >
-                                                <span className="text-xl">{categoryLabels[cat].icon}</span>
-                                                <span className="font-medium">{categoryLabels[cat].label}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-
-                                    {/* メッセージ入力 */}
-                                    <textarea
-                                        value={feedbackMessage}
-                                        onChange={(e) => setFeedbackMessage(e.target.value)}
-                                        placeholder="詳細を入力してください..."
-                                        rows={4}
-                                        className="w-full px-4 py-3 rounded-xl bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
-                                    />
-
-                                    {/* エラーコンテキスト表示 */}
-                                    {errorContext && feedbackCategory === "error" && (
-                                        <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                                            <p className="text-xs text-red-400 mb-1">自動収集されたエラー情報:</p>
-                                            <p className="text-xs text-gray-400">{errorContext.errorMessage}</p>
+                            {/* エスカレーションセクション */}
+                            {messages.length >= 4 && !escalationSent && (
+                                <div className="mt-3 pt-3" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.05)" }}>
+                                    {!showEscalation ? (
+                                        <button
+                                            onClick={() => setShowEscalation(true)}
+                                            className="w-full py-2 px-3 rounded-lg text-sm text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <span>🆘</span>
+                                            <span>解決しない場合はメールでサポートを依頼</span>
+                                        </button>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <p className="text-xs text-gray-400">
+                                                メールアドレスを入力してください。サポートチームから直接ご連絡いたします。
+                                            </p>
+                                            <input
+                                                type="email"
+                                                value={userEmail}
+                                                onChange={(e) => setUserEmail(e.target.value)}
+                                                placeholder="your@email.com"
+                                                className="w-full px-3 py-2 rounded-lg bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-orange-500 text-sm"
+                                            />
+                                            <textarea
+                                                value={issueSummary}
+                                                onChange={(e) => setIssueSummary(e.target.value)}
+                                                placeholder="問題の概要（任意）"
+                                                rows={2}
+                                                className="w-full px-3 py-2 rounded-lg bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-orange-500 text-sm resize-none"
+                                            />
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => setShowEscalation(false)}
+                                                    className="flex-1 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-zinc-800 transition-colors"
+                                                >
+                                                    キャンセル
+                                                </button>
+                                                <button
+                                                    onClick={sendEscalation}
+                                                    disabled={!userEmail.trim() || isSendingEscalation}
+                                                    className="flex-1 py-2 rounded-lg text-sm text-white bg-gradient-to-r from-orange-500 to-red-500 hover:opacity-90 transition-opacity disabled:opacity-50"
+                                                >
+                                                    {isSendingEscalation ? "送信中..." : "サポートを依頼"}
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
+                                </div>
+                            )}
 
-                                    {/* 送信ボタン */}
-                                    <button
-                                        onClick={sendFeedback}
-                                        disabled={!feedbackMessage.trim() || isSendingFeedback}
-                                        className="w-full mt-4 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {isSendingFeedback ? "送信中..." : "送信する"}
-                                    </button>
-                                </>
+                            {/* エスカレーション完了メッセージ */}
+                            {escalationSent && (
+                                <div className="mt-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
+                                    <p className="text-sm text-green-400">✅ サポートチームにエスカレーションしました</p>
+                                    <p className="text-xs text-gray-400 mt-1">メールで回答いたします</p>
+                                </div>
                             )}
                         </div>
-                    )}
+                    </>
                 </div>
             )}
         </>
