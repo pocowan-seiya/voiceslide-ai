@@ -1419,6 +1419,42 @@ class SupportChatRequest(BaseModel):
     context: Optional[Dict[str, Any]] = None
     history: Optional[List[Dict[str, str]]] = None
 
+# FAQ Knowledge Base - loaded from file
+_faq_cache = {"content": None, "loaded_at": None}
+
+def load_support_faq() -> str:
+    """Load FAQ content from docs/support-faq.md with caching (refresh every 5 minutes)"""
+    import time
+    
+    now = time.time()
+    
+    # Return cached content if fresh (within 5 minutes)
+    if _faq_cache["content"] and _faq_cache["loaded_at"]:
+        if now - _faq_cache["loaded_at"] < 300:  # 5 minutes
+            return _faq_cache["content"]
+    
+    # Try to load from file
+    faq_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "docs", "support-faq.md"),
+        os.path.join(os.path.dirname(__file__), "docs", "support-faq.md"),
+        "/app/docs/support-faq.md",  # Docker/Railway path
+    ]
+    
+    for faq_path in faq_paths:
+        try:
+            if os.path.exists(faq_path):
+                with open(faq_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    _faq_cache["content"] = content
+                    _faq_cache["loaded_at"] = now
+                    print(f"[Support FAQ] Loaded from {faq_path}")
+                    return content
+        except Exception as e:
+            print(f"[Support FAQ] Failed to load {faq_path}: {e}")
+    
+    print("[Support FAQ] No FAQ file found, using fallback")
+    return ""
+
 SUPPORT_SYSTEM_PROMPT = """あなたはVoiSlide Movieのサポートアシスタントです。
 ユーザーがエラーや問題に遭遇した際に、丁寧で分かりやすいサポートを提供してください。
 
@@ -1432,26 +1468,16 @@ VoiSlide Movieは音声からスライド動画を自動生成するサービス
 5. スライド生成 (Gemini)
 6. 動画生成
 
-## よくあるエラーと対処法
+## 公式FAQ（以下の情報を優先して回答してください）
 
-### APIキー関連
-- 「APIキーを設定してください」→ 画面上部の「API設定」からOpenAI/GeminiのAPIキーを入力
-- 「API key not valid」→ Google AI Studio (https://aistudio.google.com/app/apikey) で新しいキーを発行
-
-### 処理エラー
-- 「Transcription failed」→ 音声ファイルの形式(MP3/WAV/M4A)を確認、ファイルが壊れていないか確認
-- 「Slide generation failed」→ 一時的なエラーの可能性、リトライを推奨
-- タイムアウト → 長い音声は処理に時間がかかります。しばらくお待ちください
-
-### システムエラー
-- サーバーが応答しない → Railway上でのサービス再起動が必要な場合があります
-- 500エラー → システム側の問題です。しばらく待ってから再試行してください
+{faq_content}
 
 ## 回答のルール
 1. 日本語で丁寧に回答
-2. 具体的な解決手順を提示
-3. システム側の問題の可能性がある場合は正直に伝える
-4. 不明な場合は開発チームへの問い合わせを案内"""
+2. 上記FAQに該当する内容があれば、その対応方法を案内
+3. 具体的な解決手順を提示
+4. システム側の問題の可能性がある場合は正直に伝える
+5. 不明な場合は開発チームへの問い合わせを案内"""
 
 @app.post("/support/chat")
 async def support_chat(
@@ -1489,8 +1515,12 @@ async def support_chat(
         
         messages.append(f"user: {user_message}")
         
+        # Load FAQ and inject into prompt
+        faq_content = load_support_faq()
+        system_prompt = SUPPORT_SYSTEM_PROMPT.format(faq_content=faq_content if faq_content else "(FAQファイルが見つかりません)")
+        
         # Generate response
-        prompt = f"{SUPPORT_SYSTEM_PROMPT}\n\n## 会話履歴\n" + "\n".join(messages) + "\n\nassistant:"
+        prompt = f"{system_prompt}\n\n## 会話履歴\n" + "\n".join(messages) + "\n\nassistant:"
         
         response = model.generate_content(prompt)
         reply = response.text.strip()
