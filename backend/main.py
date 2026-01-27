@@ -1593,6 +1593,88 @@ async def submit_feedback(request: FeedbackRequest):
     }
 
 
+# ========== Support Escalation ==========
+
+class EscalationRequest(BaseModel):
+    user_email: str
+    conversation: List[Dict[str, str]]
+    context: Optional[Dict[str, Any]] = None
+    issue_summary: Optional[str] = None
+
+@app.post("/support/escalate")
+async def escalate_to_email(request: EscalationRequest):
+    """Escalate support issue to email when AI can't resolve"""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    smtp_host = os.environ.get("SMTP_HOST")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_pass = os.environ.get("SMTP_PASS")
+    notify_email = os.environ.get("NOTIFY_EMAIL")
+    
+    if not all([smtp_host, smtp_user, smtp_pass, notify_email]):
+        return {"success": False, "message": "メール設定が未完了です"}
+    
+    # Format conversation
+    conversation_text = "\n\n".join([
+        f"[{'ユーザー' if m.get('role') == 'user' else 'AI'}]\n{m.get('content', '')}"
+        for m in request.conversation
+    ])
+    
+    # Build email
+    subject = f"[VoiSlide] 🆘 サポートエスカレーション"
+    
+    body = f"""VoiSlideのサポートチャットからエスカレーションがありました。
+
+■ ユーザーメールアドレス: {request.user_email}
+
+■ 問題の概要:
+{request.issue_summary or "（未入力）"}
+"""
+    
+    if request.context:
+        body += f"""
+■ エラーコンテキスト:
+- ステップ: {request.context.get('step', '不明')}
+- エラー: {request.context.get('errorMessage', 'なし')}
+- モード: {request.context.get('workflowMode', '不明')}
+- 時刻: {request.context.get('timestamp', '不明')}
+"""
+    
+    body += f"""
+■ 会話履歴:
+{conversation_text}
+
+---
+このメールに返信すると、ユーザー（{request.user_email}）に直接届きます。
+"""
+    
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = smtp_user
+        msg["To"] = notify_email
+        msg["Reply-To"] = request.user_email  # Reply goes to user
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        
+        print(f"[Escalation] Email sent for: {request.user_email}")
+        return {
+            "success": True, 
+            "message": "サポートチームにエスカレーションしました。メールで回答いたします。"
+        }
+        
+    except Exception as e:
+        print(f"[Escalation] Email failed: {e}")
+        return {"success": False, "message": "エスカレーションに失敗しました"}
+
+
 if __name__ == "__main__":
     import uvicorn
     from config import HOST, PORT

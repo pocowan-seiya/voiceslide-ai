@@ -41,6 +41,13 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
     const [isSendingFeedback, setIsSendingFeedback] = useState(false);
     const [chatFeedbackSent, setChatFeedbackSent] = useState(false);
 
+    // Escalation state
+    const [showEscalation, setShowEscalation] = useState(false);
+    const [userEmail, setUserEmail] = useState("");
+    const [issueSummary, setIssueSummary] = useState("");
+    const [escalationSent, setEscalationSent] = useState(false);
+    const [isSendingEscalation, setIsSendingEscalation] = useState(false);
+
     // エラーコンテキストが変わったら通知
     useEffect(() => {
         if (errorContext?.errorMessage) {
@@ -178,6 +185,37 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
             console.error("Chat feedback send failed");
         } finally {
             setIsSendingFeedback(false);
+        }
+    };
+
+    const sendEscalation = async () => {
+        if (!userEmail.trim()) return;
+
+        setIsSendingEscalation(true);
+
+        try {
+            const response = await fetch(`${apiUrl}/support/escalate`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    user_email: userEmail,
+                    conversation: messages.map((m) => ({ role: m.role, content: m.content })),
+                    context: errorContext,
+                    issue_summary: issueSummary,
+                }),
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                setEscalationSent(true);
+                setShowEscalation(false);
+            }
+        } catch {
+            console.error("Escalation failed");
+        } finally {
+            setIsSendingEscalation(false);
         }
     };
 
@@ -381,6 +419,64 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
                                                 <span>{isSendingFeedback ? "送信中..." : "この会話をフィードバックとして送信"}</span>
                                             </button>
                                         )}
+                                    </div>
+                                )}
+
+                                {/* エスカレーションセクション */}
+                                {messages.length >= 4 && !escalationSent && (
+                                    <div className="mt-3 pt-3" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.05)" }}>
+                                        {!showEscalation ? (
+                                            <button
+                                                onClick={() => setShowEscalation(true)}
+                                                className="w-full py-2 px-3 rounded-lg text-sm text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <span>🆘</span>
+                                                <span>解決しない場合はメールでサポートを依頼</span>
+                                            </button>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-gray-400">
+                                                    メールアドレスを入力してください。サポートチームから直接ご連絡いたします。
+                                                </p>
+                                                <input
+                                                    type="email"
+                                                    value={userEmail}
+                                                    onChange={(e) => setUserEmail(e.target.value)}
+                                                    placeholder="your@email.com"
+                                                    className="w-full px-3 py-2 rounded-lg bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-orange-500 text-sm"
+                                                />
+                                                <textarea
+                                                    value={issueSummary}
+                                                    onChange={(e) => setIssueSummary(e.target.value)}
+                                                    placeholder="問題の概要（任意）"
+                                                    rows={2}
+                                                    className="w-full px-3 py-2 rounded-lg bg-zinc-800 text-white placeholder-gray-500 border border-zinc-700 focus:outline-none focus:border-orange-500 text-sm resize-none"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => setShowEscalation(false)}
+                                                        className="flex-1 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-zinc-800 transition-colors"
+                                                    >
+                                                        キャンセル
+                                                    </button>
+                                                    <button
+                                                        onClick={sendEscalation}
+                                                        disabled={!userEmail.trim() || isSendingEscalation}
+                                                        className="flex-1 py-2 rounded-lg text-sm text-white bg-gradient-to-r from-orange-500 to-red-500 hover:opacity-90 transition-opacity disabled:opacity-50"
+                                                    >
+                                                        {isSendingEscalation ? "送信中..." : "サポートを依頼"}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* エスカレーション完了メッセージ */}
+                                {escalationSent && (
+                                    <div className="mt-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
+                                        <p className="text-sm text-green-400">✅ サポートチームにエスカレーションしました</p>
+                                        <p className="text-xs text-gray-400 mt-1">メールで回答いたします</p>
                                     </div>
                                 )}
                             </div>
