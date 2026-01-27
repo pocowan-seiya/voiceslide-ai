@@ -16,6 +16,10 @@ import google.generativeai as genai
 
 from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
 
+# Global semaphore to limit concurrent browser instances
+# Railway Pro Plan (32GB RAM, 32 vCPU) - safe limit for stability
+BROWSER_SEMAPHORE = asyncio.Semaphore(10)  # Increased for Pro Plan capacity
+
 def update_html_text_content(html: str, new_copy: Dict[str, Any]) -> str:
     """
     Update text content in existing HTML using BeautifulSoup to preserve layout perfectly.
@@ -52,6 +56,7 @@ def update_html_text_content(html: str, new_copy: Dict[str, Any]) -> str:
     except Exception as e:
         print(f"[DOM Update Error] {e}")
         return html  # Fallback to original if parsing fails
+
 
 
 # =============================================================================
@@ -1975,6 +1980,7 @@ async def generate_all_custom_slides(
     """
     Generate all slides using the AI Design Architect approach
     """
+    print(f"[DEBUG] generate_all_custom_slides called for job {job_id}")
     import os
     from playwright.async_api import async_playwright
     from config import OUTPUT_DIR
@@ -2081,8 +2087,11 @@ async def generate_all_custom_slides(
         if os.path.exists(existing_path):
             image_paths.append(existing_path)
     
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
+    print(f"[DEBUG] Waiting for BROWSER_SEMAPHORE (current value: {BROWSER_SEMAPHORE._value})")
+    async with BROWSER_SEMAPHORE, async_playwright() as p:
+        print(f"[DEBUG] BROWSER_SEMAPHORE acquired, launching browser...")
+        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+        print(f"[DEBUG] Browser launched successfully")
         
         for i, slide in enumerate(slides):
             slide_number = i + 1
@@ -2336,7 +2345,7 @@ Concept to illustrate: """
                         except:
                             pass
                         await asyncio.sleep(1)
-                        browser = await p.chromium.launch()
+                        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
                         page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
                     
                     await page.set_content(html)
@@ -2361,7 +2370,7 @@ Concept to illustrate: """
                         except:
                             pass
                         await asyncio.sleep(1)
-                        browser = await p.chromium.launch()
+                        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
                         print(f"[Browser] Restarted for retry {render_attempt + 2}")
             
             if not render_success:
@@ -3225,8 +3234,8 @@ async def regenerate_slide_with_feedback(
         # Render new version
         slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
         
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
+        async with BROWSER_SEMAPHORE, async_playwright() as p:
+            browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
             page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
             await page.set_content(new_html)
             await page.wait_for_timeout(1500)
