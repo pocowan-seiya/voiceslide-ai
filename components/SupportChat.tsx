@@ -39,6 +39,7 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
     const [feedbackMessage, setFeedbackMessage] = useState("");
     const [feedbackSent, setFeedbackSent] = useState(false);
     const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+    const [chatFeedbackSent, setChatFeedbackSent] = useState(false);
 
     // エラーコンテキストが変わったら通知
     useEffect(() => {
@@ -146,6 +147,40 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
         }
     };
 
+    const sendChatAsFeedback = async () => {
+        if (messages.length === 0) return;
+
+        setIsSendingFeedback(true);
+
+        // Format conversation for email
+        const conversationText = messages
+            .map((m) => `[${m.role === "user" ? "ユーザー" : "AI"}] ${m.content}`)
+            .join("\n\n");
+
+        try {
+            const response = await fetch(`${apiUrl}/support/feedback`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    category: "feedback",
+                    message: `【チャット会話からのフィードバック】\n\n${conversationText}`,
+                    context: errorContext,
+                }),
+            });
+
+            if (response.ok) {
+                setChatFeedbackSent(true);
+                setTimeout(() => setChatFeedbackSent(false), 3000);
+            }
+        } catch {
+            console.error("Chat feedback send failed");
+        } finally {
+            setIsSendingFeedback(false);
+        }
+    };
+
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -241,8 +276,8 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
                             <button
                                 onClick={() => setActiveTab("chat")}
                                 className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab === "chat"
-                                        ? "bg-indigo-500/30 text-indigo-300"
-                                        : "text-gray-400 hover:text-gray-300"
+                                    ? "bg-indigo-500/30 text-indigo-300"
+                                    : "text-gray-400 hover:text-gray-300"
                                     }`}
                             >
                                 💬 チャット
@@ -250,8 +285,8 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
                             <button
                                 onClick={() => setActiveTab("feedback")}
                                 className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab === "feedback"
-                                        ? "bg-indigo-500/30 text-indigo-300"
-                                        : "text-gray-400 hover:text-gray-300"
+                                    ? "bg-indigo-500/30 text-indigo-300"
+                                    : "text-gray-400 hover:text-gray-300"
                                     }`}
                             >
                                 📩 フィードバック
@@ -330,6 +365,24 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
                                         </svg>
                                     </button>
                                 </div>
+
+                                {/* フィードバックを送信ボタン */}
+                                {messages.length > 0 && (
+                                    <div className="mt-2">
+                                        {chatFeedbackSent ? (
+                                            <p className="text-center text-sm text-green-400">✅ フィードバックを送信しました！</p>
+                                        ) : (
+                                            <button
+                                                onClick={sendChatAsFeedback}
+                                                disabled={isSendingFeedback}
+                                                className="w-full py-2 px-3 rounded-lg text-sm text-gray-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                                            >
+                                                <span>📩</span>
+                                                <span>{isSendingFeedback ? "送信中..." : "この会話をフィードバックとして送信"}</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </>
                     )}
@@ -356,8 +409,8 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
                                                 key={cat}
                                                 onClick={() => setFeedbackCategory(cat)}
                                                 className={`w-full py-3 px-4 rounded-xl text-left flex items-center gap-3 transition-colors ${feedbackCategory === cat
-                                                        ? "bg-indigo-500/20 border border-indigo-500/50 text-white"
-                                                        : "bg-zinc-800 border border-zinc-700 text-gray-400 hover:text-white"
+                                                    ? "bg-indigo-500/20 border border-indigo-500/50 text-white"
+                                                    : "bg-zinc-800 border border-zinc-700 text-gray-400 hover:text-white"
                                                     }`}
                                             >
                                                 <span className="text-xl">{categoryLabels[cat].icon}</span>
