@@ -1149,6 +1149,7 @@ async def generate_all_custom_slides(
     """
     Generate all slides using the AI Design Architect approach
     """
+    print(f"[DEBUG] generate_all_custom_slides called for job {job_id}")
     import os
     from playwright.async_api import async_playwright
     from config import OUTPUT_DIR
@@ -1255,8 +1256,11 @@ async def generate_all_custom_slides(
         if os.path.exists(existing_path):
             image_paths.append(existing_path)
     
+    print(f"[DEBUG] Waiting for BROWSER_SEMAPHORE (current value: {BROWSER_SEMAPHORE._value})")
     async with BROWSER_SEMAPHORE, async_playwright() as p:
+        print(f"[DEBUG] BROWSER_SEMAPHORE acquired, launching browser...")
         browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+        print(f"[DEBUG] Browser launched successfully")
         
         for i, slide in enumerate(slides):
             slide_number = i + 1
