@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, DragEvent, useEffect } from "react";
+import { useState, useCallback, DragEvent, useEffect, useMemo } from "react";
 import { Header } from "@/components/Header";
 import { APIKeysSettings, getAPIKeys, hasAPIKeys } from "@/components/APIKeysSettings";
+import { SupportChat } from "@/components/SupportChat";
 
 // 本番環境：Frontend (Next.js) + Backend (FastAPI) を別々にデプロイ
 // NEXT_PUBLIC_API_URL 環境変数でバックエンドURLを指定
@@ -116,6 +117,22 @@ export default function Home() {
   const [editedTranscript, setEditedTranscript] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [hasKeys, setHasKeys] = useState(false);
+
+  // Support chat error context
+  const errorContext = useMemo(() => {
+    if (!state.error) return undefined;
+    const stepLabels: { [key: number]: string } = {
+      1: "audio_upload", 2: "transcribe", 3: "polish_transcript",
+      4: "generate_outline", 5: "generate_slides", 6: "generate_video",
+      7: "user_slides", 8: "upload_slides", 9: "ai_mapping", 10: "generate_video"
+    };
+    return {
+      step: stepLabels[state.step] || `step_${state.step}`,
+      errorMessage: state.error,
+      workflowMode: state.workflowMode || "unknown",
+      timestamp: new Date().toISOString()
+    };
+  }, [state.error, state.step, state.workflowMode]);
 
   // Slide feedback editing
   const [selectedSlide, setSelectedSlide] = useState<number | null>(null);
@@ -2473,7 +2490,14 @@ export default function Home() {
             </div>
           )}
         </div>
-      </main >
-    </div >
+      </main>
+
+      {/* AI Support Chat Widget */}
+      <SupportChat
+        errorContext={errorContext}
+        apiUrl={API_URL}
+        geminiKey={getAPIKeys().gemini}
+      />
+    </div>
   );
 }

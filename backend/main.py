@@ -1397,6 +1397,202 @@ async def concat_video_endpoint(
         raise HTTPException(500, f"動画結合エラー: {str(e)}")
 
 
+# ========== AI Support Chat ==========
+
+class SupportChatRequest(BaseModel):
+    message: str
+    context: Optional[Dict[str, Any]] = None
+    history: Optional[List[Dict[str, str]]] = None
+
+SUPPORT_SYSTEM_PROMPT = """あなたはVoiSlide Movieのサポートアシスタントです。
+ユーザーがエラーや問題に遭遇した際に、丁寧で分かりやすいサポートを提供してください。
+
+## VoiSlide Movieについて
+VoiSlide Movieは音声からスライド動画を自動生成するサービスです。
+主なステップ:
+1. 音声アップロード
+2. 文字起こし (OpenAI Whisper)
+3. ブラッシュアップ (Gemini)
+4. アウトライン生成 (Gemini)
+5. スライド生成 (Gemini)
+6. 動画生成
+
+## よくあるエラーと対処法
+
+### APIキー関連
+- 「APIキーを設定してください」→ 画面上部の「API設定」からOpenAI/GeminiのAPIキーを入力
+- 「API key not valid」→ Google AI Studio (https://aistudio.google.com/app/apikey) で新しいキーを発行
+
+### 処理エラー
+- 「Transcription failed」→ 音声ファイルの形式(MP3/WAV/M4A)を確認、ファイルが壊れていないか確認
+- 「Slide generation failed」→ 一時的なエラーの可能性、リトライを推奨
+- タイムアウト → 長い音声は処理に時間がかかります。しばらくお待ちください
+
+### システムエラー
+- サーバーが応答しない → Railway上でのサービス再起動が必要な場合があります
+- 500エラー → システム側の問題です。しばらく待ってから再試行してください
+
+## 回答のルール
+1. 日本語で丁寧に回答
+2. 具体的な解決手順を提示
+3. システム側の問題の可能性がある場合は正直に伝える
+4. 不明な場合は開発チームへの問い合わせを案内"""
+
+@app.post("/support/chat")
+async def support_chat(
+    request: SupportChatRequest,
+    x_gemini_key: Optional[str] = Header(None)
+):
+    """AI-powered support chat using Gemini"""
+    import google.generativeai as genai
+    
+    # Get API key from header or environment
+    gemini_key = x_gemini_key or os.environ.get("GEMINI_API_KEY")
+    
+    if not gemini_key:
+        return {
+            "reply": "申し訳ございません。サポートチャットを利用するにはGemini APIキーが必要です。\n\n画面上部の「API設定」からGemini APIキーを設定してください。\n\nAPIキーは https://aistudio.google.com/app/apikey で無料で取得できます。"
+        }
+    
+    try:
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        
+        # Build conversation context
+        messages = []
+        
+        # Add history
+        if request.history:
+            for msg in request.history[-10:]:  # Last 10 messages for context
+                messages.append(f"{msg['role']}: {msg['content']}")
+        
+        # Add current message with context
+        user_message = request.message
+        if request.context:
+            context_str = f"\n\n[エラーコンテキスト]\nステップ: {request.context.get('step', '不明')}\nエラー: {request.context.get('errorMessage', '不明')}\nモード: {request.context.get('workflowMode', '不明')}"
+            user_message += context_str
+        
+        messages.append(f"user: {user_message}")
+        
+        # Generate response
+        prompt = f"{SUPPORT_SYSTEM_PROMPT}\n\n## 会話履歴\n" + "\n".join(messages) + "\n\nassistant:"
+        
+        response = model.generate_content(prompt)
+        reply = response.text.strip()
+        
+        return {"reply": reply}
+        
+    except Exception as e:
+        error_str = str(e)
+        print(f"[Support Chat] Error: {error_str}")
+        
+        # Provide helpful error messages
+        if "API key not valid" in error_str or "API_KEY_INVALID" in error_str:
+            return {
+                "reply": "Gemini APIキーが無効です。\n\n以下をご確認ください:\n1. Google AI Studio (https://aistudio.google.com/app/apikey) でキーが有効か確認\n2. 「API設定」から正しいキーを再入力\n\n新しいキーを発行して再度お試しください。"
+            }
+        elif "quota" in error_str.lower():
+            return {
+                "reply": "APIの利用制限に達しました。\n\nしばらく時間をおいてから再度お試しください。または、Google Cloud Consoleで利用上限を確認してください。"
+            }
+        else:
+            return {
+                "reply": f"一時的にサポートに接続できませんでした。\n\nしばらくしてから再度お試しいただくか、以下のエラー情報を開発チームにお伝えください:\n\n```\n{error_str[:200]}\n```"
+            }
+
+
+# ========== Feedback Email Notification ==========
+
+class FeedbackRequest(BaseModel):
+    category: str  # "error", "request", "feedback"
+    message: str
+    context: Optional[Dict[str, Any]] = None
+
+def send_feedback_email(category: str, message: str, context: Optional[Dict[str, Any]] = None) -> bool:
+    """Send feedback notification email via SMTP"""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    smtp_host = os.environ.get("SMTP_HOST")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_pass = os.environ.get("SMTP_PASS")
+    notify_email = os.environ.get("NOTIFY_EMAIL")
+    
+    if not all([smtp_host, smtp_user, smtp_pass, notify_email]):
+        print("[Feedback] SMTP not configured, skipping email")
+        return False
+    
+    # Category labels
+    category_labels = {
+        "error": "🚨 エラー報告",
+        "request": "💡 機能リクエスト",
+        "feedback": "📝 フィードバック"
+    }
+    category_label = category_labels.get(category, "📩 お問い合わせ")
+    
+    # Build email
+    subject = f"[VoiSlide] {category_label}"
+    
+    body = f"""VoiSlide Movieからフィードバックがありました。
+
+■ カテゴリ: {category_label}
+
+■ 内容:
+{message}
+"""
+    
+    if context:
+        body += f"""
+■ コンテキスト:
+- ステップ: {context.get('step', '不明')}
+- エラー: {context.get('errorMessage', 'なし')}
+- モード: {context.get('workflowMode', '不明')}
+- 時刻: {context.get('timestamp', '不明')}
+"""
+    
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = smtp_user
+        msg["To"] = notify_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        
+        print(f"[Feedback] Email sent: {category}")
+        return True
+        
+    except Exception as e:
+        print(f"[Feedback] Email failed: {e}")
+        return False
+
+@app.post("/support/feedback")
+async def submit_feedback(request: FeedbackRequest):
+    """Submit user feedback with email notification"""
+    
+    # Validate category
+    if request.category not in ["error", "request", "feedback"]:
+        raise HTTPException(400, "Invalid category")
+    
+    # Send email notification
+    email_sent = send_feedback_email(
+        category=request.category,
+        message=request.message,
+        context=request.context
+    )
+    
+    return {
+        "success": True,
+        "email_sent": email_sent,
+        "message": "フィードバックを送信しました。ありがとうございます！"
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     from config import HOST, PORT
