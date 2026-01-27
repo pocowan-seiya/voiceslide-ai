@@ -1651,18 +1651,20 @@ export default function Home() {
                                       </div>
                                     </button>
 
-                                    {/* イラスト再生成 */}
-                                    <button
-                                      onClick={() => handleSlideFeedback('image')}
-                                      disabled={isRegenerating}
-                                      className="group relative overflow-hidden bg-gradient-to-br from-pink-600/20 to-pink-700/30 hover:from-pink-500/30 hover:to-pink-600/40 border border-pink-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                                    >
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span className="text-lg">🎨</span>
-                                        <span className="font-medium">イラスト</span>
-                                        <span className="text-[10px] text-pink-300/70">画像だけ変更</span>
-                                      </div>
-                                    </button>
+                                    {/* イラスト再生成（イラストモード時のみ表示） */}
+                                    {addIllustrations && (
+                                      <button
+                                        onClick={() => handleSlideFeedback('image')}
+                                        disabled={isRegenerating}
+                                        className="group relative overflow-hidden bg-gradient-to-br from-pink-600/20 to-pink-700/30 hover:from-pink-500/30 hover:to-pink-600/40 border border-pink-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                      >
+                                        <div className="flex flex-col items-center gap-1">
+                                          <span className="text-lg">🎨</span>
+                                          <span className="font-medium">イラスト</span>
+                                          <span className="text-[10px] text-pink-300/70">画像だけ変更</span>
+                                        </div>
+                                      </button>
+                                    )}
                                   </div>
 
                                   <div className="flex gap-2 mt-2">
@@ -2339,40 +2341,69 @@ export default function Home() {
                       placeholder="修正したい内容を入力..."
                       className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
                     />
-                    <div className="grid grid-cols-2 gap-2 mb-2">
+
+                    {/* メイン編集ボタン（新デザイン） */}
+                    <p className="text-xs text-zinc-500 mb-3 flex items-center gap-2">
+                      <span className="text-amber-400">💡</span>
+                      編集したい項目を選んでください
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      {/* テキスト編集 */}
                       <button
                         onClick={() => handleSlideFeedback('copy')}
                         disabled={isRegenerating || !slideFeedback.trim()}
-                        className="bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                        title="画像とレイアウトはそのままで、テキストのみ修正します"
+                        className="group relative overflow-hidden bg-gradient-to-br from-emerald-600/20 to-emerald-700/30 hover:from-emerald-500/30 hover:to-emerald-600/40 border border-emerald-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        📝 コピー再生成
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-lg">📝</span>
+                          <span className="font-medium">テキスト</span>
+                          <span className="text-[10px] text-emerald-300/70">文字だけ修正</span>
+                        </div>
                       </button>
+
+                      {/* レイアウト編集 */}
                       <button
                         onClick={() => handleSlideFeedback('layout')}
                         disabled={isRegenerating || !slideFeedback.trim()}
-                        className="bg-blue-600/80 hover:bg-blue-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                        title="テキストと画像はそのままで、配置のみ修正します"
+                        className="group relative overflow-hidden bg-gradient-to-br from-blue-600/20 to-blue-700/30 hover:from-blue-500/30 hover:to-blue-600/40 border border-blue-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        📐 レイアウトのみ
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-lg">📐</span>
+                          <span className="font-medium">レイアウト</span>
+                          <span className="text-[10px] text-blue-300/70">配置を変更</span>
+                        </div>
                       </button>
+
+                      {/* 全体再生成 */}
                       <button
                         onClick={() => handleSlideFeedback('general')}
                         disabled={isRegenerating || !slideFeedback.trim()}
-                        className="bg-purple-600/80 hover:bg-purple-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                        title="画像はそのままで、レイアウトとテキストを修正します"
+                        className="group relative overflow-hidden bg-gradient-to-br from-purple-600/20 to-purple-700/30 hover:from-purple-500/30 hover:to-purple-600/40 border border-purple-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        ✨ レイアウト&コピー
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-lg">✨</span>
+                          <span className="font-medium">全体</span>
+                          <span className="text-[10px] text-purple-300/70">テキスト+配置</span>
+                        </div>
                       </button>
-                      <button
-                        onClick={() => handleSlideFeedback('image')}
-                        disabled={isRegenerating}
-                        className="bg-pink-600/80 hover:bg-pink-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                        title="レイアウトとテキストはそのままで、画像のみ再生成します"
-                      >
-                        🎨 画像再生成
-                      </button>
+
+                      {/* イラスト再生成（イラストモード時のみ表示） */}
+                      {addIllustrations && (
+                        <button
+                          onClick={() => handleSlideFeedback('image')}
+                          disabled={isRegenerating}
+                          className="group relative overflow-hidden bg-gradient-to-br from-pink-600/20 to-pink-700/30 hover:from-pink-500/30 hover:to-pink-600/40 border border-pink-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-lg">🎨</span>
+                            <span className="font-medium">イラスト</span>
+                            <span className="text-[10px] text-pink-300/70">画像だけ変更</span>
+                          </div>
+                        </button>
+                      )}
                     </div>
+
                     <div className="flex justify-end">
                       <button
                         onClick={() => {
