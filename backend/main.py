@@ -36,6 +36,7 @@ cors_origins = [
     "http://127.0.0.1:8000",
     "https://voiceslide-ai-development.up.railway.app",
     "https://voiceslide-ai-production.up.railway.app",
+    "https://backend-api-development-58ec.up.railway.app",
     "https://voiceslide.movie",
 ]
 # Add custom origins from environment variable
