@@ -224,7 +224,7 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
         model_name = get_available_gemini_model(key)
         print(f"[Polish] Using model: {model_name}")
         
-        prompt = f\"\"\"以下の文字起こしテキストを読みやすく整形してください。
+        prompt = f"""以下の文字起こしテキストを読みやすく整形してください。
     
 要件:
 - 「えー」「あー」などのフィラーを削除
@@ -236,7 +236,7 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
 元のテキスト:
 {text}
 
-整形後:\"\"\"
+整形後:"""
         
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(prompt)
