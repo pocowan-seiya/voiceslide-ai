@@ -1536,6 +1536,7 @@ def send_discord_notification(category: str, message: str, context: Optional[Dic
     category_label = category_labels.get(category, "📩 お問い合わせ")
     
     # Build Discord embed
+    from datetime import timezone
     embed = {
         "title": f"{category_label}",
         "description": message[:2000] if message else "(内容なし)",
@@ -1544,20 +1545,20 @@ def send_discord_notification(category: str, message: str, context: Optional[Dic
             "request": 0xFFAA00,    # Orange
             "feedback": 0x00AAFF    # Blue
         }.get(category, 0x888888),
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "footer": {"text": "VoiSlide Movie"}
     }
     
     # Add context fields if available
     if context:
         embed["fields"] = [
-            {"name": "ステップ", "value": context.get("step", "不明"), "inline": True},
-            {"name": "モード", "value": context.get("workflowMode", "不明"), "inline": True},
+            {"name": "ステップ", "value": str(context.get("step") or "不明"), "inline": True},
+            {"name": "モード", "value": str(context.get("workflowMode") or "不明"), "inline": True},
         ]
         if context.get("errorMessage"):
             embed["fields"].append({
                 "name": "エラー内容",
-                "value": f"```{context.get('errorMessage', '')[:500]}```",
+                "value": f"```{str(context.get('errorMessage', ''))[:500]}```",
                 "inline": False
             })
     
