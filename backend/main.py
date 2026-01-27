@@ -1691,7 +1691,71 @@ class EscalationRequest(BaseModel):
 
 @app.post("/support/escalate")
 async def escalate_to_email(request: EscalationRequest):
-    """Escalate support issue to email when AI can't resolve"""
+    """Escalate support issue via Discord (primary) or email (fallback)"""
+    import httpx
+    from datetime import timezone
+    
+    # Format conversation for display
+    conversation_text = "\n".join([
+        f"**{'ユーザー' if m.get('role') == 'user' else 'AI'}**: {m.get('content', '')[:200]}"
+        for m in request.conversation[-5:]  # Last 5 messages
+    ])
+    
+    # Try Discord first
+    discord_webhook = os.environ.get("DISCORD_WEBHOOK_URL")
+    
+    if discord_webhook:
+        try:
+            embed = {
+                "title": "🆘 サポートエスカレーション",
+                "description": f"**問題の概要:**\n{request.issue_summary or '（未入力）'}",
+                "color": 0xFF4444,  # Red for urgency
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "footer": {"text": "VoiSlide Movie"},
+                "fields": [
+                    {"name": "📧 ユーザーメール", "value": request.user_email, "inline": True},
+                ]
+            }
+            
+            # Add context if available
+            if request.context:
+                embed["fields"].append({
+                    "name": "📍 コンテキスト",
+                    "value": f"ステップ: {request.context.get('step', '不明')}\nモード: {request.context.get('workflowMode', '不明')}",
+                    "inline": True
+                })
+                if request.context.get('errorMessage'):
+                    embed["fields"].append({
+                        "name": "⚠️ エラー",
+                        "value": f"```{str(request.context.get('errorMessage', ''))[:300]}```",
+                        "inline": False
+                    })
+            
+            # Add conversation summary
+            if conversation_text:
+                embed["fields"].append({
+                    "name": "💬 会話履歴（直近5件）",
+                    "value": conversation_text[:1000],
+                    "inline": False
+                })
+            
+            response = httpx.post(
+                discord_webhook,
+                json={"embeds": [embed]},
+                timeout=10.0
+            )
+            
+            if response.status_code in [200, 204]:
+                print(f"[Escalation] Discord notification sent for: {request.user_email}")
+                return {
+                    "success": True, 
+                    "message": "サポートチームに通知しました。メールで回答いたします。"
+                }
+                
+        except Exception as e:
+            print(f"[Escalation] Discord failed: {e}")
+    
+    # Fallback to email if Discord fails or not configured
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
@@ -1703,15 +1767,15 @@ async def escalate_to_email(request: EscalationRequest):
     notify_email = os.environ.get("NOTIFY_EMAIL")
     
     if not all([smtp_host, smtp_user, smtp_pass, notify_email]):
-        return {"success": False, "message": "メール設定が未完了です"}
+        print("[Escalation] Neither Discord nor SMTP configured")
+        return {"success": False, "message": "通知設定が未完了です。しばらくお待ちください。"}
     
-    # Format conversation
-    conversation_text = "\n\n".join([
+    # Format full conversation for email
+    full_conversation = "\n\n".join([
         f"[{'ユーザー' if m.get('role') == 'user' else 'AI'}]\n{m.get('content', '')}"
         for m in request.conversation
     ])
     
-    # Build email
     subject = f"[VoiSlide] 🆘 サポートエスカレーション"
     
     body = f"""VoiSlideのサポートチャットからエスカレーションがありました。
@@ -1733,7 +1797,7 @@ async def escalate_to_email(request: EscalationRequest):
     
     body += f"""
 ■ 会話履歴:
-{conversation_text}
+{full_conversation}
 
 ---
 このメールに返信すると、ユーザー（{request.user_email}）に直接届きます。
@@ -1743,7 +1807,7 @@ async def escalate_to_email(request: EscalationRequest):
         msg = MIMEMultipart()
         msg["From"] = smtp_user
         msg["To"] = notify_email
-        msg["Reply-To"] = request.user_email  # Reply goes to user
+        msg["Reply-To"] = request.user_email
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain", "utf-8"))
         
