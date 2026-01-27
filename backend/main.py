@@ -1514,8 +1514,70 @@ async def support_chat(
                 "reply": f"一時的にサポートに接続できませんでした。\n\nしばらくしてから再度お試しいただくか、以下のエラー情報を開発チームにお伝えください:\n\n```\n{error_str[:200]}\n```"
             }
 
+# ========== Feedback Notification ==========
 
-# ========== Feedback Email Notification ==========
+def send_discord_notification(category: str, message: str, context: Optional[Dict[str, Any]] = None) -> bool:
+    """Send feedback notification to Discord via webhook"""
+    import httpx
+    
+    discord_webhook = os.environ.get("DISCORD_WEBHOOK_URL")
+    
+    if not discord_webhook:
+        print("[Feedback] Discord webhook not configured, skipping")
+        return False
+    
+    # Category labels with emoji
+    category_labels = {
+        "error": "🚨 エラー報告",
+        "request": "💡 機能リクエスト",
+        "feedback": "📝 フィードバック"
+    }
+    category_label = category_labels.get(category, "📩 お問い合わせ")
+    
+    # Build Discord embed
+    embed = {
+        "title": f"{category_label}",
+        "description": message[:2000] if message else "(内容なし)",
+        "color": {
+            "error": 0xFF4444,      # Red
+            "request": 0xFFAA00,    # Orange
+            "feedback": 0x00AAFF    # Blue
+        }.get(category, 0x888888),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "footer": {"text": "VoiSlide Movie"}
+    }
+    
+    # Add context fields if available
+    if context:
+        embed["fields"] = [
+            {"name": "ステップ", "value": context.get("step", "不明"), "inline": True},
+            {"name": "モード", "value": context.get("workflowMode", "不明"), "inline": True},
+        ]
+        if context.get("errorMessage"):
+            embed["fields"].append({
+                "name": "エラー内容",
+                "value": f"```{context.get('errorMessage', '')[:500]}```",
+                "inline": False
+            })
+    
+    try:
+        response = httpx.post(
+            discord_webhook,
+            json={"embeds": [embed]},
+            timeout=10.0
+        )
+        
+        if response.status_code in [200, 204]:
+            print(f"[Feedback] Discord notification sent: {category}")
+            return True
+        else:
+            print(f"[Feedback] Discord error: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"[Feedback] Discord notification failed: {e}")
+        return False
+
 
 class FeedbackRequest(BaseModel):
     category: str  # "error", "request", "feedback"
@@ -1587,21 +1649,31 @@ def send_feedback_email(category: str, message: str, context: Optional[Dict[str,
 
 @app.post("/support/feedback")
 async def submit_feedback(request: FeedbackRequest):
-    """Submit user feedback with email notification"""
+    """Submit user feedback with Discord and email notification"""
     
     # Validate category
     if request.category not in ["error", "request", "feedback"]:
         raise HTTPException(400, "Invalid category")
     
-    # Send email notification
-    email_sent = send_feedback_email(
+    # Try Discord notification first (preferred)
+    discord_sent = send_discord_notification(
         category=request.category,
         message=request.message,
         context=request.context
     )
     
+    # Fallback to email if Discord fails
+    email_sent = False
+    if not discord_sent:
+        email_sent = send_feedback_email(
+            category=request.category,
+            message=request.message,
+            context=request.context
+        )
+    
     return {
         "success": True,
+        "discord_sent": discord_sent,
         "email_sent": email_sent,
         "message": "フィードバックを送信しました。ありがとうございます！"
     }
