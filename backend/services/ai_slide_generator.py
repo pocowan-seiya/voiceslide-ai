@@ -15,8 +15,8 @@ import google.generativeai as genai
 from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
 
 # Global semaphore to limit concurrent browser instances
-# Railway limits: prevents "Resource temporarily unavailable" (pthread_create)
-BROWSER_SEMAPHORE = asyncio.Semaphore(3)  # Conservative limit for stability
+# Railway Pro Plan (32GB RAM, 32 vCPU) - safe limit for stability
+BROWSER_SEMAPHORE = asyncio.Semaphore(10)  # Increased for Pro Plan capacity
 
 
 # =============================================================================
