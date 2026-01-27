@@ -1865,6 +1865,9 @@ export default function Home() {
                       <div>
                         <label className="block text-sm font-medium text-white">
                           🎨 イラストを追加
+                          <span className="ml-2 px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-400 rounded-full border border-yellow-500/30">
+                            開発中
+                          </span>
                         </label>
                         <p className="text-xs text-zinc-500">AIがスライドにイラストを生成します</p>
                       </div>
