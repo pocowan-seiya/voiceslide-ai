@@ -3115,6 +3115,29 @@ async def regenerate_slide_with_feedback(
 
     # Configure prompt for other modes (Layout & General)
     prompt = ""
+    
+    # === CRITICAL: Strip base64 data URLs from HTML to prevent token limit errors ===
+    # Base64 images can be 100k+ characters, causing prompt to exceed Gemini's 1M token limit
+    stored_data_urls = {}
+    html_for_prompt = current_html
+    
+    # Find and replace all base64 data URLs with placeholders
+    data_url_pattern = r'(src=["\'])(data:image/[^"\']+)(["\'])'
+    data_url_matches = list(re.finditer(data_url_pattern, current_html))
+    
+    for i, match in enumerate(data_url_matches):
+        placeholder = f"__BASE64_IMAGE_{i}__"
+        data_url = match.group(2)
+        stored_data_urls[placeholder] = data_url
+        html_for_prompt = html_for_prompt.replace(data_url, placeholder, 1)
+    
+    if stored_data_urls:
+        print(f"[Feedback] Stripped {len(stored_data_urls)} base64 images from prompt (saved for restoration)")
+        # Log size reduction
+        original_size = len(current_html)
+        reduced_size = len(html_for_prompt)
+        print(f"[Feedback] HTML size: {original_size:,} → {reduced_size:,} chars (reduced by {original_size - reduced_size:,})")
+
         
     # 3. Layout Only Mode
     if feedback_type == "layout" or feedback_type == "fix_layout":
@@ -3127,7 +3150,7 @@ async def regenerate_slide_with_feedback(
 
 # 現在のHTML
 ```html
-{current_html}
+{html_for_prompt}
 ```
 
 # ⚠️ コンテンツ保持の絶対ルール（違反すると失敗）
@@ -3155,7 +3178,7 @@ async def regenerate_slide_with_feedback(
     else:
         print(f"[Feedback] Mode: General (Layout & Copy) - Regenerating slide {slide_number}")
         prompt = FEEDBACK_REGENERATION_PROMPT.format(
-            current_html=current_html,
+            current_html=html_for_prompt,
             concept_name=style.get("concept_name", ""),
             primary=colors.get("primary", "#F59E0B"),
             secondary=colors.get("secondary", "#8B5CF6"),
@@ -3185,6 +3208,13 @@ async def regenerate_slide_with_feedback(
             new_html = new_html.split("```html")[1].split("```")[0].strip()
         elif "```" in new_html:
             new_html = new_html.split("```")[1].split("```")[0].strip()
+        
+        # === CRITICAL: Restore base64 data URLs that were stripped before sending to AI ===
+        if stored_data_urls:
+            for placeholder, data_url in stored_data_urls.items():
+                if placeholder in new_html:
+                    new_html = new_html.replace(placeholder, data_url)
+            print(f"[Feedback] Restored {len(stored_data_urls)} base64 images in AI response")
         
         # Replace image placeholder with actual data URL
         if image_data_url and IMAGE_PLACEHOLDER in new_html:
