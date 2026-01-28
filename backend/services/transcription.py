@@ -241,12 +241,42 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
 整形後:"""
         
         model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
-        print(f"[{timestamp}] [Polish] Success!")
-        return response.text.strip()
         
+        # Retry logic with exponential backoff for 429 errors
+        max_retries = 3
+        retry_delays = [5, 15, 30]  # seconds
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(prompt)
+                print(f"[{timestamp}] [Polish] Success!" + (f" (attempt {attempt + 1})" if attempt > 0 else ""))
+                return response.text.strip()
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                
+                # Check if it's a 429 rate limit error
+                if "429" in error_str or "Resource exhausted" in error_str or "ResourceExhausted" in type(e).__name__:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delays[attempt]
+                        print(f"[{timestamp}] [Polish] Rate limit hit (attempt {attempt + 1}/{max_retries}), waiting {wait_time}s before retry...")
+                        import time
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"[{timestamp}] [Polish] Rate limit hit, all {max_retries} attempts failed")
+                        raise ValueError(f"[{timestamp}] Gemini APIがビジーです。しばらく待ってから再度お試しください。(429エラー: {max_retries}回リトライ失敗)")
+                else:
+                    # Non-429 error, don't retry
+                    print(f"[{timestamp}] [Polish] Error: {type(e).__name__}: {error_str}")
+                    raise ValueError(f"[{timestamp}] Gemini APIエラー: {error_str}")
+        
+        # Should not reach here, but just in case
+        raise ValueError(f"[{timestamp}] Gemini APIエラー: {str(last_error)}")
+    
     except Exception as e:
-        print(f"[{timestamp}] [Polish] Error: {type(e).__name__}: {str(e)}")
+        print(f"[{timestamp}] [Polish] Unexpected error: {type(e).__name__}: {str(e)}")
         raise ValueError(f"[{timestamp}] Gemini APIエラー: {str(e)}")
 
 
