@@ -22,6 +22,28 @@ Error code: 429 - {'error': {'message': 'You exceeded your current quota...'}}
 
 ---
 
+## エラー: 401 invalid_api_key (OpenAI)
+
+**症状**: 
+```
+Error code: 401 - {'error': {'message': 'Incorrect API key provided: xxxx...'}}
+```
+
+**原因**: 入力されたOpenAI APIキーの形式が正しくありません。正しいAPIキーは `sk-` で始まる長い文字列です。
+
+**対応方法**:
+1. https://platform.openai.com/api-keys にアクセス
+2. 「Create new secret key」ボタンをクリック
+3. 生成されたキー（`sk-proj-...` で始まる文字列）をコピー
+4. VoiSlide Movieの「API設定」→「OpenAI API Key」に貼り付け
+
+**よくある間違い**:
+- サービス名（voislide など）を入力している
+- Gemini APIキーをOpenAI欄に入力している
+- キーの一部だけをコピーしている
+
+---
+
 ## エラー: Gemini API key not valid
 
 **症状**: 
