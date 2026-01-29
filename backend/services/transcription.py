@@ -127,8 +127,8 @@ def get_available_gemini_model(api_key: str) -> str:
         
         print(f"[Gemini] Available models: {available_models[:10]}")
         
-        # Prefer flash models, then pro
-        preferred = ['gemini-2.0-flash', 'gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-pro']
+        # Prefer gemini-3-flash-preview first for consistency
+        preferred = ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-pro']
         for pref in preferred:
             for avail in available_models:
                 if pref in avail:
