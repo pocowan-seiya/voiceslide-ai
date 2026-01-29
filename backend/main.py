@@ -557,10 +557,11 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                 "new_duration": cleanup_result.get("new_duration", 0)
             }
             
-            # Re-mix BGM with cleaned audio if BGM was already uploaded
+            # Mix BGM if pending (user uploaded BGM before cleanup was done)
             bgm_path = jobs[job_id].get("bgm_path")
-            if bgm_path and os.path.exists(bgm_path):
-                jobs[job_id]["transcribe_progress"] = "BGM再ミックス中..."
+            bgm_pending = jobs[job_id].get("bgm_pending", False)
+            if bgm_path and bgm_pending and os.path.exists(bgm_path):
+                jobs[job_id]["transcribe_progress"] = "BGMミックス中..."
                 try:
                     from services.audio_mixer import mix_audio_with_bgm
                     
@@ -586,9 +587,10 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                         )
                         
                         jobs[job_id]["mixed_path"] = output_path
-                        print(f"[BGM Remix] Re-mixed BGM with cleaned audio: {output_path}")
+                        jobs[job_id]["bgm_pending"] = False
+                        print(f"[BGM Mix] Mixed BGM with cleaned audio: {output_path}")
                 except Exception as e:
-                    print(f"[BGM Remix] Failed to re-mix: {e}")
+                    print(f"[BGM Mix] Failed: {e}")
         
         print(f"[Transcribe] Completed for job {job_id}")
         
@@ -703,9 +705,35 @@ async def mix_bgm(
     if not bgm_path:
         raise HTTPException(400, "No BGM file uploaded")
     
-    # Use trimmed version if exists
+    # Save BGM settings first (these will be used later if mixing is deferred)
+    jobs[job_id]["bgm_volume"] = bgm_volume
+    jobs[job_id]["bgm_play_mode"] = play_mode
+    jobs[job_id]["bgm_fade_in"] = fade_in
+    jobs[job_id]["bgm_fade_out"] = fade_out
+    
+    # Check if cleanup has completed - use cleaned version if available
     base, ext = os.path.splitext(audio_path)
-    speech_path = f"{base}_trimmed{ext}" if os.path.exists(f"{base}_trimmed{ext}") else audio_path
+    clean_path = f"{base}_clean{ext}"
+    trimmed_path = f"{base}_trimmed{ext}"
+    
+    # Priority: cleaned > trimmed > original
+    if os.path.exists(clean_path):
+        speech_path = clean_path
+        print(f"[BGM Mix] Using cleaned audio: {speech_path}")
+    elif os.path.exists(trimmed_path):
+        speech_path = trimmed_path
+        print(f"[BGM Mix] Using trimmed audio: {speech_path}")
+    else:
+        # Transcription/cleanup not done yet - defer mixing
+        jobs[job_id]["bgm_pending"] = True
+        print(f"[BGM Mix] Deferring mix - cleanup not complete yet. Settings saved.")
+        return {
+            "success": True,
+            "deferred": True,
+            "message": "BGM設定を保存しました。文字起こし・クリーンアップ完了後に自動でミックスされます。",
+            "bgm_volume": bgm_volume,
+            "play_mode": play_mode,
+        }
     
     # Output path
     output_path = f"{base}_mixed.mp3"
@@ -724,10 +752,7 @@ async def mix_bgm(
         )
         
         jobs[job_id]["mixed_path"] = output_path
-        jobs[job_id]["bgm_volume"] = bgm_volume
-        jobs[job_id]["bgm_play_mode"] = play_mode
-        jobs[job_id]["bgm_fade_in"] = fade_in
-        jobs[job_id]["bgm_fade_out"] = fade_out
+        jobs[job_id]["bgm_pending"] = False
         
         return {
             "success": True,
