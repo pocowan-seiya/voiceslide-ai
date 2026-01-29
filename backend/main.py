@@ -556,6 +556,39 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                 "original_duration": cleanup_result.get("original_duration", 0),
                 "new_duration": cleanup_result.get("new_duration", 0)
             }
+            
+            # Re-mix BGM with cleaned audio if BGM was already uploaded
+            bgm_path = jobs[job_id].get("bgm_path")
+            if bgm_path and os.path.exists(bgm_path):
+                jobs[job_id]["transcribe_progress"] = "BGM再ミックス中..."
+                try:
+                    from services.audio_mixer import mix_audio_with_bgm
+                    
+                    cleaned_audio = cleanup_result.get("cleaned_audio_path")
+                    if cleaned_audio and os.path.exists(cleaned_audio):
+                        base, ext = os.path.splitext(cleaned_audio)
+                        output_path = f"{base}_mixed.mp3"
+                        
+                        # Use saved BGM settings or defaults
+                        bgm_volume = jobs[job_id].get("bgm_volume", -27)
+                        play_mode = jobs[job_id].get("bgm_play_mode", "loop")
+                        fade_in = jobs[job_id].get("bgm_fade_in", True)
+                        fade_out = jobs[job_id].get("bgm_fade_out", True)
+                        
+                        mix_audio_with_bgm(
+                            speech_path=cleaned_audio,
+                            bgm_path=bgm_path,
+                            output_path=output_path,
+                            bgm_volume_reduction=bgm_volume,
+                            play_mode=play_mode,
+                            enable_fade_in=fade_in,
+                            enable_fade_out=fade_out,
+                        )
+                        
+                        jobs[job_id]["mixed_path"] = output_path
+                        print(f"[BGM Remix] Re-mixed BGM with cleaned audio: {output_path}")
+                except Exception as e:
+                    print(f"[BGM Remix] Failed to re-mix: {e}")
         
         print(f"[Transcribe] Completed for job {job_id}")
         
