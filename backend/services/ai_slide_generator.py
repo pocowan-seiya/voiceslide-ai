@@ -1784,26 +1784,14 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     user_images_count = strategy.get("user_images_count", 0)
     
     if user_images_list:
-        # Tell AI to add placeholder - we'll inject real image after generation
-        # AI decides whether to include image based on slide content
+        # Tell AI to ALWAYS add placeholder - we'll inject real image after generation
         user_images_instruction = f"""
-# 🖼️ ユーザー提供画像の活用（スライド内容に応じて判断）
+# 🖼️ ユーザー画像の配置（必須）
 
 ユーザーが{len(user_images_list)}枚の画像をアップロードしました。
-**このスライドの内容に画像が効果的かどうかをAIが判断**し、適切な場合のみ以下のプレースホルダーを挿入してください。
+**このスライドにユーザー画像を必ず配置してください。**
 
-## 画像を配置すべきケース
-- 具体例や事例を説明するスライド
-- ビジュアル（図表、写真）があると理解が深まるスライド
-- キービジュアルとして印象づけたいスライド
-
-## 画像を配置しないケース
-- タイトルのみ・オープニングスライド
-- 箇条書きメインで情報量が多いスライド
-- エンディング/まとめスライド
-
-## 配置する場合
-以下のHTMLタグを**そのまま**挿入（srcは変更しないこと）：
+以下のHTMLタグを**必ず・そのまま**挿入してください（srcを変更しないでください）：
 
 ```html
 <div style="position: absolute; right: 5%; top: 50%; transform: translateY(-50%); width: 40%; max-height: 80%; z-index: 50; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
@@ -1811,8 +1799,10 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
 </div>
 ```
 
-- 画像を入れる場合、左側のテキストエリア幅を調整（`max-width: 55%`等）
-- **配置しない判断も正しい判断です** - 無理に入れる必要はありません
+**重要**:
+- `src="USER_IMAGE_PLACEHOLDER"` を変更しないこと（後で実際の画像に置換されます）
+- 左側のテキストエリアを `max-width: 55%` 等で調整し、画像と被らないようにする
+- タイトルスライドやエンディングでも画像を右側に配置してください
 """
     
     # Generate prompt
