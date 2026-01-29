@@ -1784,14 +1784,25 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     user_images_count = strategy.get("user_images_count", 0)
     
     if user_images_list:
-        # Tell AI to ALWAYS add placeholder - we'll inject real image after generation
-        user_images_instruction = f"""
-# 🖼️ ユーザー画像の配置（必須）
+        # Smart distribution: N images → assigned to N different slides
+        # For 1 image: skip title slide (slide 1), place on slide 2
+        # For N images: slides 1..N each get one image
+        
+        if len(user_images_list) == 1:
+            # Single image: place on slide 2 (skip title)
+            target_slide = 2
+        else:
+            # Multiple images: each slide gets one (slide N gets image N)
+            target_slide = slide_number
+        
+        # Only add image instruction if this slide should have an image
+        if slide_number == target_slide or (len(user_images_list) > 1 and slide_number <= len(user_images_list)):
+            user_images_instruction = f"""
+# 🖼️ ユーザー画像の配置（このスライド用）
 
-ユーザーが{len(user_images_list)}枚の画像をアップロードしました。
-**このスライドにユーザー画像を必ず配置してください。**
+このスライドにユーザーがアップロードした画像を**必ず**配置してください。
 
-以下のHTMLタグを**必ず・そのまま**挿入してください（srcを変更しないでください）：
+以下のHTMLを**そのまま**（srcを変更せず）挿入：
 
 ```html
 <div style="position: absolute; right: 5%; top: 50%; transform: translateY(-50%); width: 40%; max-height: 80%; z-index: 50; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
@@ -1799,11 +1810,13 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
 </div>
 ```
 
-**重要**:
-- `src="USER_IMAGE_PLACEHOLDER"` を変更しないこと（後で実際の画像に置換されます）
-- 左側のテキストエリアを `max-width: 55%` 等で調整し、画像と被らないようにする
-- タイトルスライドやエンディングでも画像を右側に配置してください
+**重要**: 
+- src="USER_IMAGE_PLACEHOLDER" を変更しない
+- 左側テキストを max-width: 55% 等で調整
 """
+        else:
+            # This slide doesn't get a user image
+            user_images_instruction = ""
     
     # Generate prompt
     base_font_instruction = style.get("font_instruction", "")
@@ -1859,14 +1872,21 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
         # Replace user image placeholder with actual base64 if present (for ANY slide that has placeholder)
         user_images_list = strategy.get("_user_images_data", [])
         if user_images_list and "USER_IMAGE_PLACEHOLDER" in html:
-            # Cycle through images if fewer images than slides
-            img_index = (slide_number - 1) % len(user_images_list)
+            # Smart index: for single image targeting slide 2, always use image 0
+            # For multiple images, each slide gets corresponding image
+            if len(user_images_list) == 1:
+                img_index = 0  # Single image always uses index 0
+            else:
+                img_index = (slide_number - 1) % len(user_images_list)
             img = user_images_list[img_index]
             html = html.replace("USER_IMAGE_PLACEHOLDER", img["base64"])
             print(f"[Design Architect] Injected user image {img_index + 1}/{len(user_images_list)} into slide {slide_number}")
         elif user_images_list and "user_image_placeholder" in html:
             # Try lowercase fallback
-            img_index = (slide_number - 1) % len(user_images_list)
+            if len(user_images_list) == 1:
+                img_index = 0
+            else:
+                img_index = (slide_number - 1) % len(user_images_list)
             img = user_images_list[img_index]
             html = html.replace("user_image_placeholder", img["base64"])
             print(f"[Design Architect] Injected user image {img_index + 1}/{len(user_images_list)} into slide {slide_number} (lowercase)")
