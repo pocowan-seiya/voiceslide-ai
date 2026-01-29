@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 import google.generativeai as genai
 
 from config import GEMINI_API_KEY
+from services.ai_utils import safe_gemini_generate
 
 
 # Design templates available
@@ -179,16 +180,17 @@ async def analyze_slide_design(
         
         for model_name in model_names:
             try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
+                response_text = await safe_gemini_generate(
+                    model_name,
                     prompt,
-                    generation_config=genai.GenerationConfig(
+                    key,
+                    config=genai.GenerationConfig(
                         response_mime_type="application/json",
                         temperature=0.7
                     )
                 )
                 
-                design = json.loads(response.text)
+                design = json.loads(response_text)
                 
                 # Validate and fill defaults
                 design = validate_design(design, slide, slide_number, total_slides)

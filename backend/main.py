@@ -1183,6 +1183,21 @@ async def get_batch_status(job_id: str):
     }
 
 
+@app.get("/api/queue-status/{job_id}")
+async def get_queue_status(job_id: str):
+    """Get queue position and estimated wait time for a job"""
+    from services.ai_slide_generator import get_queue_position
+    queue_info = get_queue_position(job_id)
+    return {
+        "job_id": job_id,
+        "position": queue_info.get("position", -1),
+        "status": queue_info.get("status", "unknown"),
+        "estimated_wait_minutes": queue_info.get("estimated_wait", 0),
+        "active_count": queue_info.get("active_count", 0),
+        "waiting_count": queue_info.get("waiting_count", 0)
+    }
+
+
 
 # ========== Slide Feedback & Editing ==========
 
@@ -1460,7 +1475,26 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
         await pipeline.step_map_slides()
     
     edited = update.timing_map if update else None
-    result = await pipeline.step_generate_video(edited)
+    
+    # Use BGM-mixed audio if available, otherwise use original/trimmed
+    job = jobs.get(job_id, {})
+    mixed_path = job.get("mixed_path")
+    
+    if mixed_path and os.path.exists(mixed_path):
+        print(f"[Video] Using BGM-mixed audio: {mixed_path}")
+        audio_to_use = mixed_path
+    else:
+        # Check for trimmed version
+        base, ext = os.path.splitext(pipeline.audio_path)
+        trimmed_path = f"{base}_trimmed{ext}"
+        if os.path.exists(trimmed_path):
+            print(f"[Video] Using trimmed audio: {trimmed_path}")
+            audio_to_use = trimmed_path
+        else:
+            print(f"[Video] Using original audio: {pipeline.audio_path}")
+            audio_to_use = pipeline.audio_path
+    
+    result = await pipeline.step_generate_video(edited, audio_override=audio_to_use)
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["video_url"] = result["video_url"]

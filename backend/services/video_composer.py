@@ -81,6 +81,9 @@ async def compose_video(
         "-safe", "0",
         "-i", concat_file,
         "-vsync", "vfr",
+        # Ensure dimensions are even (required by H.264/libx264)
+        # pad to nearest even dimensions using ceil
+        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
         "-preset", "medium",

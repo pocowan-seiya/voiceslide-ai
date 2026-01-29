@@ -13,7 +13,8 @@ from openai import OpenAI
 import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 
-from config import OPENAI_API_KEY, GEMINI_API_KEY
+from config import OPENAI_API_KEY, GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
+from services.ai_utils import safe_gemini_generate
 
 
 # Thread pool for blocking IO
@@ -211,20 +212,21 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def _polish_sync(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None) -> str:
-    """Synchronous polishing (runs in thread pool)"""
+async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None) -> str:
+    """Polishes the transcript for readability and alignment with a reference script."""
     key = gemini_key or GEMINI_API_KEY
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    def get_ts():
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     if not key:
-        print(f"[{timestamp}] [Polish] No Gemini API key available in settings or request")
-        return text # Return original text instead of crashing if possible, or raise clearer error
-    
-    print(f"[{timestamp}] [Polish] Starting with key: {key[:10]}...{key[-4:] if len(key) > 10 else '***'}")
-    
+        print(f"[{get_ts()}] [Polish] No Gemini API key available")
+        return text 
+
     try:
         # Get available model
         model_name = get_available_gemini_model(key)
-        print(f"[{timestamp}] [Polish] Using model: {model_name}")
+        print(f"[{get_ts()}] [Polish] Starting with model: {model_name}")
         
         reference_script = f"参考台本:\n{original_script}\n\n" if original_script else ""
     
@@ -243,53 +245,18 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None, original_script: O
 
 整形後:"""
         
-        model = genai.GenerativeModel(model_name)
+        # Use the robust shared utility
+        result = await safe_gemini_generate(
+            model_name,
+            prompt,
+            key,
+            config=None # Default config
+        )
         
-        # Retry logic with exponential backoff for 429 errors
-        max_retries = 3
-        retry_delays = [5, 15, 30]  # seconds
-        last_error = None
-        
-        for attempt in range(max_retries):
-            try:
-                response = model.generate_content(prompt)
-                print(f"[{timestamp}] [Polish] Success!" + (f" (attempt {attempt + 1})" if attempt > 0 else ""))
-                return response.text.strip()
-            except Exception as e:
-                last_error = e
-                error_str = str(e)
-                
-                # Check if it's a 429 rate limit error
-                if "429" in error_str or "Resource exhausted" in error_str or "ResourceExhausted" in type(e).__name__:
-                    if attempt < max_retries - 1:
-                        wait_time = retry_delays[attempt]
-                        print(f"[{timestamp}] [Polish] Rate limit hit (attempt {attempt + 1}/{max_retries}), waiting {wait_time}s before retry...")
-                        import time
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        print(f"[{timestamp}] [Polish] Rate limit hit, all {max_retries} attempts failed")
-                        raise ValueError(f"[{timestamp}] Gemini APIがビジーです。しばらく待ってから再度お試しください。(429エラー: {max_retries}回リトライ失敗)")
-                else:
-                    # Non-429 error, don't retry
-                    print(f"[{timestamp}] [Polish] Error: {type(e).__name__}: {error_str}")
-                    raise ValueError(f"[{timestamp}] Gemini APIエラー: {error_str}")
-        
-        # Should not reach here, but just in case
-        raise ValueError(f"[{timestamp}] Gemini APIエラー: {str(last_error)}")
-    
-    except Exception as e:
-        print(f"[{timestamp}] [Polish] Unexpected error: {type(e).__name__}: {str(e)}")
-        raise ValueError(f"[{timestamp}] Gemini APIエラー: {str(e)}")
-
-
-async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None) -> str:
-    """Async wrapper for polishing"""
-    loop = asyncio.get_event_loop()
-    try:
-        result = await loop.run_in_executor(executor, _polish_sync, text, gemini_key, original_script)
+        print(f"[{get_ts()}] [Polish] Success!")
         return result
+
     except Exception as e:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] [Polish Async] Error: {str(e)}")
-        raise
+        print(f"[{get_ts()}] [Polish] Error: {str(e)}")
+        # Raise with a descriptive message for the UI
+        raise ValueError(f"Gemini APIエラー: {str(e)}")

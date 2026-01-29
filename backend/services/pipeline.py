@@ -206,14 +206,22 @@ class HybridPipeline:
         }
     
     # Step 10: Video Generation
-    async def step_generate_video(self, edited_timing: Optional[List] = None) -> Dict[str, Any]:
-        """Generate final video with mapped timing"""
+    async def step_generate_video(self, edited_timing: Optional[List] = None, audio_override: Optional[str] = None) -> Dict[str, Any]:
+        """Generate final video with mapped timing
+        
+        Args:
+            edited_timing: Optional custom timing map
+            audio_override: Optional path to audio file (e.g., BGM-mixed audio)
+        """
         timing = edited_timing or self.timing_map
         
         output_path = os.path.join(OUTPUT_DIR, f"{self.job_id}.mp4")
         
+        # Use audio_override if provided, otherwise use original audio_path
+        audio_path = audio_override or self.audio_path
+        
         self.video_path = await compose_video(
-            audio_path=self.audio_path,
+            audio_path=audio_path,
             slide_images=self.slide_images,
             timing_map=timing,
             output_path=output_path

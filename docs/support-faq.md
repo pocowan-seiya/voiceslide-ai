@@ -60,6 +60,51 @@ Gemini APIキーが無効です
 
 ---
 
+## エラー: 429 Resource exhausted / Quota exceeded (Gemini)
+
+**症状**: 
+```
+429 Resource exhausted / Quota exceeded
+```
+または「Gemini APIが非常に混み合っています」というエラーメッセージ
+
+**AIチャットでの表示例**:
+```
+エラー内容: [2026/01/29 18:00:19] Failed to fetch
+ステップ: audio_upload または transcript_polish
+モード: full-ai
+```
+※ 「Failed to fetch」と表示される場合も、多くはこのエラーが原因です。
+
+**原因**: **Gemini APIの無料枠（Free Tier）を使用している**ため、1分あたり15リクエスト、または1日のリクエスト上限に達しています。
+
+**【重要】お支払い設定が必要です！**
+
+VoiSlide Movieでスライドを快適に生成するには、Gemini APIの**従量課金プラン（Pay-as-you-go）**への切り替えが必要です。無料枠のままだと、長い動画のスライド生成中にこのエラーが発生しやすくなります。
+
+**対応方法**:
+
+☆ 以下の動画の**8分頃（8:00〜）**から、Gemini APIのお支払い設定の方法を解説しています：
+
+🎬 **Gemini API 設定 解説動画（8:00〜）**
+https://vimeo.com/1155922169/84cd283587?share=copy&fl=sv&fe=ci#t=478
+
+この動画を見ながら設定を進めていただければ、スムーズに解決できます。
+
+**手順の概要**:
+1. Google AI Studio（https://aistudio.google.com/）にアクセス
+2. 左メニューの「Settings」→「Billing」を開く
+3. Google Cloud Platformとの連携を設定
+4. お支払い方法（クレジットカード等）を登録
+5. 従量課金が有効になると、制限が大幅に緩和されます
+
+**従量課金のメリット**:
+- 1分あたり1,500リクエスト以上（無料枠の100倍）
+- 長い動画でも安定してスライド生成が可能
+- 実際の利用量に応じた課金（使わなければ0円）
+
+---
+
 ## エラー: CORS policy エラー
 
 **症状**: 
@@ -138,4 +183,4 @@ Access to fetch has been blocked by CORS policy
 
 ---
 
-## 最終更新: 2026-01-28
+## 最終更新: 2026-01-29

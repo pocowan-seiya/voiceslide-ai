@@ -15,10 +15,39 @@ from bs4 import BeautifulSoup
 import google.generativeai as genai
 
 from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
+from services.ai_utils import safe_gemini_generate
 
 # Global semaphore to limit concurrent browser instances
-# Railway Pro Plan (32GB RAM, 32 vCPU) - safe limit for stability
-BROWSER_SEMAPHORE = asyncio.Semaphore(10)  # Increased for Pro Plan capacity
+# Railway Pro Plan (24GB RAM, 24 vCPU) - increased for better concurrency
+BROWSER_SEMAPHORE = asyncio.Semaphore(15)  # Increased to 15 for seminar support
+
+# Queue tracking for visibility
+queue_waiters: Dict[str, float] = {}  # job_id -> timestamp when started waiting
+queue_active: Dict[str, float] = {}   # job_id -> timestamp when started processing
+
+def get_queue_position(job_id: str) -> Dict[str, Any]:
+    """Get current queue position and estimated wait time for a job."""
+    if job_id in queue_active:
+        return {"position": 0, "status": "processing", "estimated_wait": 0}
+    
+    if job_id not in queue_waiters:
+        return {"position": -1, "status": "unknown", "estimated_wait": 0}
+    
+    # Count how many jobs are ahead in the queue
+    my_timestamp = queue_waiters[job_id]
+    position = sum(1 for ts in queue_waiters.values() if ts < my_timestamp) + 1
+    
+    # Estimate wait time: ~3 minutes per slide set, considering concurrent processing
+    concurrent_capacity = 15
+    estimated_minutes = max(0, (position - concurrent_capacity) * 3)
+    
+    return {
+        "position": position,
+        "status": "waiting",
+        "estimated_wait": estimated_minutes,
+        "active_count": len(queue_active),
+        "waiting_count": len(queue_waiters)
+    }
 
 def update_html_text_content(html: str, new_copy: Dict[str, Any]) -> str:
     """
@@ -557,18 +586,18 @@ async def polish_copy_for_illustration(
 """
     
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
-        response = model.generate_content(
+        response_text = await safe_gemini_generate(
+            "gemini-2.0-flash-exp",
             prompt,
-            generation_config=genai.GenerationConfig(
+            key,
+            config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.3,
                 max_output_tokens=500
             )
         )
         
-        import json
-        result = json.loads(response.text)
+        result = json.loads(response_text)
         
         print(f"[Copy Polish] Slide {slide_number}: '{raw_title[:20]}...' → '{result.get('title', '')}'")
         
@@ -1483,16 +1512,17 @@ async def generate_design_strategy(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-3-flash-preview")
-        response = model.generate_content(
+        response_text = await safe_gemini_generate(
+            "gemini-3-flash-preview",
             prompt,
-            generation_config=genai.GenerationConfig(
+            key,
+            config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.7
             )
         )
         
-        strategy = json.loads(response.text)
+        strategy = json.loads(response_text)
         print(f"[Design Architect] Strategy: {strategy['design_style']['concept_name']}")
         
         # Force apply color theme if specified (override AI's choice)
@@ -1801,16 +1831,15 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     
     try:
         # Gemini 3 Flash for high-quality slide generation
-        model = genai.GenerativeModel("gemini-3-flash-preview")
-        response = model.generate_content(
+        html = await safe_gemini_generate(
+            "gemini-3-flash-preview",
             prompt,
-            generation_config=genai.GenerationConfig(
+            key,
+            config=genai.GenerationConfig(
                 temperature=0.8,
                 max_output_tokens=4096
             )
         )
-        
-        html = response.text.strip()
         
         # Extract HTML from markdown code block if present
         if "```html" in html:
@@ -2087,8 +2116,20 @@ async def generate_all_custom_slides(
         if os.path.exists(existing_path):
             image_paths.append(existing_path)
     
+    import time as time_module
+    
+    # Register in queue for visibility
+    queue_waiters[job_id] = time_module.time()
+    print(f"[Queue] Job {job_id} entered queue (waiters: {len(queue_waiters)}, active: {len(queue_active)})")
+    
     print(f"[DEBUG] Waiting for BROWSER_SEMAPHORE (current value: {BROWSER_SEMAPHORE._value})")
     async with BROWSER_SEMAPHORE, async_playwright() as p:
+        # Move from waiting to active
+        if job_id in queue_waiters:
+            del queue_waiters[job_id]
+        queue_active[job_id] = time_module.time()
+        print(f"[Queue] Job {job_id} now processing (waiters: {len(queue_waiters)}, active: {len(queue_active)})")
+        
         print(f"[DEBUG] BROWSER_SEMAPHORE acquired, launching browser...")
         browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
         print(f"[DEBUG] Browser launched successfully")
@@ -2385,8 +2426,19 @@ Concept to illustrate: """
             slides_in_batch = slide_number - start_slide + 1
             if progress_callback:
                 progress_callback(slides_in_batch + 1, end_slide - start_slide + 2, f"スライド生成中 ({slide_number}/{total_slides})")
+            
+            # Pacing: Add small delay between slides to prevent aggregate rate limits (especially for Free Tier)
+            if slide_number < total_slides:
+                await asyncio.sleep(2.5) 
         
         await browser.close()
+    
+    # Clean up queue tracking
+    if job_id in queue_active:
+        del queue_active[job_id]
+    if job_id in queue_waiters:
+        del queue_waiters[job_id]
+    print(f"[Queue] Job {job_id} completed (waiters: {len(queue_waiters)}, active: {len(queue_active)})")
     
     # Save HTML contents for feedback editing
     save_html_contents(job_id, html_contents)
@@ -2482,16 +2534,17 @@ async def validate_slide_screenshot(
             "data": base64.b64encode(image_data).decode("utf-8")
         }
         
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
-        response = model.generate_content(
+        response_text = await safe_gemini_generate(
+            "gemini-2.0-flash-exp",
             [VALIDATION_PROMPT, image_part],
-            generation_config=genai.GenerationConfig(
+            key,
+            config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.1
             )
         )
         
-        result = json.loads(response.text)
+        result = json.loads(response_text)
         return result
         
     except Exception as e:
@@ -2820,16 +2873,15 @@ async def self_review_slide(
     
     try:
         # Gemini 3 Flash for self-review
-        model = genai.GenerativeModel("gemini-3-flash-preview")
-        response = model.generate_content(
+        improved_html = await safe_gemini_generate(
+            "gemini-3-flash-preview",
             prompt,
-            generation_config=genai.GenerationConfig(
+            key,
+            config=genai.GenerationConfig(
                 temperature=0.7,
                 max_output_tokens=4096
             )
         )
-        
-        improved_html = response.text.strip()
         
         # Extract HTML from markdown code block if present
         if "```html" in improved_html:
@@ -3073,14 +3125,15 @@ async def regenerate_slide_with_feedback(
 """
         try:
             # Generate JSON
-            model = genai.GenerativeModel("gemini-3-flash-preview")
-            response = model.generate_content(
-                copy_prompt, 
-                generation_config=genai.GenerationConfig(
+            response_text = await safe_gemini_generate(
+                "gemini-3-flash-preview",
+                copy_prompt,
+                key,
+                config=genai.GenerationConfig(
                     response_mime_type="application/json"
                 )
             )
-            new_copy = json.loads(response.text)
+            new_copy = json.loads(response_text)
             print(f"[Feedback] New copy generated: {new_copy}")
             
             # Apply to HTML using BeautifulSoup helper
@@ -3191,17 +3244,16 @@ async def regenerate_slide_with_feedback(
 
     
     try:
-        # Gemini 3 Flash for regeneration
-        model = genai.GenerativeModel("gemini-3-flash-preview")
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                temperature=0.7,
-                max_output_tokens=4096
-            )
+        # Gemini 2.0 Flash for creative prompts
+        # Generate response
+        response_text = await safe_gemini_generate(
+            "gemini-2.0-flash-exp", # Assuming model_name should be this
+            prompt, # Assuming full_prompt should be prompt
+            key,
+            config=genai.GenerationConfig(temperature=0.7)
         )
         
-        new_html = response.text.strip()
+        new_html = response_text.strip()
         
         # Extract HTML from markdown code block if present
         if "```html" in new_html:
@@ -3353,18 +3405,43 @@ async def generate_slide_image(prompt: str, api_key: str, reference_image_path: 
             content_parts.append(f"{aspect_instruction} {prompt}")
         
         print(f"[Imagen] Generating image with prompt: {prompt[:50]}...")
-        response = model.generate_content(content_parts)
         
-        if hasattr(response, 'candidates') and response.candidates:
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data'):
-                    print(f"[Imagen] Success!")
-                    return part.inline_data.data
+        # Robust retry logic for Imagen
+        max_retries = 5
+        retry_delays = [10, 30, 60, 120]
+        last_error = None
         
-        print(f"[Imagen] No image data in response.")
-        return None
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(content_parts)
+                
+                if hasattr(response, 'candidates') and response.candidates:
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, 'inline_data'):
+                            print(f"[Imagen] Success!")
+                            return part.inline_data.data
+                
+                print(f"[Imagen] No image data in response.")
+                return None
+                
+            except Exception as e:
+                last_error = e
+                err_str = str(e)
+                is_rate_limit = any(x in err_str for x in ["429", "Resource exhausted", "Quota exceeded", "ResourceExhausted"])
+                is_busy = any(x in err_str for x in ["503", "Service Unavailable", "500", "Internal error"])
+                is_timeout = any(x in err_str for x in ["504", "Deadline expired", "DeadlineExceeded", "timeout", "Timeout"])
+                
+                if (is_rate_limit or is_busy or is_timeout) and attempt < max_retries - 1:
+                    wait_time = retry_delays[min(attempt, len(retry_delays)-1)] + random.uniform(0, 5)
+                    print(f"[Imagen] Rate limit/Busy/Timeout (attempt {attempt+1}/{max_retries}), waiting {wait_time:.1f}s...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"[Imagen] Error: {e}")
+                    return None
     except Exception as e:
-        print(f"[Imagen] Error: {e}")
+        print(f"[Imagen] Unexpected error: {e}")
         return None
 
 

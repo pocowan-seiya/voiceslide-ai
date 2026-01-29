@@ -164,6 +164,15 @@ export default function Home() {
     totalSlides: number;
   }>({ isComplete: true, nextStart: null, slidesCompleted: 0, totalSlides: 0 });
 
+  // Queue status tracking for multi-user scenarios
+  const [queueStatus, setQueueStatus] = useState<{
+    position: number;
+    status: string;
+    estimatedWait: number;
+    activeCount: number;
+    waitingCount: number;
+  }>({ position: 0, status: "unknown", estimatedWait: 0, activeCount: 0, waitingCount: 0 });
+
   // ===== User Preference Settings =====
   // Audio cleanup settings
   const [audioSettings, setAudioSettings] = useState<{
@@ -624,6 +633,25 @@ export default function Home() {
       // Single polling interval for batch status (5 seconds to avoid timeout)
       const pollInterval = setInterval(async () => {
         try {
+          // Also poll queue status for waiting indicator
+          try {
+            const queueRes = await fetch(`${API_URL}/api/queue-status/${state.jobId}`, {
+              headers: getAPIHeaders()
+            });
+            if (queueRes.ok) {
+              const queueData = await queueRes.json();
+              setQueueStatus({
+                position: queueData.position,
+                status: queueData.status,
+                estimatedWait: queueData.estimated_wait_minutes,
+                activeCount: queueData.active_count,
+                waitingCount: queueData.waiting_count
+              });
+            }
+          } catch (e) {
+            // Queue status is optional, don't fail on error
+          }
+
           const statusRes = await fetchWithRetry(`${API_URL}/api/batch-status/${state.jobId}`, {
             headers: getAPIHeaders()
           });
@@ -1905,9 +1933,31 @@ export default function Home() {
                                     value={slideFeedback}
                                     onChange={(e) => setSlideFeedback(e.target.value)}
                                     placeholder="例：タイトルを「価値の創造」に変更。背景をもっと暗く。ポイントを3つに減らして..."
-                                    className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
+                                    className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-2"
                                     autoFocus
                                   />
+
+                                  {/* フィードバック定型文ボタン */}
+                                  <div className="flex flex-wrap gap-1 mb-3">
+                                    <button
+                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'レイアウトを再構築してください')}
+                                      className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                                    >
+                                      📐 レイアウト再構築
+                                    </button>
+                                    <button
+                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '「〇〇」のコピーを「〇〇」に変更してください')}
+                                      className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                                    >
+                                      ✏️ コピー変更
+                                    </button>
+                                    <button
+                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右側に挿入してください')}
+                                      className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                                    >
+                                      🖼️ 画像挿入
+                                    </button>
+                                  </div>
 
                                   {/* 画像アップロード（コンパクト版） */}
                                   <div className="flex items-center gap-3 mb-3">
@@ -2401,6 +2451,27 @@ export default function Home() {
                         placeholder="例：タイトルを変更、背景をもっと明るく、ポイントを追加..."
                         className="w-full h-20 bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-white resize-none mb-2 text-sm"
                       />
+                      {/* フィードバック定型文ボタン */}
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        <button
+                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'レイアウトを再構築してください')}
+                          className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                        >
+                          📐 レイアウト再構築
+                        </button>
+                        <button
+                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '「〇〇」のコピーを「〇〇」に変更してください')}
+                          className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                        >
+                          ✏️ コピー変更
+                        </button>
+                        <button
+                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右側に挿入してください')}
+                          className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                        >
+                          🖼️ 画像挿入
+                        </button>
+                      </div>
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         <button
                           onClick={() => handleSlideFeedback('copy')}
@@ -2613,12 +2684,22 @@ export default function Home() {
 
               <video src={state.videoUrl} controls className="w-full rounded-xl mb-6" />
 
-              <div className="flex justify-center gap-4 mb-8">
+              <div className="flex flex-wrap justify-center gap-3 mb-8">
                 <button
                   onClick={() => handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`)}
                   className="btn-primary"
                 >
-                  📥 ダウンロード
+                  📥 動画をダウンロード
+                </button>
+                <button
+                  onClick={() => {
+                    const downloadUrl = `${API_URL}/api/download-slides/${state.jobId}`;
+                    window.open(downloadUrl, '_blank');
+                  }}
+                  className="btn-secondary"
+                  title="スライド画像をZIPでダウンロード"
+                >
+                  🖼️ スライド画像一括DL
                 </button>
                 <button onClick={handleReset} className="btn-secondary">
                   🔄 新規作成
@@ -2676,8 +2757,30 @@ export default function Home() {
                       value={slideFeedback}
                       onChange={(e) => setSlideFeedback(e.target.value)}
                       placeholder="修正したい内容を入力..."
-                      className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-3"
+                      className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-2"
                     />
+
+                    {/* フィードバック定型文ボタン */}
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      <button
+                        onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'レイアウトを再構築してください')}
+                        className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                      >
+                        📐 レイアウト再構築
+                      </button>
+                      <button
+                        onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '「〇〇」のコピーを「〇〇」に変更してください')}
+                        className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                      >
+                        ✏️ コピー変更
+                      </button>
+                      <button
+                        onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右側に挿入してください')}
+                        className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                      >
+                        🖼️ 画像挿入
+                      </button>
+                    </div>
 
                     {/* メイン編集ボタン（新デザイン） */}
                     <p className="text-xs text-zinc-500 mb-3 flex items-center gap-2">
@@ -2866,6 +2969,23 @@ export default function Home() {
                         残り約 {Math.round((100 - progress.percent) / progress.percent * (batchState.totalSlides * 8) / 60)} 分
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* Queue Waiting Indicator */}
+                {queueStatus.status === "waiting" && queueStatus.position > 0 && (
+                  <div className="mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-500/30">
+                    <p className="text-blue-400 text-lg font-medium">
+                      ⏳ 現在 {queueStatus.position} 番目です
+                    </p>
+                    {queueStatus.estimatedWait > 0 && (
+                      <p className="text-blue-300 text-sm mt-1">
+                        推定待機時間: 約 {queueStatus.estimatedWait} 分
+                      </p>
+                    )}
+                    <p className="text-zinc-500 text-xs mt-2">
+                      {queueStatus.activeCount} 件処理中 / {queueStatus.waitingCount} 件待機中
+                    </p>
                   </div>
                 )}
 

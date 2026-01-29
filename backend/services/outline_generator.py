@@ -10,6 +10,7 @@ from openai import OpenAI
 import google.generativeai as genai
 
 from config import OPENAI_API_KEY, GEMINI_API_KEY
+from services.ai_utils import safe_gemini_generate
 
 
 # Initialize clients
@@ -597,18 +598,18 @@ async def generate_outline(
         model_name = get_available_gemini_model(key)
         print(f"[Outline] Using model: {model_name}")
         
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(
+        response_text = await safe_gemini_generate(
+            model_name,
             prompt,
-            generation_config=genai.GenerationConfig(
+            key,
+            config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.1,
                 max_output_tokens=16384  # Support long audio (10+ minutes)
             )
         )
         print(f"[Outline] Success!")
-        result = repair_and_parse_json(response.text, "Gemini")
+        result = repair_and_parse_json(response_text, "Gemini")
         
     except Exception as e:
         print(f"Gemini outline failed: {e}, falling back to GPT-4o")
@@ -662,17 +663,17 @@ async def polish_outline(outline: Dict[str, Any]) -> Dict[str, Any]:
         key = GEMINI_API_KEY
         model_name = get_available_gemini_model(key)
         
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(
+        response_text = await safe_gemini_generate(
+            model_name,
             prompt,
-            generation_config=genai.GenerationConfig(
+            key,
+            config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 max_output_tokens=16384  # Support long audio
             )
         )
         
-        result = json.loads(response.text)
+        result = json.loads(response_text)
         
     except Exception as e:
         print(f"Gemini polish failed: {e}, keeping original")
