@@ -314,15 +314,29 @@ export default function Home() {
     setProgress({ percent: 5, message: "処理を開始中..." });
 
     try {
-      // If BGM is enabled, mix first
+      // If BGM is enabled, upload and mix
       if (bgmEnabled && bgmFile) {
-        setProgress({ percent: 10, message: "BGMをミキシング中..." });
+        // Re-upload BGM to ensure it's in the job (in case of server restart)
+        setProgress({ percent: 8, message: "BGMをアップロード中..." });
+        const formData = new FormData();
+        formData.append('file', bgmFile);
+        const uploadRes = await fetch(
+          `${API_URL}/api/audio/${state.jobId}/upload-bgm`,
+          { method: 'POST', body: formData }
+        );
+        if (!uploadRes.ok) {
+          console.error('BGM upload failed');
+        }
+
+        // Then mix
+        setProgress({ percent: 15, message: "BGMをミキシング中..." });
         const mixRes = await fetch(
           `${API_URL}/api/audio/${state.jobId}/mix-bgm?bgm_volume=${bgmVolume}`,
           { method: 'POST' }
         );
         if (!mixRes.ok) {
-          console.error('BGM mix failed');
+          const errorData = await mixRes.json().catch(() => ({}));
+          console.error('BGM mix failed:', errorData);
         } else {
           setBgmMixed(true);
         }
@@ -1530,7 +1544,10 @@ export default function Home() {
 
                   {/* Download Button */}
                   <button
-                    onClick={async () => {
+                    onClick={async (e) => {
+                      const btn = e.currentTarget;
+                      btn.textContent = '⏳ ダウンロード中...';
+                      btn.disabled = true;
                       try {
                         const endpoint = bgmMixed ? 'mixed' : 'trimmed';
                         const res = await fetch(
@@ -1546,12 +1563,19 @@ export default function Home() {
                         a.click();
                         document.body.removeChild(a);
                         window.URL.revokeObjectURL(url);
+                        btn.innerHTML = '✅ ダウンロード完了！';
+                        setTimeout(() => {
+                          btn.innerHTML = `<span>⬇️</span><span>${bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>`;
+                          btn.disabled = false;
+                        }, 2000);
                       } catch (err) {
                         console.error('Download error:', err);
                         alert('ダウンロードに失敗しました');
+                        btn.innerHTML = `<span>⬇️</span><span>${bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>`;
+                        btn.disabled = false;
                       }
                     }}
-                    className="w-full py-2 px-4 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-3 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-[0.98] disabled:opacity-50 text-white font-medium rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
                   >
                     <span>⬇️</span>
                     <span>{bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>
