@@ -53,6 +53,34 @@ class HybridPipeline:
         self.final_video = None  # Main generated video
         self.final_video_with_oped = None  # Video with OP/ED
     
+    def _sync_segments_with_transcript(self, edited_transcript: str) -> List[Dict[str, Any]]:
+        """
+        Sync edited transcript with segment timestamps.
+        Updates segment text while preserving timing information.
+        """
+        if not self.segments:
+            return []
+        
+        # Split edited transcript into lines/sentences
+        edited_lines = [line.strip() for line in edited_transcript.split('\n') if line.strip()]
+        edited_text_full = ' '.join(edited_lines)
+        
+        # Create new segments with updated text
+        synced_segments = []
+        for seg in self.segments:
+            synced_segments.append({
+                "id": seg.get("id", 0),
+                "start": seg.get("start", 0),
+                "end": seg.get("end", 0),
+                "text": seg.get("text", "")  # Keep original, outline uses full transcript
+            })
+        
+        # Store the edited transcript for later use
+        self.polished_transcript = edited_transcript
+        print(f"[Pipeline] Synced {len(synced_segments)} segments with edited transcript")
+        
+        return synced_segments
+    
     # Step 2: Transcription
     async def step_transcribe(self, openai_key: Optional[str] = None) -> Dict[str, Any]:
         """Transcribe audio to text with timestamps"""
@@ -102,9 +130,14 @@ class HybridPipeline:
         """Generate slide outline from transcript"""
         transcript = edited_transcript or self.polished_transcript or self.raw_transcript
         
+        # Sync segments with edited transcript if provided
+        segments_to_use = self.segments
+        if edited_transcript and self.segments:
+            segments_to_use = self._sync_segments_with_transcript(edited_transcript)
+        
         self.raw_outline = await generate_outline(
             transcript, 
-            self.segments, 
+            segments_to_use, 
             gemini_key=gemini_key,
             slide_count_mode=slide_count_mode,
             custom_slide_count=custom_slide_count

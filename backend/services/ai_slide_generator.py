@@ -3230,13 +3230,44 @@ async def regenerate_slide_with_feedback(
     # 4. General Mode (Layout & Copy)
     else:
         print(f"[Feedback] Mode: General (Layout & Copy) - Regenerating slide {slide_number}")
+        
+        # Detect explicit copy change requests like "AをBに変更して" or "「X」を「Y」にして"
+        copy_change_detected = False
+        copy_change_instruction = ""
+        
+        import re
+        # Pattern 1: 「A」を「B」に変更/して
+        pattern1 = re.search(r'「([^」]+)」を「([^」]+)」に(変更|して)', feedback)
+        # Pattern 2: "A"を"B"に
+        pattern2 = re.search(r'"([^"]+)"を"([^"]+)"に', feedback)
+        # Pattern 3: AをBに変更して (without quotes)
+        pattern3 = re.search(r'(.+?)を(.+?)に(変更|して|直して|修正)', feedback)
+        
+        if pattern1 or pattern2 or pattern3:
+            copy_change_detected = True
+            match = pattern1 or pattern2 or pattern3
+            old_text = match.group(1)
+            new_text = match.group(2)
+            copy_change_instruction = f"""
+
+# ⚠️ 最優先: テキスト変更の指示
+
+ユーザーが以下の具体的なテキスト変更を要求しています。**必ずこの変更を適用してください**:
+
+変更前: 「{old_text}」
+変更後: 「{new_text}」
+
+この変更は「コンテンツ保持ルール」より優先されます。ユーザーが明示的に変更を指示した場合は、その通りに変更してください。
+"""
+            print(f"[Feedback] ✅ Copy change detected: 「{old_text}」→「{new_text}」")
+        
         prompt = FEEDBACK_REGENERATION_PROMPT.format(
             current_html=html_for_prompt,
             concept_name=style.get("concept_name", ""),
             primary=colors.get("primary", "#F59E0B"),
             secondary=colors.get("secondary", "#8B5CF6"),
             accent=colors.get("accent", "#06B6D4"),
-            feedback=feedback + image_instruction,
+            feedback=feedback + image_instruction + copy_change_instruction,
             feedback_type="レイアウトとコピーの修正（画像は保持）",
             width=VIDEO_WIDTH,
             height=VIDEO_HEIGHT
