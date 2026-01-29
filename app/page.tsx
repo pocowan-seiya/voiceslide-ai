@@ -204,7 +204,11 @@ export default function Home() {
   const [bgmMixed, setBgmMixed] = useState(false);
   const [bgmMixing, setBgmMixing] = useState(false);
   const [bgmFeedback, setBgmFeedback] = useState("");
-  const [bgmVolume, setBgmVolume] = useState(-15);
+  const [bgmVolume, setBgmVolume] = useState(-27);
+  // BGM playback settings
+  const [bgmPlayMode, setBgmPlayMode] = useState<'loop' | 'single' | 'minute'>('loop');
+  const [bgmFadeIn, setBgmFadeIn] = useState(true);
+  const [bgmFadeOut, setBgmFadeOut] = useState(true);
 
   // Slide undo history
   const [slideCanUndo, setSlideCanUndo] = useState<{ [key: number]: boolean }>({});
@@ -330,8 +334,14 @@ export default function Home() {
 
         // Then mix
         setProgress({ percent: 15, message: "BGMをミキシング中..." });
+        const mixParams = new URLSearchParams({
+          bgm_volume: bgmVolume.toString(),
+          play_mode: bgmPlayMode,
+          fade_in: bgmFadeIn.toString(),
+          fade_out: bgmFadeOut.toString(),
+        });
         const mixRes = await fetch(
-          `${API_URL}/api/audio/${state.jobId}/mix-bgm?bgm_volume=${bgmVolume}`,
+          `${API_URL}/api/audio/${state.jobId}/mix-bgm?${mixParams}`,
           { method: 'POST' }
         );
         if (!mixRes.ok) {
@@ -1398,15 +1408,69 @@ export default function Home() {
                           />
                         </label>
                       ) : (
-                        <div className="flex items-center justify-between p-2 bg-zinc-700 rounded-lg">
-                          <div className="flex items-center gap-2">
-                            <span className="text-green-400">✓</span>
-                            <span className="text-sm truncate">{bgmFile.name}</span>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between p-2 bg-zinc-700 rounded-lg">
+                            <div className="flex items-center gap-2">
+                              <span className="text-green-400">✓</span>
+                              <span className="text-sm truncate">{bgmFile.name}</span>
+                            </div>
+                            <button
+                              onClick={() => setBgmFile(null)}
+                              className="text-zinc-400 hover:text-white text-sm"
+                            >変更</button>
                           </div>
-                          <button
-                            onClick={() => setBgmFile(null)}
-                            className="text-zinc-400 hover:text-white text-sm"
-                          >変更</button>
+
+                          {/* BGM Playback Mode */}
+                          <div className="bg-zinc-900/50 rounded-lg p-3">
+                            <div className="text-xs text-zinc-400 mb-2">🎵 再生モード</div>
+                            <div className="grid grid-cols-3 gap-2">
+                              <button
+                                onClick={() => setBgmPlayMode('loop')}
+                                className={`py-2 px-2 rounded-lg text-xs transition-all ${bgmPlayMode === 'loop' ? 'bg-purple-500 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}
+                              >
+                                🔁 ループ
+                              </button>
+                              <button
+                                onClick={() => setBgmPlayMode('single')}
+                                className={`py-2 px-2 rounded-lg text-xs transition-all ${bgmPlayMode === 'single' ? 'bg-purple-500 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}
+                              >
+                                ▶️ 1曲
+                              </button>
+                              <button
+                                onClick={() => setBgmPlayMode('minute')}
+                                className={`py-2 px-2 rounded-lg text-xs transition-all ${bgmPlayMode === 'minute' ? 'bg-purple-500 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}
+                              >
+                                ⏱️ 1分
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-zinc-500 mt-2">
+                              {bgmPlayMode === 'loop' && 'BGMをループで再生し続けます'}
+                              {bgmPlayMode === 'single' && '1曲分再生後にフェードアウト'}
+                              {bgmPlayMode === 'minute' && '1分経過時点でフェードアウト'}
+                            </p>
+                          </div>
+
+                          {/* Fade Settings */}
+                          <div className="flex gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={bgmFadeIn}
+                                onChange={(e) => setBgmFadeIn(e.target.checked)}
+                                className="w-4 h-4 rounded accent-purple-500"
+                              />
+                              <span className="text-xs text-zinc-300">フェードイン</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={bgmFadeOut}
+                                onChange={(e) => setBgmFadeOut(e.target.checked)}
+                                className="w-4 h-4 rounded accent-purple-500"
+                              />
+                              <span className="text-xs text-zinc-300">フェードアウト</span>
+                            </label>
+                          </div>
                         </div>
                       )}
                       <p className="text-xs text-zinc-500 mt-2">
@@ -1435,22 +1499,10 @@ export default function Home() {
           {/* Step 2-3: Transcript Display & Edit */}
           {(state.step === 2 || state.step === 3) && state.transcript && (
             <div>
-              <div className="flex items-center justify-between mb-4">
+              <div className="mb-4">
                 <h2 className="text-2xl font-bold gradient-text">
                   {state.step === 2 ? "文字起こし結果" : "ブラッシュアップ完了"}
                 </h2>
-                <button
-                  onClick={() => {
-                    setIsEditingTranscript(!isEditingTranscript);
-                    setEditedTranscript(editText);
-                  }}
-                  className={`text-sm px-3 py-1 rounded-lg transition-all ${isEditingTranscript
-                    ? 'bg-cyan-500 text-white'
-                    : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-                    }`}
-                >
-                  {isEditingTranscript ? '✏️ 編集中' : '📝 手動で編集'}
-                </button>
               </div>
 
               {/* Cleanup Info */}
@@ -1583,6 +1635,19 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Edit Button - moved here from header */}
+              <button
+                onClick={() => {
+                  setIsEditingTranscript(!isEditingTranscript);
+                  setEditedTranscript(editText);
+                }}
+                className={`w-full mb-4 py-2 px-4 rounded-lg text-sm transition-all flex items-center justify-center gap-2 ${isEditingTranscript
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                  }`}
+              >
+                {isEditingTranscript ? '✏️ 編集中...' : '📝 文字起こしを手動で編集'}
+              </button>
               {isEditingTranscript && (
                 <div className="mb-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-sm">
                   <span className="text-yellow-400">💡 ヒント:</span>

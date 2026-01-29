@@ -13,9 +13,12 @@ def mix_audio_with_bgm(
     speech_path: str,
     bgm_path: str,
     output_path: str,
-    bgm_volume_reduction: float = -15,  # dB reduction for BGM
+    bgm_volume_reduction: float = -27,  # dB reduction for BGM
     fade_in_duration: float = 2.0,  # seconds
     fade_out_duration: float = 3.0,  # seconds
+    play_mode: str = "loop",  # 'loop', 'single', 'minute'
+    enable_fade_in: bool = True,
+    enable_fade_out: bool = True,
 ) -> str:
     """
     Mix speech audio with background music.
@@ -27,6 +30,9 @@ def mix_audio_with_bgm(
         bgm_volume_reduction: How much to reduce BGM volume in dB (negative value)
         fade_in_duration: BGM fade-in duration in seconds
         fade_out_duration: BGM fade-out duration in seconds
+        play_mode: 'loop' (loop BGM), 'single' (1 song then fade), 'minute' (fade at 60s)
+        enable_fade_in: Whether to apply fade in
+        enable_fade_out: Whether to apply fade out
     
     Returns:
         Path to the mixed audio file
@@ -39,20 +45,49 @@ def mix_audio_with_bgm(
     duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
     speech_duration = float(duration_result.stdout.strip())
     
-    print(f"[AudioMix] Speech duration: {speech_duration:.1f}s")
-    print(f"[AudioMix] BGM volume reduction: {bgm_volume_reduction}dB")
+    # Get BGM duration for single mode
+    bgm_duration_cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", bgm_path
+    ]
+    bgm_duration_result = subprocess.run(bgm_duration_cmd, capture_output=True, text=True)
+    bgm_duration = float(bgm_duration_result.stdout.strip())
     
-    # Build complex filter:
-    # 1. Loop BGM if needed and trim to speech length
-    # 2. Apply volume reduction to BGM
-    # 3. Apply fade in/out to BGM
-    # 4. Mix with speech
+    print(f"[AudioMix] Speech duration: {speech_duration:.1f}s, BGM duration: {bgm_duration:.1f}s")
+    print(f"[AudioMix] BGM volume: {bgm_volume_reduction}dB, Mode: {play_mode}")
+    print(f"[AudioMix] Fade in: {enable_fade_in}, Fade out: {enable_fade_out}")
+    
+    # Determine BGM behavior based on play_mode
+    if play_mode == "single":
+        # Play BGM once, fade at end of BGM or speech (whichever comes first)
+        bgm_end_time = min(bgm_duration, speech_duration)
+        bgm_filter = f"[1:a]atrim=0:{bgm_end_time},volume={bgm_volume_reduction}dB"
+    elif play_mode == "minute":
+        # Play for 60 seconds (or less if speech is shorter)
+        bgm_end_time = min(60, speech_duration)
+        bgm_filter = f"[1:a]aloop=loop=-1:size=2e+09,atrim=0:{bgm_end_time},volume={bgm_volume_reduction}dB"
+    else:  # loop (default)
+        # Loop BGM for entire speech duration
+        bgm_end_time = speech_duration
+        bgm_filter = f"[1:a]aloop=loop=-1:size=2e+09,atrim=0:{speech_duration},volume={bgm_volume_reduction}dB"
+    
+    # Add fade effects
+    if enable_fade_in:
+        bgm_filter += f",afade=t=in:st=0:d={fade_in_duration}"
+    
+    if enable_fade_out and bgm_end_time > fade_out_duration:
+        fade_out_start = bgm_end_time - fade_out_duration
+        bgm_filter += f",afade=t=out:st={fade_out_start}:d={fade_out_duration}"
+    
+    # For non-loop modes, need to pad with silence if speech is longer
+    if play_mode != "loop" and bgm_end_time < speech_duration:
+        padding_duration = speech_duration - bgm_end_time
+        bgm_filter += f",apad=pad_dur={padding_duration}"
+    
+    bgm_filter += "[bgm]"
     
     filter_complex = (
-        f"[1:a]aloop=loop=-1:size=2e+09,atrim=0:{speech_duration},"
-        f"volume={bgm_volume_reduction}dB,"
-        f"afade=t=in:st=0:d={fade_in_duration},"
-        f"afade=t=out:st={speech_duration - fade_out_duration}:d={fade_out_duration}[bgm];"
+        f"{bgm_filter};"
         f"[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[out]"
     )
     

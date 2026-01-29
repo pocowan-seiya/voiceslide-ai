@@ -649,7 +649,13 @@ async def upload_bgm(job_id: str, file: UploadFile = File(...)):
 
 
 @app.post("/api/audio/{job_id}/mix-bgm")
-async def mix_bgm(job_id: str, bgm_volume: float = -15):
+async def mix_bgm(
+    job_id: str, 
+    bgm_volume: float = -27,
+    play_mode: str = "loop",
+    fade_in: bool = True,
+    fade_out: bool = True
+):
     """Mix the trimmed audio with uploaded BGM"""
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
@@ -670,21 +676,30 @@ async def mix_bgm(job_id: str, bgm_volume: float = -15):
     # Output path
     output_path = f"{base}_mixed.mp3"
     
+    print(f"[BGM Mix] Volume: {bgm_volume}dB, Mode: {play_mode}, FadeIn: {fade_in}, FadeOut: {fade_out}")
+    
     try:
         mix_audio_with_bgm(
             speech_path=speech_path,
             bgm_path=bgm_path,
             output_path=output_path,
             bgm_volume_reduction=bgm_volume,
+            play_mode=play_mode,
+            enable_fade_in=fade_in,
+            enable_fade_out=fade_out,
         )
         
         jobs[job_id]["mixed_path"] = output_path
         jobs[job_id]["bgm_volume"] = bgm_volume
+        jobs[job_id]["bgm_play_mode"] = play_mode
+        jobs[job_id]["bgm_fade_in"] = fade_in
+        jobs[job_id]["bgm_fade_out"] = fade_out
         
         return {
             "success": True,
             "mixed_path": output_path,
             "bgm_volume": bgm_volume,
+            "play_mode": play_mode,
         }
     except Exception as e:
         print(f"[BGM Mix] Error: {e}")
