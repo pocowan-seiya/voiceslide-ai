@@ -1946,13 +1946,13 @@ export default function Home() {
                                       📐 レイアウト再構築
                                     </button>
                                     <button
-                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '「〇〇」のコピーを「〇〇」に変更してください')}
+                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'タイトルを「〇〇」に変更してください')}
                                       className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
                                     >
-                                      ✏️ コピー変更
+                                      ✏️ タイトル変更
                                     </button>
                                     <button
-                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右側に挿入してください')}
+                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右カラムに挿入してください')}
                                       className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
                                     >
                                       🖼️ 画像挿入
@@ -1991,65 +1991,37 @@ export default function Home() {
                                     </label>
                                   </div>
 
-                                  {/* 説明テキスト */}
-                                  <p className="text-xs text-zinc-500 mb-3 flex items-center gap-2">
-                                    <span className="text-amber-400">💡</span>
-                                    編集したい項目を選んでください
-                                  </p>
-
-                                  {/* メイン編集ボタン（2x2グリッド） */}
-                                  <div className="grid grid-cols-2 gap-2 mb-3">
-                                    {/* テキスト編集 */}
-                                    <button
-                                      onClick={() => handleSlideFeedback('copy')}
-                                      disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
-                                      className="group relative overflow-hidden bg-gradient-to-br from-emerald-600/20 to-emerald-700/30 hover:from-emerald-500/30 hover:to-emerald-600/40 border border-emerald-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                                    >
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span className="text-lg">📝</span>
-                                        <span className="font-medium">テキスト</span>
-                                        <span className="text-[10px] text-emerald-300/70">文字だけ修正</span>
-                                      </div>
-                                    </button>
-
-                                    {/* レイアウト編集 */}
-                                    <button
-                                      onClick={() => handleSlideFeedback('layout')}
-                                      disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
-                                      className="group relative overflow-hidden bg-gradient-to-br from-blue-600/20 to-blue-700/30 hover:from-blue-500/30 hover:to-blue-600/40 border border-blue-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                                    >
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span className="text-lg">📐</span>
-                                        <span className="font-medium">レイアウト</span>
-                                        <span className="text-[10px] text-blue-300/70">配置を変更</span>
-                                      </div>
-                                    </button>
-
-                                    {/* 全体再生成 */}
+                                  {/* 更新ボタン（1ボタンに統合） */}
+                                  <div className="flex gap-2 mb-3">
                                     <button
                                       onClick={() => handleSlideFeedback('general')}
                                       disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
-                                      className="group relative overflow-hidden bg-gradient-to-br from-purple-600/20 to-purple-700/30 hover:from-purple-500/30 hover:to-purple-600/40 border border-purple-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                      className="flex-1 group relative overflow-hidden bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-medium py-3 px-4 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
                                     >
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span className="text-lg">✨</span>
-                                        <span className="font-medium">全体</span>
-                                        <span className="text-[10px] text-purple-300/70">テキスト+配置</span>
+                                      <div className="flex items-center justify-center gap-2">
+                                        {isRegenerating ? (
+                                          <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <span>更新中...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className="text-lg">✨</span>
+                                            <span>スライドを更新</span>
+                                          </>
+                                        )}
                                       </div>
                                     </button>
 
-                                    {/* イラスト再生成（イラストモード時のみ表示） */}
+                                    {/* イラスト再生成（イラストモード時のみ） */}
                                     {addIllustrations && (
                                       <button
                                         onClick={() => handleSlideFeedback('image')}
                                         disabled={isRegenerating}
-                                        className="group relative overflow-hidden bg-gradient-to-br from-pink-600/20 to-pink-700/30 hover:from-pink-500/30 hover:to-pink-600/40 border border-pink-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                        className="group relative overflow-hidden bg-gradient-to-br from-pink-600/40 to-pink-700/50 hover:from-pink-500/50 hover:to-pink-600/60 border border-pink-500/30 text-white text-xs py-3 px-3 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                        title="イラストのみ再生成"
                                       >
-                                        <div className="flex flex-col items-center gap-1">
-                                          <span className="text-lg">🎨</span>
-                                          <span className="font-medium">イラスト</span>
-                                          <span className="text-[10px] text-pink-300/70">画像だけ変更</span>
-                                        </div>
+                                        <span className="text-lg">🎨</span>
                                       </button>
                                     )}
                                   </div>
@@ -2460,51 +2432,37 @@ export default function Home() {
                           📐 レイアウト再構築
                         </button>
                         <button
-                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '「〇〇」のコピーを「〇〇」に変更してください')}
+                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'タイトルを「〇〇」に変更してください')}
                           className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
                         >
-                          ✏️ コピー変更
+                          ✏️ タイトル変更
                         </button>
                         <button
-                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右側に挿入してください')}
+                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右カラムに挿入してください')}
                           className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
                         >
                           🖼️ 画像挿入
                         </button>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 mb-2">
-                        <button
-                          onClick={() => handleSlideFeedback('copy')}
-                          disabled={isRegenerating || !slideFeedback.trim()}
-                          className="bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                          title="画像とレイアウトはそのままで、テキストのみ修正します"
-                        >
-                          📝 コピー再生成
-                        </button>
-                        <button
-                          onClick={() => handleSlideFeedback('layout')}
-                          disabled={isRegenerating || !slideFeedback.trim()}
-                          className="bg-blue-600/80 hover:bg-blue-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                          title="テキストと画像はそのままで、配置のみ修正します"
-                        >
-                          📐 レイアウトのみ
-                        </button>
+                      {/* 更新ボタン（1ボタンに統合） */}
+                      <div className="flex gap-2 mb-2">
                         <button
                           onClick={() => handleSlideFeedback('general')}
                           disabled={isRegenerating || !slideFeedback.trim()}
-                          className="bg-purple-600/80 hover:bg-purple-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                          title="画像はそのままで、レイアウトとテキストを修正します"
+                          className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-1"
                         >
-                          ✨ レイアウト&コピー
+                          {isRegenerating ? '更新中...' : '✨ スライドを更新'}
                         </button>
-                        <button
-                          onClick={() => handleSlideFeedback('image')}
-                          disabled={isRegenerating}
-                          className="bg-pink-600/80 hover:bg-pink-600 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-1"
-                          title="レイアウトとテキストはそのままで、画像のみ再生成します"
-                        >
-                          🎨 画像再生成
-                        </button>
+                        {addIllustrations && (
+                          <button
+                            onClick={() => handleSlideFeedback('image')}
+                            disabled={isRegenerating}
+                            className="bg-pink-600/80 hover:bg-pink-600 text-white text-xs py-2 px-3 rounded-lg transition-colors"
+                            title="イラストのみ再生成"
+                          >
+                            🎨
+                          </button>
+                        )}
                       </div>
                       <div className="flex justify-end">
                         <button
@@ -2782,64 +2740,37 @@ export default function Home() {
                       </button>
                     </div>
 
-                    {/* メイン編集ボタン（新デザイン） */}
-                    <p className="text-xs text-zinc-500 mb-3 flex items-center gap-2">
-                      <span className="text-amber-400">💡</span>
-                      編集したい項目を選んでください
-                    </p>
-
-                    <div className="grid grid-cols-2 gap-2 mb-3">
-                      {/* テキスト編集 */}
-                      <button
-                        onClick={() => handleSlideFeedback('copy')}
-                        disabled={isRegenerating || !slideFeedback.trim()}
-                        className="group relative overflow-hidden bg-gradient-to-br from-emerald-600/20 to-emerald-700/30 hover:from-emerald-500/30 hover:to-emerald-600/40 border border-emerald-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-lg">📝</span>
-                          <span className="font-medium">テキスト</span>
-                          <span className="text-[10px] text-emerald-300/70">文字だけ修正</span>
-                        </div>
-                      </button>
-
-                      {/* レイアウト編集 */}
-                      <button
-                        onClick={() => handleSlideFeedback('layout')}
-                        disabled={isRegenerating || !slideFeedback.trim()}
-                        className="group relative overflow-hidden bg-gradient-to-br from-blue-600/20 to-blue-700/30 hover:from-blue-500/30 hover:to-blue-600/40 border border-blue-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-lg">📐</span>
-                          <span className="font-medium">レイアウト</span>
-                          <span className="text-[10px] text-blue-300/70">配置を変更</span>
-                        </div>
-                      </button>
-
-                      {/* 全体再生成 */}
+                    {/* 更新ボタン（1ボタンに統合） */}
+                    <div className="flex gap-2 mb-3">
                       <button
                         onClick={() => handleSlideFeedback('general')}
                         disabled={isRegenerating || !slideFeedback.trim()}
-                        className="group relative overflow-hidden bg-gradient-to-br from-purple-600/20 to-purple-700/30 hover:from-purple-500/30 hover:to-purple-600/40 border border-purple-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="flex-1 group relative overflow-hidden bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-medium py-3 px-4 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
                       >
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-lg">✨</span>
-                          <span className="font-medium">全体</span>
-                          <span className="text-[10px] text-purple-300/70">テキスト+配置</span>
+                        <div className="flex items-center justify-center gap-2">
+                          {isRegenerating ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              <span>更新中...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-lg">✨</span>
+                              <span>スライドを更新</span>
+                            </>
+                          )}
                         </div>
                       </button>
 
-                      {/* イラスト再生成（イラストモード時のみ表示） */}
+                      {/* イラスト再生成（イラストモード時のみ） */}
                       {addIllustrations && (
                         <button
                           onClick={() => handleSlideFeedback('image')}
                           disabled={isRegenerating}
-                          className="group relative overflow-hidden bg-gradient-to-br from-pink-600/20 to-pink-700/30 hover:from-pink-500/30 hover:to-pink-600/40 border border-pink-500/30 text-white text-xs py-3 px-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="group relative overflow-hidden bg-gradient-to-br from-pink-600/40 to-pink-700/50 hover:from-pink-500/50 hover:to-pink-600/60 border border-pink-500/30 text-white text-xs py-3 px-3 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="イラストのみ再生成"
                         >
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-lg">🎨</span>
-                            <span className="font-medium">イラスト</span>
-                            <span className="text-[10px] text-pink-300/70">画像だけ変更</span>
-                          </div>
+                          <span className="text-lg">🎨</span>
                         </button>
                       )}
                     </div>
