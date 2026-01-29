@@ -257,6 +257,21 @@ export default function Home() {
     setState((prev) => ({ ...prev, ...updates }));
   };
 
+  // Helper: Set error with timestamp for easier log correlation
+  const setError = (message: string, isProcessing = false) => {
+    const now = new Date();
+    const timestamp = now.toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    updateState({ error: `[${timestamp}] ${message}`, isProcessing });
+  };
+
   // Step 1: Upload Audio
   const handleUploadAudio = async (file: File) => {
     updateState({ isProcessing: true, error: null });
@@ -274,7 +289,7 @@ export default function Home() {
 
       updateState({ jobId: data.job_id, step: 2, isProcessing: false });
     } catch (err: any) {
-      updateState({ error: err.message, isProcessing: false });
+      setError(err.message);
     }
   };
 
