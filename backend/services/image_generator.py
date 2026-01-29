@@ -168,7 +168,7 @@ async def generate_slide_illustration(title: str, points: List[str], description
     Generate an illustration for the slide using Gemini
     """
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         
         content_summary = f"{title}. {'. '.join(points[:2])}" if points else title
         

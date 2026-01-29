@@ -587,7 +587,7 @@ async def polish_copy_for_illustration(
     
     try:
         response_text = await safe_gemini_generate(
-            "gemini-2.0-flash-exp",
+            "gemini-2.0-flash",
             prompt,
             key,
             config=genai.GenerationConfig(
@@ -2535,7 +2535,7 @@ async def validate_slide_screenshot(
         }
         
         response_text = await safe_gemini_generate(
-            "gemini-2.0-flash-exp",
+            "gemini-2.0-flash",
             [VALIDATION_PROMPT, image_part],
             key,
             config=genai.GenerationConfig(
@@ -3247,7 +3247,7 @@ async def regenerate_slide_with_feedback(
         # Gemini 2.0 Flash for creative prompts
         # Generate response
         response_text = await safe_gemini_generate(
-            "gemini-2.0-flash-exp", # Assuming model_name should be this
+            "gemini-2.0-flash", # Assuming model_name should be this
             prompt, # Assuming full_prompt should be prompt
             key,
             config=genai.GenerationConfig(temperature=0.7)
