@@ -1778,17 +1778,32 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
 - text-shadow: `0 4px 12px rgba(0,0,0,0.8)`
 """
     
-    # User images instruction
+    # User images instruction - available to ALL slides when user uploads images
     user_images_instruction = ""
     user_images_list = strategy.get("_user_images_data", [])  # Use internal key (not serialized to AI)
     user_images_count = strategy.get("user_images_count", 0)
-    if user_images_list and slide_number <= len(user_images_list):
+    
+    if user_images_list:
         # Tell AI to add placeholder - we'll inject real image after generation
-        user_images_instruction = """
-# 🖼️ ユーザー画像の配置（必須）
+        # AI decides whether to include image based on slide content
+        user_images_instruction = f"""
+# 🖼️ ユーザー提供画像の活用（スライド内容に応じて判断）
 
-ユーザーがアップロードした画像を**必ず**配置してください。
-レイアウトにかかわらず、以下のHTMLタグを**そのまま**挿入してください（これを入れないと画像が表示されません）：
+ユーザーが{len(user_images_list)}枚の画像をアップロードしました。
+**このスライドの内容に画像が効果的かどうかをAIが判断**し、適切な場合のみ以下のプレースホルダーを挿入してください。
+
+## 画像を配置すべきケース
+- 具体例や事例を説明するスライド
+- ビジュアル（図表、写真）があると理解が深まるスライド
+- キービジュアルとして印象づけたいスライド
+
+## 画像を配置しないケース
+- タイトルのみ・オープニングスライド
+- 箇条書きメインで情報量が多いスライド
+- エンディング/まとめスライド
+
+## 配置する場合
+以下のHTMLタグを**そのまま**挿入（srcは変更しないこと）：
 
 ```html
 <div style="position: absolute; right: 5%; top: 50%; transform: translateY(-50%); width: 40%; max-height: 80%; z-index: 50; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
@@ -1796,8 +1811,8 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
 </div>
 ```
 
-- `src="USER_IMAGE_PLACEHOLDER"` を変更しないでください。
-- 画像が他の要素（テキストなど）と被らないように、左側のテキストエリア幅を調整してください（例: `max-width: 50%`）。
+- 画像を入れる場合、左側のテキストエリア幅を調整（`max-width: 55%`等）
+- **配置しない判断も正しい判断です** - 無理に入れる必要はありません
 """
     
     # Generate prompt
@@ -1851,20 +1866,20 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
             print(f"[Design Architect] Invalid HTML for slide {slide_number}, using fallback")
             return generate_fallback_html(slide, slide_number, total_slides, strategy)
         
-        # Replace user image placeholder with actual base64 if present
+        # Replace user image placeholder with actual base64 if present (for ANY slide that has placeholder)
         user_images_list = strategy.get("_user_images_data", [])
-        if user_images_list and slide_number <= len(user_images_list):
+        if user_images_list and "USER_IMAGE_PLACEHOLDER" in html:
+            # Cycle through images if fewer images than slides
             img_index = (slide_number - 1) % len(user_images_list)
             img = user_images_list[img_index]
-            
-            if "USER_IMAGE_PLACEHOLDER" in html:
-                html = html.replace("USER_IMAGE_PLACEHOLDER", img["base64"])
-                print(f"[Design Architect] Injected user image into slide {slide_number}")
-            elif "user_image_placeholder" in html: # Try lowercase fallback
-                html = html.replace("user_image_placeholder", img["base64"])
-                print(f"[Design Architect] Injected user image into slide {slide_number} (lowercase match)")
-            else:
-                 print(f"[Design Architect] WARNING: User image instruction sent but placeholder NOT found in generated HTML for slide {slide_number}. HTML preview: {html[:100]}...")
+            html = html.replace("USER_IMAGE_PLACEHOLDER", img["base64"])
+            print(f"[Design Architect] Injected user image {img_index + 1}/{len(user_images_list)} into slide {slide_number}")
+        elif user_images_list and "user_image_placeholder" in html:
+            # Try lowercase fallback
+            img_index = (slide_number - 1) % len(user_images_list)
+            img = user_images_list[img_index]
+            html = html.replace("user_image_placeholder", img["base64"])
+            print(f"[Design Architect] Injected user image {img_index + 1}/{len(user_images_list)} into slide {slide_number} (lowercase)")
         
         print(f"[Design Architect] Generated slide {slide_number}: {slide_type}")
         return html
