@@ -197,7 +197,7 @@ async def generate_outline_with_gemini(transcript: str) -> Dict[str, Any]:
     """
     Generate outline using Gemini
     """
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-3-flash-preview")
     
     prompt = OUTLINE_GENERATION_PROMPT + transcript
     
@@ -237,7 +237,7 @@ async def generate_slides_with_gemini(outline_json: str) -> List[Dict[str, Any]]
     """
     Generate detailed slides using Gemini
     """
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-3-flash-preview")
     
     prompt = SLIDE_DESIGN_PROMPT + outline_json + """
 

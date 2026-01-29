@@ -49,7 +49,7 @@ async def map_slides_to_audio(
     
     try:
         # Gemini Pro を使用（より高精度）
-        model = genai.GenerativeModel("gemini-1.5-pro")
+        model = genai.GenerativeModel("gemini-3-flash-preview")
         response = model.generate_content(
             mapping_prompt,
             generation_config=genai.GenerationConfig(

@@ -115,7 +115,7 @@ def get_available_gemini_model(api_key: str) -> str:
     print(f"[Gemini] Configuring with key: {str(api_key)[:10]}...{str(api_key)[-4:]}")
     if not api_key:
         print("[Gemini] No API key provided to get_available_gemini_model")
-        return "gemini-1.5-flash"
+        return "gemini-3-flash-preview"
     
     # Try to list available models
     try:
@@ -128,7 +128,7 @@ def get_available_gemini_model(api_key: str) -> str:
         print(f"[Gemini] Available models: {available_models[:10]}")
         
         # Prefer flash models, then pro
-        preferred = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        preferred = ['gemini-2.0-flash', 'gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-pro']
         for pref in preferred:
             for avail in available_models:
                 if pref in avail:

@@ -41,7 +41,7 @@ The image should be suitable as a slide background or accent image, with areas d
 
     try:
         # Use Gemini with image generation capability
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-3-flash-preview")
         
         response = model.generate_content(
             full_prompt,

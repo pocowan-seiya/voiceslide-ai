@@ -176,7 +176,7 @@ async def analyze_slide_design(
     
     try:
         # Try available models
-        model_names = ["gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-pro"]
+        model_names = ["gemini-3-flash-preview", "gemini-1.5-flash-latest", "gemini-pro"]
         
         for model_name in model_names:
             try:
@@ -303,7 +303,7 @@ async def generate_background_image(
     genai.configure(api_key=key)
     
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-3-flash-preview")
         
         full_prompt = f"""Generate a professional presentation slide background image.
 Style: {prompt}

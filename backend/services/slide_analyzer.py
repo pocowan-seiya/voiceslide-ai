@@ -112,7 +112,7 @@ async def analyze_slide_image(image_path: str, slide_number: int) -> Dict[str, A
         with open(image_path, "rb") as f:
             image_data = f.read()
         
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-3-flash-preview")
         
         # より詳細な分析プロンプト
         prompt = """このスライド画像を詳細に分析してください。
