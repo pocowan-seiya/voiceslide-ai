@@ -318,7 +318,7 @@ export default function Home() {
       if (bgmEnabled && bgmFile) {
         setProgress({ percent: 10, message: "BGMをミキシング中..." });
         const mixRes = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/mix-bgm?bgm_volume=${bgmVolume}`,
+          `${API_URL}/api/audio/${state.jobId}/mix-bgm?bgm_volume=${bgmVolume}`,
           { method: 'POST' }
         );
         if (!mixRes.ok) {
@@ -1373,7 +1373,7 @@ export default function Home() {
                                 formData.append('file', file);
                                 try {
                                   await fetch(
-                                    `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/upload-bgm`,
+                                    `${API_URL}/api/audio/${state.jobId}/upload-bgm`,
                                     { method: 'POST', body: formData }
                                   );
                                 } catch (err) {
@@ -1467,8 +1467,8 @@ export default function Home() {
                     controls
                     className="w-full mb-3"
                     src={bgmMixed
-                      ? `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/mixed?t=${Date.now()}`
-                      : `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/trimmed`
+                      ? `${API_URL}/api/audio/${state.jobId}/mixed?t=${Date.now()}`
+                      : `${API_URL}/api/audio/${state.jobId}/trimmed`
                     }
                   >
                     お使いのブラウザは音声再生に対応していません
@@ -1506,7 +1506,7 @@ export default function Home() {
                                 ? `feedback=${encodeURIComponent(bgmFeedback)}`
                                 : `bgm_volume=${bgmVolume}`;
                               await fetch(
-                                `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/adjust-bgm?${params}`,
+                                `${API_URL}/api/audio/${state.jobId}/adjust-bgm?${params}`,
                                 { method: 'POST' }
                               );
                               setBgmFeedback('');
@@ -1534,7 +1534,7 @@ export default function Home() {
                       try {
                         const endpoint = bgmMixed ? 'mixed' : 'trimmed';
                         const res = await fetch(
-                          `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/${endpoint}`
+                          `${API_URL}/api/audio/${state.jobId}/${endpoint}`
                         );
                         if (!res.ok) throw new Error('Download failed');
                         const blob = await res.blob();
