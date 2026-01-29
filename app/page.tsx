@@ -198,6 +198,14 @@ export default function Home() {
   const [concatVideoUrl, setConcatVideoUrl] = useState<string | null>(null);
   const [isConcatenating, setIsConcatenating] = useState(false);
 
+  // BGM mixing feature
+  const [bgmEnabled, setBgmEnabled] = useState(false);
+  const [bgmFile, setBgmFile] = useState<File | null>(null);
+  const [bgmMixed, setBgmMixed] = useState(false);
+  const [bgmMixing, setBgmMixing] = useState(false);
+  const [bgmFeedback, setBgmFeedback] = useState("");
+  const [bgmVolume, setBgmVolume] = useState(-15);
+
   // Slide undo history
   const [slideCanUndo, setSlideCanUndo] = useState<{ [key: number]: boolean }>({});
   const [isUndoing, setIsUndoing] = useState(false);
@@ -1308,6 +1316,248 @@ export default function Home() {
                   </div>
                 )}
               </div>
+
+              {/* Audio Preview & Download */}
+              {state.jobId && (
+                <div className="bg-zinc-800/50 rounded-xl p-4 mb-6 max-w-md mx-auto">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg">🎤</span>
+                    <span className="text-sm font-medium">アップロード済み音声</span>
+                  </div>
+
+                  {/* Audio Player */}
+                  <audio
+                    controls
+                    className="w-full mb-3"
+                    src={`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/trimmed`}
+                  >
+                    お使いのブラウザは音声再生に対応していません
+                  </audio>
+
+                  {/* Download Button */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(
+                          `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/trimmed`
+                        );
+                        if (!res.ok) throw new Error('Download failed');
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `audio_${state.jobId}.mp3`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                      } catch (err) {
+                        console.error('Download error:', err);
+                        alert('ダウンロードに失敗しました');
+                      }
+                    }}
+                    className="w-full py-2 px-4 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span>⬇️</span>
+                    <span>カット済み音声をダウンロード</span>
+                  </button>
+                </div>
+              )}
+
+              {/* BGM Section */}
+              {state.jobId && (
+                <div className="bg-zinc-800/50 rounded-xl p-4 mb-6 max-w-md mx-auto">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">🎵</span>
+                      <span className="text-sm font-medium">BGM追加（オプション）</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setBgmEnabled(!bgmEnabled);
+                        if (bgmEnabled) {
+                          setBgmFile(null);
+                          setBgmMixed(false);
+                        }
+                      }}
+                      className={`w-12 h-6 rounded-full transition-all relative ${bgmEnabled ? 'bg-purple-500' : 'bg-zinc-600'}`}
+                    >
+                      <span className={`absolute w-5 h-5 bg-white rounded-full top-0.5 transition-all ${bgmEnabled ? 'left-6' : 'left-0.5'}`} />
+                    </button>
+                  </div>
+
+                  {bgmEnabled && (
+                    <div className="space-y-4">
+                      {/* BGM Upload */}
+                      {!bgmFile && (
+                        <div>
+                          <label className="block w-full py-3 px-4 border-2 border-dashed border-zinc-600 rounded-lg cursor-pointer hover:border-purple-500 transition-colors text-center">
+                            <span className="text-sm text-zinc-400">🎶 BGM音源をアップロード (MP3/WAV)</span>
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  setBgmFile(file);
+                                  // Upload to backend
+                                  const formData = new FormData();
+                                  formData.append('file', file);
+                                  try {
+                                    await fetch(
+                                      `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/upload-bgm`,
+                                      { method: 'POST', body: formData }
+                                    );
+                                  } catch (err) {
+                                    console.error('BGM upload error:', err);
+                                  }
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      )}
+
+                      {/* BGM Selected */}
+                      {bgmFile && !bgmMixed && (
+                        <div>
+                          <div className="flex items-center justify-between mb-3 p-2 bg-zinc-700 rounded-lg">
+                            <span className="text-sm truncate">{bgmFile.name}</span>
+                            <button
+                              onClick={() => setBgmFile(null)}
+                              className="text-zinc-400 hover:text-white"
+                            >✕</button>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              setBgmMixing(true);
+                              try {
+                                await fetch(
+                                  `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/mix-bgm?bgm_volume=${bgmVolume}`,
+                                  { method: 'POST' }
+                                );
+                                setBgmMixed(true);
+                              } catch (err) {
+                                console.error('BGM mix error:', err);
+                                alert('ミキシングに失敗しました');
+                              } finally {
+                                setBgmMixing(false);
+                              }
+                            }}
+                            disabled={bgmMixing}
+                            className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-600 text-white rounded-lg text-sm transition-colors"
+                          >
+                            {bgmMixing ? '🎛️ ミキシング中...' : '🎛️ BGMをミックス'}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* BGM Mixed - Preview & Adjust */}
+                      {bgmMixed && (
+                        <div className="space-y-3">
+                          <div className="text-sm text-green-400 flex items-center gap-2">
+                            <span>✅</span>
+                            <span>ミキシング完了！</span>
+                          </div>
+
+                          {/* Mixed Audio Player */}
+                          <audio
+                            controls
+                            className="w-full"
+                            src={`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/mixed?t=${Date.now()}`}
+                          >
+                            お使いのブラウザは音声再生に対応していません
+                          </audio>
+
+                          {/* Volume Slider */}
+                          <div className="bg-zinc-900/50 rounded-lg p-3">
+                            <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                              <span>BGM音量</span>
+                              <span className="text-zinc-500">{bgmVolume}dB</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="-30"
+                              max="-5"
+                              step="1"
+                              value={bgmVolume}
+                              onChange={(e) => setBgmVolume(parseInt(e.target.value))}
+                              className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                            <div className="flex justify-between text-[10px] text-zinc-600 mt-1">
+                              <span>小さく</span>
+                              <span>大きく</span>
+                            </div>
+                          </div>
+
+                          {/* Feedback Input */}
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={bgmFeedback}
+                              onChange={(e) => setBgmFeedback(e.target.value)}
+                              placeholder="例: BGMをもう少し小さく"
+                              className="flex-1 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm"
+                            />
+                            <button
+                              onClick={async () => {
+                                setBgmMixing(true);
+                                try {
+                                  const params = bgmFeedback
+                                    ? `feedback=${encodeURIComponent(bgmFeedback)}`
+                                    : `bgm_volume=${bgmVolume}`;
+                                  await fetch(
+                                    `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/adjust-bgm?${params}`,
+                                    { method: 'POST' }
+                                  );
+                                  setBgmFeedback('');
+                                } catch (err) {
+                                  console.error('BGM adjust error:', err);
+                                } finally {
+                                  setBgmMixing(false);
+                                }
+                              }}
+                              disabled={bgmMixing}
+                              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-600 text-white rounded-lg text-sm"
+                            >
+                              調整
+                            </button>
+                          </div>
+
+                          {/* Download Mixed */}
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(
+                                  `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/audio/${state.jobId}/mixed`
+                                );
+                                if (!res.ok) throw new Error('Download failed');
+                                const blob = await res.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `audio_${state.jobId}_mixed.mp3`;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                window.URL.revokeObjectURL(url);
+                              } catch (err) {
+                                console.error('Download error:', err);
+                                alert('ダウンロードに失敗しました');
+                              }
+                            }}
+                            className="w-full py-2 px-4 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                          >
+                            <span>⬇️</span>
+                            <span>BGM入り音声をダウンロード</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={handleTranscribe}

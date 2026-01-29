@@ -590,6 +590,176 @@ async def get_transcribe_status(job_id: str):
     return response
 
 
+@app.get("/api/audio/{job_id}/trimmed")
+async def get_trimmed_audio(job_id: str):
+    """Download the trimmed audio file for a job"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    job = jobs[job_id]
+    audio_path = job.get("audio_path")
+    
+    if not audio_path:
+        raise HTTPException(404, "Audio file not found")
+    
+    # Check for trimmed version first
+    base, ext = os.path.splitext(audio_path)
+    trimmed_path = f"{base}_trimmed{ext}"
+    
+    # Use trimmed if exists, otherwise original
+    if os.path.exists(trimmed_path):
+        file_path = trimmed_path
+        filename = f"{job_id}_trimmed{ext}"
+    elif os.path.exists(audio_path):
+        file_path = audio_path
+        filename = f"{job_id}{ext}"
+    else:
+        raise HTTPException(404, "Audio file not found on disk")
+    
+    return FileResponse(
+        file_path,
+        media_type="audio/mpeg",
+        filename=filename,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+# ========== BGM MIXING ==========
+
+from services.audio_mixer import mix_audio_with_bgm, adjust_bgm_volume, parse_volume_feedback
+
+@app.post("/api/audio/{job_id}/upload-bgm")
+async def upload_bgm(job_id: str, file: UploadFile = File(...)):
+    """Upload a BGM file for a job"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    # Save BGM file
+    bgm_filename = f"{job_id}_bgm_{file.filename}"
+    bgm_path = os.path.join(UPLOAD_DIR, bgm_filename)
+    
+    with open(bgm_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+    
+    jobs[job_id]["bgm_path"] = bgm_path
+    print(f"[BGM] Uploaded: {bgm_path}")
+    
+    return {"success": True, "bgm_path": bgm_path}
+
+
+@app.post("/api/audio/{job_id}/mix-bgm")
+async def mix_bgm(job_id: str, bgm_volume: float = -15):
+    """Mix the trimmed audio with uploaded BGM"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    job = jobs[job_id]
+    audio_path = job.get("audio_path")
+    bgm_path = job.get("bgm_path")
+    
+    if not audio_path:
+        raise HTTPException(400, "No audio file found")
+    if not bgm_path:
+        raise HTTPException(400, "No BGM file uploaded")
+    
+    # Use trimmed version if exists
+    base, ext = os.path.splitext(audio_path)
+    speech_path = f"{base}_trimmed{ext}" if os.path.exists(f"{base}_trimmed{ext}") else audio_path
+    
+    # Output path
+    output_path = f"{base}_mixed.mp3"
+    
+    try:
+        mix_audio_with_bgm(
+            speech_path=speech_path,
+            bgm_path=bgm_path,
+            output_path=output_path,
+            bgm_volume_reduction=bgm_volume,
+        )
+        
+        jobs[job_id]["mixed_path"] = output_path
+        jobs[job_id]["bgm_volume"] = bgm_volume
+        
+        return {
+            "success": True,
+            "mixed_path": output_path,
+            "bgm_volume": bgm_volume,
+        }
+    except Exception as e:
+        print(f"[BGM Mix] Error: {e}")
+        raise HTTPException(500, f"Mixing failed: {str(e)}")
+
+
+@app.post("/api/audio/{job_id}/adjust-bgm")
+async def adjust_bgm(job_id: str, feedback: str = None, bgm_volume: float = None):
+    """Adjust BGM volume based on feedback or direct value"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    job = jobs[job_id]
+    audio_path = job.get("audio_path")
+    bgm_path = job.get("bgm_path")
+    
+    if not audio_path or not bgm_path:
+        raise HTTPException(400, "Audio or BGM file not found")
+    
+    # Determine new volume
+    if bgm_volume is not None:
+        new_volume = bgm_volume
+    elif feedback:
+        new_volume = parse_volume_feedback(feedback)
+        print(f"[BGM Adjust] Feedback: '{feedback}' -> Volume: {new_volume}dB")
+    else:
+        raise HTTPException(400, "Provide either feedback or bgm_volume")
+    
+    # Use trimmed version if exists
+    base, ext = os.path.splitext(audio_path)
+    speech_path = f"{base}_trimmed{ext}" if os.path.exists(f"{base}_trimmed{ext}") else audio_path
+    output_path = f"{base}_mixed.mp3"
+    
+    try:
+        adjust_bgm_volume(
+            mixed_path=output_path,
+            original_speech_path=speech_path,
+            bgm_path=bgm_path,
+            output_path=output_path,
+            new_bgm_volume_reduction=new_volume,
+        )
+        
+        jobs[job_id]["mixed_path"] = output_path
+        jobs[job_id]["bgm_volume"] = new_volume
+        
+        return {
+            "success": True,
+            "mixed_path": output_path,
+            "bgm_volume": new_volume,
+        }
+    except Exception as e:
+        print(f"[BGM Adjust] Error: {e}")
+        raise HTTPException(500, f"Adjustment failed: {str(e)}")
+
+
+@app.get("/api/audio/{job_id}/mixed")
+async def get_mixed_audio(job_id: str):
+    """Download the mixed audio file (with BGM)"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    job = jobs[job_id]
+    mixed_path = job.get("mixed_path")
+    
+    if not mixed_path or not os.path.exists(mixed_path):
+        raise HTTPException(404, "Mixed audio not found")
+    
+    return FileResponse(
+        mixed_path,
+        media_type="audio/mpeg",
+        filename=f"{job_id}_mixed.mp3",
+        headers={"Content-Disposition": f"attachment; filename={job_id}_mixed.mp3"}
+    )
+
+
 # ========== STEP 3: Polish Transcript ==========
 
 @app.post("/api/polish-transcript/{job_id}")
