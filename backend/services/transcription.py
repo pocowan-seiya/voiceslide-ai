@@ -211,7 +211,7 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
+def _polish_sync(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None) -> str:
     """Synchronous polishing (runs in thread pool)"""
     key = gemini_key or GEMINI_API_KEY
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -226,14 +226,17 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
         model_name = get_available_gemini_model(key)
         print(f"[{timestamp}] [Polish] Using model: {model_name}")
         
-        prompt = f"""以下の文字起こしテキストを読みやすく整形してください。
+        reference_script = f"参考台本:\n{original_script}\n\n" if original_script else ""
     
+        prompt = f"""以下の文字起こしテキストを読みやすく整形してください。
+{reference_script}
 要件:
 - 「えー」「あー」などのフィラーを削除
 - 文章を自然に区切る
 - 明らかな言い間違いを修正
 - 意味は変えない
 - 敬体（です・ます調）を維持
+- { "参考台本がある場合は、用語・漢字・固有名詞・表現スタイルなどを参考台本に寄せてください。" if original_script else "" }
 
 元のテキスト:
 {text}
@@ -280,11 +283,11 @@ def _polish_sync(text: str, gemini_key: Optional[str] = None) -> str:
         raise ValueError(f"[{timestamp}] Gemini APIエラー: {str(e)}")
 
 
-async def polish_transcript(text: str, gemini_key: Optional[str] = None) -> str:
+async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None) -> str:
     """Async wrapper for polishing"""
     loop = asyncio.get_event_loop()
     try:
-        result = await loop.run_in_executor(executor, _polish_sync, text, gemini_key)
+        result = await loop.run_in_executor(executor, _polish_sync, text, gemini_key, original_script)
         return result
     except Exception as e:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -150,6 +150,7 @@ async def startup_event():
 # Request models
 class TranscriptUpdate(BaseModel):
     transcript: Optional[str] = None
+    original_script: Optional[str] = None
     slide_count_mode: Optional[str] = "auto"  # auto, fewer, more, custom
     custom_slide_count: Optional[int] = 10
 
@@ -794,7 +795,8 @@ async def polish_transcript(
     jobs[job_id]["status"] = "processing"
     
     edited = update.transcript if update else None
-    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key)
+    original_script = update.original_script if update else None
+    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script)
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["polished_transcript"] = result["polished_transcript"]

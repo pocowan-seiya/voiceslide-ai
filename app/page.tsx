@@ -111,10 +111,12 @@ export default function Home() {
     cleanupInfo: null,
   });
 
-  const [editText, setEditText] = useState("");
-  const [isDragging, setIsDragging] = useState(false);
-  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
-  const [editedTranscript, setEditedTranscript] = useState("");
+  const [editedTranscript, setEditedTranscript] = useState<string>("");
+  const [editText, setEditText] = useState<string>("");
+  const [scriptText, setScriptText] = useState<string>("");
+  const [showScriptInput, setShowScriptInput] = useState<boolean>(false);
+  const [isEditingTranscript, setIsEditingTranscript] = useState<boolean>(false);
+  const [isDragging, setIsDragging] = useState(false); // This was originally here, keeping it.
   const [showSettings, setShowSettings] = useState(false);
   const [hasKeys, setHasKeys] = useState(false);
 
@@ -416,7 +418,10 @@ export default function Home() {
           "Content-Type": "application/json",
           ...getAPIHeaders()
         },
-        body: JSON.stringify({ transcript: editText }),
+        body: JSON.stringify({
+          transcript: editText,
+          original_script: scriptText
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || data.error || "Polish failed");
@@ -1499,11 +1504,50 @@ export default function Home() {
           {/* Step 2-3: Transcript Display & Edit */}
           {(state.step === 2 || state.step === 3) && state.transcript && (
             <div>
-              <div className="mb-4">
+              <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold gradient-text">
                   {state.step === 2 ? "文字起こし結果" : "ブラッシュアップ完了"}
                 </h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowScriptInput(!showScriptInput)}
+                    className={`text-xs px-3 py-1 rounded-lg transition-all ${showScriptInput
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                      }`}
+                  >
+                    {showScriptInput ? '📖 台本を隠す' : '📄 台本を入力'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingTranscript(!isEditingTranscript);
+                      if (!isEditingTranscript) setEditedTranscript(editText);
+                    }}
+                    className={`text-xs px-3 py-1 rounded-lg transition-all ${isEditingTranscript
+                      ? 'bg-cyan-500 text-white'
+                      : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                      }`}
+                  >
+                    {isEditingTranscript ? '✏️ 編集中' : '📝 手動で編集'}
+                  </button>
+                </div>
               </div>
+
+              {/* Script Input Section (Optional) */}
+              {showScriptInput && (
+                <div className="mb-4 p-4 bg-purple-500/5 border border-purple-500/20 rounded-xl">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-sm font-medium text-purple-300">参考台本 (任意)</label>
+                    <span className="text-[10px] text-zinc-500">ブラッシュアップ時に用語やスタイルを参考にします</span>
+                  </div>
+                  <textarea
+                    value={scriptText}
+                    onChange={(e) => setScriptText(e.target.value)}
+                    className="w-full h-32 bg-zinc-900/50 border border-purple-500/30 rounded-lg p-3 text-sm text-white resize-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 transition-all"
+                    placeholder="元々の台本や、守ってほしい用語・言い回しを入力してください..."
+                  />
+                </div>
+              )}
 
               {/* Cleanup Info */}
               {state.cleanupInfo && (
@@ -1635,19 +1679,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Edit Button - moved here from header */}
-              <button
-                onClick={() => {
-                  setIsEditingTranscript(!isEditingTranscript);
-                  setEditedTranscript(editText);
-                }}
-                className={`w-full mb-4 py-2 px-4 rounded-lg text-sm transition-all flex items-center justify-center gap-2 ${isEditingTranscript
-                  ? 'bg-cyan-500 text-white'
-                  : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-                  }`}
-              >
-                {isEditingTranscript ? '✏️ 編集中...' : '📝 文字起こしを手動で編集'}
-              </button>
               {isEditingTranscript && (
                 <div className="mb-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-sm">
                   <span className="text-yellow-400">💡 ヒント:</span>

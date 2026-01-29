@@ -70,11 +70,20 @@ class HybridPipeline:
         }
     
     # Step 3: Transcription Polish
-    async def step_polish_transcript(self, edited_transcript: Optional[str] = None, gemini_key: Optional[str] = None) -> Dict[str, Any]:
+    async def step_polish_transcript(
+        self, 
+        edited_transcript: Optional[str] = None, 
+        gemini_key: Optional[str] = None,
+        original_script: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Polish and improve the transcript"""
         text_to_polish = edited_transcript or self.raw_transcript
         
-        self.polished_transcript = await polish_transcript(text_to_polish, gemini_key=gemini_key)
+        self.polished_transcript = await polish_transcript(
+            text_to_polish, 
+            gemini_key=gemini_key,
+            original_script=original_script
+        )
         
         return {
             "step": 3,
