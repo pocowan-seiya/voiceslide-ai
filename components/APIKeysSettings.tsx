@@ -64,9 +64,14 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                                 onChange={(e) => setOpenaiKey(e.target.value)}
                                 className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none pr-12"
                                 placeholder="sk-proj-..."
-                                autoComplete="off"
+                                autoComplete="new-password"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
                                 data-lpignore="true"
+                                data-1p-ignore="true"
                                 data-form-type="other"
+                                name="openai-key-field-no-autofill"
                             />
                             <button
                                 type="button"
@@ -101,9 +106,14 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                                 onChange={(e) => setGeminiKey(e.target.value)}
                                 className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none pr-12"
                                 placeholder="AIzaSy..."
-                                autoComplete="off"
+                                autoComplete="new-password"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
                                 data-lpignore="true"
+                                data-1p-ignore="true"
                                 data-form-type="other"
+                                name="gemini-key-field-no-autofill"
                             />
                             <button
                                 type="button"
