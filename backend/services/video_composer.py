@@ -64,26 +64,34 @@ async def compose_video(
                 image_path = slide_images[-1] if slide_images else None
             
             if image_path and os.path.exists(image_path):
-                f.write(f"file '{os.path.abspath(image_path)}'\n")
+                abs_path = os.path.abspath(image_path)
+                f.write(f"file '{abs_path}'\n")
                 f.write(f"duration {duration:.3f}\n")
-                print(f"[Concat] Slide {slide_num}: duration {duration:.3f}s")
+                print(f"[Concat] Slide {slide_num}: {os.path.basename(image_path)} duration {duration:.3f}s")
         
-        # FFmpegの要件: 最後の画像をもう一度追加
+        # FFmpegの要件: 最後の画像をもう一度追加（duration無し）
         if slide_images:
-            f.write(f"file '{os.path.abspath(slide_images[-1])}'\n")
+            last_image = os.path.abspath(slide_images[-1])
+            f.write(f"file '{last_image}'\n")
+            print(f"[Concat] Final entry: {os.path.basename(slide_images[-1])} (no duration)")
+    
+    # Debug: concat file contents
+    with open(concat_file, "r") as f:
+        print(f"[Concat] File contents:\n{f.read()}")
     
     # Step 1: 画像から動画を作成
     temp_video = output_path.replace(".mp4", "_temp.mp4")
     
+    # Using explicit framerate to ensure proper slide switching
     cmd_images = [
         "ffmpeg", "-y",
         "-f", "concat",
         "-safe", "0",
         "-i", concat_file,
-        "-vsync", "vfr",
+        "-r", "30",  # Explicit output framerate for reliable switching
         # Ensure dimensions are even (required by H.264/libx264)
         # pad to nearest even dimensions using ceil
-        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+        "-vf", "fps=30,pad=ceil(iw/2)*2:ceil(ih/2)*2",
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
         "-preset", "medium",
