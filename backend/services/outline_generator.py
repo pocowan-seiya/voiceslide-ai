@@ -564,14 +564,42 @@ async def generate_outline(
     # 音声の総時間
     total_duration = segments[-1].get("end", 0)
     
+    # スライド枚数の制限を計算（90-120秒に1枚が目安）
+    # 短い音声の場合は枚数を厳しく制限
+    min_seconds_per_slide = 30.0  # 最低30秒/スライド
+    recommended_seconds_per_slide = 90.0  # 推奨90秒/スライド
+    
+    max_slides_hard = max(2, int(total_duration / min_seconds_per_slide))  # 絶対最大
+    recommended_slides = max(2, int(total_duration / recommended_seconds_per_slide))  # 推奨枚数
+    
+    print(f"[Outline] Audio: {total_duration:.1f}s → 推奨スライド数: {recommended_slides}-{max_slides_hard}枚")
+    
     # スライド枚数の指示を生成
     slide_count_instruction = ""
     if slide_count_mode == "fewer":
         slide_count_instruction = "\\n\\n⚠️ スライド枚数の指示: **少なめ（5-7枚）** でまとめてください。トピックを大きくグループ化し、簡潔なスライドにしてください。\\n"
     elif slide_count_mode == "more":
-        slide_count_instruction = "\\n\\n⚠️ スライド枚数の指示: **多め（15枚以上）** で細かく分割してください。各ポイントを個別のスライドにし、詳細な説明を含めてください。\\n"
+        # 「多め」でも絶対最大を超えないように
+        slide_count_instruction = f"\\n\\n⚠️ スライド枚数の指示: **多め（最大{max_slides_hard}枚まで）** で細かく分割してください。ただし、各スライドは最低30秒は表示されるようにしてください。\\n"
     elif slide_count_mode == "custom":
-        slide_count_instruction = f"\\n\\n⚠️ スライド枚数の指示: **ちょうど{custom_slide_count}枚** になるように調整してください。\\n"
+        # ユーザー指定でも絶対最大は超えない
+        safe_count = min(custom_slide_count, max_slides_hard)
+        slide_count_instruction = f"\\n\\n⚠️ スライド枚数の指示: **ちょうど{safe_count}枚** になるように調整してください。\\n"
+    else:
+        # auto mode: 推奨枚数を明示
+        slide_count_instruction = f"""
+        
+⚠️ **スライド枚数の厳格なルール**（必ず守ってください）:
+
+- 音声時間: {total_duration:.1f}秒
+- **推奨スライド数: {recommended_slides}枚**（90秒につき1枚）
+- **絶対最大: {max_slides_hard}枚**（これを超えてはいけません）
+- 各スライドは最低30秒表示されるようにしてください
+
+{max_slides_hard}枚を超えるスライドを生成すると、視聴者がついていけません。
+必ず上記の範囲内でスライドを設計してください。
+
+"""
     
     # 編集されたトランスクリプトを追加（ユーザー編集を反映）
     edited_transcript_section = f"""
@@ -725,6 +753,36 @@ def validate_and_fix_outline_timestamps(
     if not slides:
         return outline
     
+    # === スライド数の強制制限 ===
+    # 30秒/スライドを最低限として、最大枚数を計算
+    min_seconds_per_slide = 30.0
+    max_slides_allowed = max(2, int(total_duration / min_seconds_per_slide))
+    
+    if len(slides) > max_slides_allowed:
+        print(f"[Outline] ⚠️ スライド数超過: {len(slides)}枚 → {max_slides_allowed}枚に削減")
+        
+        # スライドを統合して枚数を減らす
+        # 方法: 均等に間引く（重要度の低いスライドをマージ）
+        slides.sort(key=lambda x: x.get("number", 0))
+        
+        # 残すスライドのインデックスを計算
+        step = len(slides) / max_slides_allowed
+        keep_indices = [int(i * step) for i in range(max_slides_allowed)]
+        
+        merged_slides = []
+        for i in keep_indices:
+            if i < len(slides):
+                merged_slides.append(slides[i])
+        
+        # スライド番号を再割り当て
+        for i, slide in enumerate(merged_slides):
+            slide["number"] = i + 1
+        
+        slides = merged_slides
+        outline["slides"] = slides
+        outline["total_slides"] = len(slides)
+        print(f"[Outline] スライド削減完了: {len(slides)}枚")
+    
     # スライド番号でソート
     slides.sort(key=lambda x: x.get("number", 0))
     
@@ -770,15 +828,24 @@ def validate_and_fix_outline_timestamps(
             new_durations = [s["timestamp_end"] - s["timestamp_start"] for s in slides]
             print(f"[Outline] 再分配完了: 各スライド約{new_durations[0]:.1f}秒")
     
-    # 5. 最小時間（10秒）の確保 - プロフェッショナル基準
-    min_duration = 10.0
+    # 5. 最小時間の確保 - 動的に計算（音声長を超えないように）
+    # 音声が短い場合は最小時間も短くする
+    max_possible_min = total_duration / len(slides) if slides else 10.0
+    min_duration = min(10.0, max_possible_min * 0.8)  # 10秒または(平均×0.8)の小さい方
+    
     for i in range(len(slides) - 1):
         duration = slides[i]["timestamp_end"] - slides[i]["timestamp_start"]
         if duration < min_duration:
             # 時間を延長（後続スライドから借りる）
             needed = min_duration - duration
-            slides[i]["timestamp_end"] += needed
-            slides[i + 1]["timestamp_start"] = slides[i]["timestamp_end"]
+            # 借りれる量を制限（後続スライドも最小時間を確保）
+            next_duration = slides[i + 1]["timestamp_end"] - slides[i + 1]["timestamp_start"]
+            available = max(0, next_duration - min_duration)
+            adjust = min(needed, available)
+            
+            if adjust > 0:
+                slides[i]["timestamp_end"] += adjust
+                slides[i + 1]["timestamp_start"] = slides[i]["timestamp_end"]
     
     # 6. 小数点1桁に丸める
     for slide in slides:

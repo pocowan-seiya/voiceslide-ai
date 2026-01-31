@@ -211,6 +211,8 @@ def adjust_timing_durations(
 ) -> List[Dict[str, Any]]:
     """
     既存のタイミングマップの時間を調整
+    
+    IMPORTANT: タイミングの合計が音声より長い場合はスケーリングする
     """
     if not timing_map:
         return []
@@ -218,14 +220,37 @@ def adjust_timing_durations(
     # スライド番号でソート
     sorted_timing = sorted(timing_map, key=lambda x: x.get("slide_number", 0))
     
+    # 計算: 現在のタイミングの合計時間
+    last_timing = sorted_timing[-1]
+    total_timing_duration = last_timing.get("end_time", 0)
+    
     # デバッグ: タイミング情報を表示
-    print(f"[VideoComposer] Adjusting timing for {len(sorted_timing)} slides (audio: {audio_duration:.1f}s)")
+    print(f"[VideoComposer] Adjusting timing for {len(sorted_timing)} slides (audio: {audio_duration:.1f}s, timing_total: {total_timing_duration:.1f}s)")
+    
+    # スケーリングが必要かどうかを判定
+    needs_scaling = total_timing_duration > audio_duration + 1.0  # 1秒以上超過
+    
+    if needs_scaling:
+        scale_factor = audio_duration / total_timing_duration
+        print(f"  ⚠️ Timing exceeds audio duration! Scaling by factor {scale_factor:.3f}")
+    else:
+        scale_factor = 1.0
     
     result = []
     for i, timing in enumerate(sorted_timing):
-        start = timing.get("start_time", 0)
-        end = timing.get("end_time", 0)
-        duration = end - start
+        original_start = timing.get("start_time", 0)
+        original_end = timing.get("end_time", 0)
+        original_duration = original_end - original_start
+        
+        # スケーリング適用
+        if needs_scaling:
+            start = original_start * scale_factor
+            end = original_end * scale_factor
+            duration = end - start
+        else:
+            start = original_start
+            end = original_end
+            duration = original_duration
         
         # Safeguard: 最小1秒を確保
         if duration <= 0:
@@ -233,7 +258,7 @@ def adjust_timing_durations(
             duration = audio_duration / len(sorted_timing)
             start = i * duration
             end = (i + 1) * duration
-            print(f"  ⚠️ Slide {timing.get('slide_number', i+1)}: duration was {end-start:.1f}s, using fallback {duration:.1f}s")
+            print(f"  ⚠️ Slide {timing.get('slide_number', i+1)}: duration was <=0, using fallback {duration:.1f}s")
         
         print(f"  📝 Slide {timing.get('slide_number', i+1)}: {start:.1f}s - {end:.1f}s ({duration:.1f}s)")
         
@@ -245,14 +270,17 @@ def adjust_timing_durations(
             "match_reason": timing.get("match_reason") or timing.get("reason", "")
         })
     
-    # 最後のスライドの終了時刻を音声の長さに合わせる（黒画面防止）
+    # 最後のスライドの終了時刻を音声の長さに正確に合わせる
     if result:
         last_slide = result[-1]
-        if last_slide["end_time"] < audio_duration:
+        if abs(last_slide["end_time"] - audio_duration) > 0.5:  # 0.5秒以上のズレ
             extra_duration = audio_duration - last_slide["end_time"]
             last_slide["end_time"] = audio_duration
-            last_slide["duration"] += extra_duration
-            print(f"  🔧 Extended last slide to match audio end ({audio_duration:.1f}s, added {extra_duration:.1f}s)")
+            last_slide["duration"] = audio_duration - last_slide["start_time"]
+            if extra_duration > 0:
+                print(f"  🔧 Extended last slide to match audio end ({audio_duration:.1f}s, added {extra_duration:.1f}s)")
+            else:
+                print(f"  🔧 Trimmed last slide to match audio end ({audio_duration:.1f}s)")
     
     return result
 
