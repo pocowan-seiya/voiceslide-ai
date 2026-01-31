@@ -943,6 +943,14 @@ export default function Home() {
     setEditedTranscript("");
   };
 
+  // 前のステップに戻る
+  const goToPreviousStep = () => {
+    if (state.step > 1 && !state.isProcessing) {
+      // ステップ2以上で、処理中でなければ戻れる
+      updateState({ step: (state.step - 1) as Step, error: null });
+    }
+  };
+
   // 動画をダウンロードフォルダに保存する関数
   const handleDownloadVideo = async (url: string, filename: string) => {
     try {
@@ -1171,35 +1179,52 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Progress */}
-        <div className="mb-8 overflow-x-auto">
-          <div className="flex items-center min-w-max">
-            {STEPS.map((step, i) => (
-              <div key={step.id} className="flex items-center">
-                <div
-                  className={`flex flex-col items-center ${state.step >= step.id ? "opacity-100" : "opacity-40"
-                    }`}
-                >
+        {/* Progress with Back Button */}
+        <div className="mb-8">
+          {/* Back Button Row */}
+          {state.step > 1 && (
+            <div className="mb-3">
+              <button
+                onClick={goToPreviousStep}
+                disabled={state.isProcessing}
+                className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="text-lg">←</span>
+                <span className="text-sm">前のステップに戻る</span>
+              </button>
+            </div>
+          )}
+
+          {/* Progress Steps */}
+          <div className="overflow-x-auto">
+            <div className="flex items-center min-w-max">
+              {STEPS.map((step, i) => (
+                <div key={step.id} className="flex items-center">
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-lg mb-1 ${state.step > step.id
-                      ? "bg-green-500"
-                      : state.step === step.id
-                        ? "bg-cyan-500 animate-pulse"
-                        : "bg-zinc-700"
+                    className={`flex flex-col items-center ${state.step >= step.id ? "opacity-100" : "opacity-40"
                       }`}
                   >
-                    {state.step > step.id ? "✓" : step.icon}
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-lg mb-1 ${state.step > step.id
+                        ? "bg-green-500"
+                        : state.step === step.id
+                          ? "bg-cyan-500 animate-pulse"
+                          : "bg-zinc-700"
+                        }`}
+                    >
+                      {state.step > step.id ? "✓" : step.icon}
+                    </div>
+                    <span className="text-xs text-zinc-400 whitespace-nowrap">{step.label}</span>
                   </div>
-                  <span className="text-xs text-zinc-400 whitespace-nowrap">{step.label}</span>
+                  {i < STEPS.length - 1 && (
+                    <div
+                      className={`w-8 h-0.5 mx-1 ${state.step > step.id ? "bg-green-500" : "bg-zinc-700"
+                        }`}
+                    />
+                  )}
                 </div>
-                {i < STEPS.length - 1 && (
-                  <div
-                    className={`w-8 h-0.5 mx-1 ${state.step > step.id ? "bg-green-500" : "bg-zinc-700"
-                      }`}
-                  />
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
 
