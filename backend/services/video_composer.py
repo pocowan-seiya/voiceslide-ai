@@ -41,11 +41,14 @@ async def compose_video(
     # デバッグ: 入力タイミングと最終タイミングを比較
     print(f"[VideoComposer] ===== TIMING DEBUG =====")
     print(f"[VideoComposer] Audio duration: {audio_duration:.1f}s")
+    print(f"[VideoComposer] Slide images ({len(slide_images)} images):")
+    for idx, img_path in enumerate(slide_images):
+        print(f"  IMAGE[{idx}] = {os.path.basename(img_path)} (maps to slide_number {idx+1})")
     print(f"[VideoComposer] Input timing_map ({len(timing_map)} items):")
-    for t in timing_map[:5]:  # 最初の5つを表示
+    for t in timing_map:  # すべて表示
         print(f"  IN:  Slide {t.get('slide_number')}: {t.get('start_time', 0):.1f}s - {t.get('end_time', 0):.1f}s")
     print(f"[VideoComposer] Final full_timing ({len(full_timing)} items):")
-    for t in full_timing[:5]:  # 最初の5つを表示
+    for t in full_timing:  # すべて表示
         print(f"  OUT: Slide {t.get('slide_number')}: {t.get('start_time', 0):.1f}s - {t.get('end_time', 0):.1f}s, duration={t.get('duration', 0):.1f}s")
     print(f"[VideoComposer] ==========================")
     
