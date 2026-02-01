@@ -948,43 +948,50 @@ export default function Home() {
     if (state.step > 1 && !state.isProcessing) {
       const targetStep = (state.step - 1) as Step;
 
-      // 戻る先のステップに応じて、以降のデータをクリア
+      // 戻る先のステップに応じて、それ以降のデータをクリア
+      // ポイント: targetStepに必要なデータは保持し、それ以降のステップで生成されたデータのみクリア
       const resetData: Partial<typeof state> = {
         step: targetStep,
         error: null,
       };
 
-      // 各ステップに戻る時のリセット処理
-      // Step 1に戻る: モード選択まで戻る
+      // Step 1に戻る: モード選択に戻る
       if (targetStep === 1) {
         resetData.workflowMode = null;
       }
 
-      // Step 2に戻る: 音声アップロードまで戻る（文字起こし結果をクリア）
-      if (targetStep <= 2) {
-        resetData.transcript = "";
-        resetData.polishedTranscript = "";
-      }
+      // Step 2以前に戻る: Step 3以降のデータをクリア（文字起こしは残す）
+      // → Step 2は音声アップロード済み状態なのでtranscript, polishedTranscriptは保持
 
-      // Step 3以前に戻る: アウトラインをクリア
-      if (targetStep <= 3) {
+      // Step 3以前に戻る: Step 4以降のデータをクリア
+      if (targetStep < 4) {
         resetData.outline = null;
         resetData.polishedOutline = null;
       }
 
-      // Step 5以前に戻る: スライド情報をクリア
-      if (targetStep <= 5) {
+      // Step 5以前に戻る（フルAIモード）: Step 6以降のデータをクリア
+      if (targetStep < 6) {
+        // スライド情報はStep 6で生成されるのでクリア
+        // ただしハイブリッドモードでStep 7-8でアップロードする場合は別
+        if (state.workflowMode === "full-ai") {
+          resetData.slideCount = 0;
+          resetData.slidePreviews = [];
+        }
+      }
+
+      // Step 8以前に戻る（ハイブリッドモード）: スライド情報をクリア
+      if (targetStep < 8 && state.workflowMode === "hybrid") {
         resetData.slideCount = 0;
         resetData.slidePreviews = [];
       }
 
       // Step 9以前に戻る: タイミングマップをクリア
-      if (targetStep <= 9) {
+      if (targetStep < 9) {
         resetData.timingMap = [];
       }
 
       // Step 10以前に戻る: 動画をクリア
-      if (targetStep <= 10) {
+      if (targetStep < 10) {
         resetData.videoUrl = null;
       }
 
