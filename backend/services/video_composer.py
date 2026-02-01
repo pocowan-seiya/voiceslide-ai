@@ -282,6 +282,14 @@ def adjust_timing_durations(
             else:
                 print(f"  🔧 Trimmed last slide to match audio end ({audio_duration:.1f}s)")
     
+    # 最終検証: 合計durationが音声長と一致するか確認
+    total_duration = sum(t.get("duration", 0) for t in result)
+    print(f"[VideoComposer] ✅ Final timing total: {total_duration:.1f}s (audio: {audio_duration:.1f}s, diff: {total_duration - audio_duration:.2f}s)")
+    
+    # 大きな差がある場合は警告
+    if abs(total_duration - audio_duration) > 1.0:
+        print(f"[VideoComposer] ⚠️ WARNING: Duration mismatch detected! Total slides: {total_duration:.1f}s vs Audio: {audio_duration:.1f}s")
+    
     return result
 
 
