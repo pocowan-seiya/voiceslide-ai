@@ -943,11 +943,52 @@ export default function Home() {
     setEditedTranscript("");
   };
 
-  // 前のステップに戻る
+  // 前のステップに戻る（状態を適切にリセット）
   const goToPreviousStep = () => {
     if (state.step > 1 && !state.isProcessing) {
-      // ステップ2以上で、処理中でなければ戻れる
-      updateState({ step: (state.step - 1) as Step, error: null });
+      const targetStep = (state.step - 1) as Step;
+
+      // 戻る先のステップに応じて、以降のデータをクリア
+      const resetData: Partial<typeof state> = {
+        step: targetStep,
+        error: null,
+      };
+
+      // 各ステップに戻る時のリセット処理
+      // Step 1に戻る: モード選択まで戻る
+      if (targetStep === 1) {
+        resetData.workflowMode = null;
+      }
+
+      // Step 2に戻る: 音声アップロードまで戻る（文字起こし結果をクリア）
+      if (targetStep <= 2) {
+        resetData.transcript = "";
+        resetData.polishedTranscript = "";
+      }
+
+      // Step 3以前に戻る: アウトラインをクリア
+      if (targetStep <= 3) {
+        resetData.outline = null;
+        resetData.polishedOutline = null;
+      }
+
+      // Step 5以前に戻る: スライド情報をクリア
+      if (targetStep <= 5) {
+        resetData.slideCount = 0;
+        resetData.slidePreviews = [];
+      }
+
+      // Step 9以前に戻る: タイミングマップをクリア
+      if (targetStep <= 9) {
+        resetData.timingMap = [];
+      }
+
+      // Step 10以前に戻る: 動画をクリア
+      if (targetStep <= 10) {
+        resetData.videoUrl = null;
+      }
+
+      updateState(resetData);
     }
   };
 
