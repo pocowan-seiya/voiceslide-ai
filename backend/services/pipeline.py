@@ -276,7 +276,41 @@ def get_or_create_pipeline(job_id: str, audio_path: Optional[str] = None) -> Hyb
     """Get existing pipeline or create new one"""
     if job_id not in pipelines:
         if audio_path is None:
-            raise ValueError("audio_path required for new pipeline")
+            # Try to recover audio path from filesystem
+            # Check for common audio file patterns for this job
+            import os
+            import glob
+            from config import UPLOAD_DIR
+            
+            possible_patterns = [
+                f"{UPLOAD_DIR}/{job_id}.*",          # Original upload
+                f"{UPLOAD_DIR}/{job_id}_clean.*",    # Cleaned audio
+                f"{UPLOAD_DIR}/{job_id}_clean_mixed.*",  # Mixed with BGM
+                f"{UPLOAD_DIR}/{job_id}_trimmed.*",  # Trimmed audio
+            ]
+            
+            recovered_path = None
+            for pattern in possible_patterns:
+                matches = glob.glob(pattern)
+                if matches:
+                    # Prefer mixed > clean > original
+                    for match in matches:
+                        if "_mixed" in match:
+                            recovered_path = match
+                            break
+                        elif "_clean" in match and recovered_path is None:
+                            recovered_path = match
+                        elif recovered_path is None:
+                            recovered_path = match
+                    if recovered_path:
+                        break
+            
+            if recovered_path and os.path.exists(recovered_path):
+                print(f"[Pipeline] Recovered audio path for {job_id}: {recovered_path}")
+                audio_path = recovered_path
+            else:
+                raise ValueError(f"audio_path required for new pipeline - no audio found for job {job_id}")
+        
         pipelines[job_id] = HybridPipeline(job_id, audio_path)
     return pipelines[job_id]
 
