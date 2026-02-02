@@ -97,12 +97,14 @@ async def compose_video(
     # Step 1: 画像から動画を作成
     temp_video = output_path.replace(".mp4", "_temp.mp4")
     
+    # Step 1: 画像から動画を作成（明示的に音声長で制限）
     # Using explicit framerate to ensure proper slide switching
     cmd_images = [
         "ffmpeg", "-y",
         "-f", "concat",
         "-safe", "0",
         "-i", concat_file,
+        "-t", str(audio_duration),  # 明示的に音声長で制限
         "-r", "30",  # Explicit output framerate for reliable switching
         # Ensure dimensions are even (required by H.264/libx264)
         # pad to nearest even dimensions using ceil
@@ -114,16 +116,22 @@ async def compose_video(
         temp_video
     ]
     
+    print(f"[FFmpeg] Creating video with explicit duration limit: {audio_duration:.1f}s")
     result = subprocess.run(cmd_images, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"FFmpeg images error: {result.stderr}")
         raise Exception(f"動画生成エラー: {result.stderr[:200]}")
     
-    # Step 2: 音声を追加
+    # Verify temp video duration
+    temp_duration = get_audio_duration(temp_video)
+    print(f"[FFmpeg] Temp video duration: {temp_duration:.1f}s (target: {audio_duration:.1f}s)")
+    
+    # Step 2: 音声を追加（同じく明示的に制限）
     cmd_final = [
         "ffmpeg", "-y",
         "-i", temp_video,
         "-i", audio_path,
+        "-t", str(audio_duration),  # 最終出力も明示的に制限
         "-c:v", "copy",
         "-c:a", "aac",
         "-b:a", "128k",
