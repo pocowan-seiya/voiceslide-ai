@@ -156,15 +156,33 @@ def ensure_all_slides_used(
     all_mapped = all(i+1 in mapped_slides for i in range(total_slides))
     
     if all_mapped and len(timing_map) == total_slides:
-        # アウトラインからのタイムスタンプをそのまま使用（調整しない）
-        print("[VideoComposer] ✓ Using outline timestamps directly (no adjustment)")
+        # アウトラインからのタイムスタンプを使用（10秒遅延調整あり）
+        # 話題が先に述べられ、10秒後にスライドが切り替わることでスムーズな視聴体験
+        TRANSITION_DELAY = 10.0  # 秒
+        print(f"[VideoComposer] ✓ Using outline timestamps with {TRANSITION_DELAY}s transition delay")
         
         sorted_timing = sorted(timing_map, key=lambda x: x.get("slide_number", 0))
         result = []
         
         for i, timing in enumerate(sorted_timing):
-            start = timing.get("start_time", 0)
-            end = timing.get("end_time", 0)
+            original_start = timing.get("start_time", 0)
+            original_end = timing.get("end_time", 0)
+            
+            if i == 0:
+                # 最初のスライドは0秒から開始
+                start = 0.0
+            else:
+                # 2枚目以降は元のstart_time + 10秒遅延
+                start = min(original_start + TRANSITION_DELAY, audio_duration)
+            
+            if i == len(sorted_timing) - 1:
+                # 最後のスライドは音声終了時刻で終了
+                end = audio_duration
+            else:
+                # 次のスライドの開始時刻に合わせる
+                next_original_start = sorted_timing[i + 1].get("start_time", 0)
+                end = min(next_original_start + TRANSITION_DELAY, audio_duration)
+            
             duration = end - start
             
             result.append({
@@ -172,14 +190,10 @@ def ensure_all_slides_used(
                 "start_time": start,
                 "end_time": end,
                 "duration": max(duration, 0.5),  # 最低0.5秒を確保
-                "match_reason": timing.get("match_reason", "アウトラインから取得")
+                "match_reason": timing.get("match_reason", "アウトラインから取得") + f" (+{TRANSITION_DELAY}s delay)"
             })
-        
-        # 最後のスライドの終了時刻が音声長と一致するか確認
-        if result:
-            last_end = result[-1]["end_time"]
-            if abs(last_end - audio_duration) > 1.0:
-                print(f"[VideoComposer] ⚠️ Note: Last slide ends at {last_end:.1f}s, audio is {audio_duration:.1f}s")
+            
+            print(f"  Slide {i+1}: {original_start:.1f}s → {start:.1f}s (delay applied)")
         
         return result
     
