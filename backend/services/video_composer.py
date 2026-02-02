@@ -52,40 +52,47 @@ async def compose_video(
         print(f"  OUT: Slide {t.get('slide_number')}: {t.get('start_time', 0):.1f}s - {t.get('end_time', 0):.1f}s, duration={t.get('duration', 0):.1f}s")
     print(f"[VideoComposer] ==========================")
     
-    # 連結ファイルを作成（1つのブロックで全て書き込み）
+    # 連結ファイルを作成（アトミック書き込み）
     concat_file = output_path.replace(".mp4", "_concat.txt")
     
     # Calculate total concat duration first
     total_concat_duration = sum(t.get("duration", 0) for t in full_timing)
     print(f"[Concat] Total duration from all slides: {total_concat_duration:.1f}s")
     
-    with open(concat_file, "w") as f:
-        for timing in full_timing:
-            slide_num = timing.get("slide_number", 1)
-            duration = timing.get("duration", 0)
-            
-            # 対応する画像を取得
-            if 0 < slide_num <= len(slide_images):
-                image_path = slide_images[slide_num - 1]
-            else:
-                image_path = slide_images[-1] if slide_images else None
-            
-            if image_path and os.path.exists(image_path):
-                abs_path = os.path.abspath(image_path)
-                f.write(f"file '{abs_path}'\n")
-                f.write(f"duration {duration:.3f}\n")
-                print(f"[Concat] Slide {slide_num}: {os.path.basename(image_path)} duration {duration:.3f}s")
-        
-        # FFmpegの要件: 最後の画像をもう一度追加（duration無し）
-        # Note: This final entry doesn't add to total duration, it just ensures the last frame displays
-        if slide_images:
-            last_image = os.path.abspath(slide_images[-1])
-            f.write(f"file '{last_image}'\n")
-            print(f"[Concat] Final entry: {os.path.basename(slide_images[-1])} (no duration - just for last frame)")
+    # Build entire file content as a list first (then single write)
+    concat_lines = []
     
-    # Debug: concat file contents
-    with open(concat_file, "r") as f:
-        print(f"[Concat] File contents:\n{f.read()}")
+    for timing in full_timing:
+        slide_num = timing.get("slide_number", 1)
+        duration = timing.get("duration", 0)
+        
+        # 対応する画像を取得
+        if 0 < slide_num <= len(slide_images):
+            image_path = slide_images[slide_num - 1]
+        else:
+            image_path = slide_images[-1] if slide_images else None
+        
+        if image_path and os.path.exists(image_path):
+            abs_path = os.path.abspath(image_path)
+            concat_lines.append(f"file '{abs_path}'")
+            concat_lines.append(f"duration {duration:.3f}")
+            print(f"[Concat] Slide {slide_num}: {os.path.basename(image_path)} duration {duration:.3f}s")
+    
+    # FFmpegの要件: 最後の画像をもう一度追加（duration無し）
+    if slide_images:
+        last_image = os.path.abspath(slide_images[-1])
+        concat_lines.append(f"file '{last_image}'")
+        print(f"[Concat] Final entry: {os.path.basename(slide_images[-1])} (no duration - just for last frame)")
+    
+    # Atomic write: 1回の書き込みで全コンテンツを出力
+    concat_content = "\n".join(concat_lines) + "\n"
+    with open(concat_file, "w") as f:
+        f.write(concat_content)
+        f.flush()  # Ensure all data is written
+    
+    # Debug: verify file contents
+    print(f"[Concat] File contents ({len(concat_lines)} lines):")
+    print(concat_content)
     
     # Step 1: 画像から動画を作成
     temp_video = output_path.replace(".mp4", "_temp.mp4")
