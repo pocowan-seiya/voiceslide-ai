@@ -142,8 +142,7 @@ def ensure_all_slides_used(
     """
     すべてのスライドが使用されることを保証
     
-    - timing_mapにないスライドも追加
-    - 時間を均等に再分配（必要な場合）
+    重要: アウトラインからのタイムスタンプがある場合はそのまま使用
     """
     total_slides = len(slide_images)
     
@@ -157,16 +156,37 @@ def ensure_all_slides_used(
     all_mapped = all(i+1 in mapped_slides for i in range(total_slides))
     
     if all_mapped and len(timing_map) == total_slides:
-        # すでに全スライド使用 - 時間だけ調整
-        return adjust_timing_durations(timing_map, audio_duration, total_slides)
+        # アウトラインからのタイムスタンプをそのまま使用（調整しない）
+        print("[VideoComposer] ✓ Using outline timestamps directly (no adjustment)")
+        
+        sorted_timing = sorted(timing_map, key=lambda x: x.get("slide_number", 0))
+        result = []
+        
+        for i, timing in enumerate(sorted_timing):
+            start = timing.get("start_time", 0)
+            end = timing.get("end_time", 0)
+            duration = end - start
+            
+            result.append({
+                "slide_number": timing.get("slide_number", i + 1),
+                "start_time": start,
+                "end_time": end,
+                "duration": max(duration, 0.5),  # 最低0.5秒を確保
+                "match_reason": timing.get("match_reason", "アウトラインから取得")
+            })
+        
+        # 最後のスライドの終了時刻が音声長と一致するか確認
+        if result:
+            last_end = result[-1]["end_time"]
+            if abs(last_end - audio_duration) > 1.0:
+                print(f"[VideoComposer] ⚠️ Note: Last slide ends at {last_end:.1f}s, audio is {audio_duration:.1f}s")
+        
+        return result
     
-    # 全スライドを使用するように新しいタイミングを生成
+    # 全スライドがマッピングされていない場合のみ均等分配
     print(f"📊 全{total_slides}枚のスライドを使用するようタイミングを再計算")
     
-    # 音声の長さを全スライドで均等に分配
     duration_per_slide = audio_duration / total_slides
-    
-    # 最小時間 (5秒) を確保
     min_duration = 5.0
     if duration_per_slide < min_duration:
         duration_per_slide = min_duration
@@ -176,25 +196,14 @@ def ensure_all_slides_used(
     
     for i in range(total_slides):
         slide_num = i + 1
-        
-        # 既存のタイミング情報を探す
-        existing = next((t for t in timing_map if t.get("slide_number") == slide_num), None)
-        
-        if existing:
-            # 既存のタイミングがある場合はその理由を保持
-            duration = duration_per_slide
-            reason = existing.get("match_reason") or existing.get("reason", "")
-        else:
-            # 新規追加
-            duration = duration_per_slide
-            reason = "全スライド使用のため追加"
+        duration = duration_per_slide
         
         full_timing.append({
             "slide_number": slide_num,
             "start_time": current_time,
             "end_time": current_time + duration,
             "duration": duration,
-            "match_reason": reason
+            "match_reason": "均等分配"
         })
         
         current_time += duration
