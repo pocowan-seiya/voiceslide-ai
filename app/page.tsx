@@ -1229,7 +1229,7 @@ export default function Home() {
 
         {/* Progress with Back Button */}
         <div className="mb-8">
-          {/* Back Button Row */}
+          {/* Back Button - Temporarily disabled for stable release
           {state.step > 1 && (
             <div className="mb-3">
               <button
@@ -1242,6 +1242,7 @@ export default function Home() {
               </button>
             </div>
           )}
+          */}
 
           {/* Progress Steps */}
           <div className="overflow-x-auto">
