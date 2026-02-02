@@ -541,7 +541,8 @@ async def generate_outline(
     segments: List[Dict[str, Any]], 
     gemini_key: str = None,
     slide_count_mode: str = "auto",
-    custom_slide_count: int = 10
+    custom_slide_count: int = 10,
+    audio_duration: float = None  # 実際の音声長（指定がなければセグメントから推定）
 ) -> Dict[str, Any]:
     """
     高精度タイムスタンプ同期のスライドアウトラインを生成
@@ -561,8 +562,9 @@ async def generate_outline(
     # 正確なタイムスタンプ付きセグメント情報を作成
     segments_text = format_segments_precisely(segments)
     
-    # 音声の総時間
-    total_duration = segments[-1].get("end", 0)
+    # 音声の総時間（指定された実際の音声長を優先、なければセグメントから推定）
+    total_duration = audio_duration if audio_duration else segments[-1].get("end", 0)
+    print(f"[Outline] Using audio duration: {total_duration:.1f}s (source: {'actual file' if audio_duration else 'segment end'})")
     
     # スライド枚数の制限を計算（90-120秒に1枚が目安）
     # 短い音声の場合は枚数を厳しく制限

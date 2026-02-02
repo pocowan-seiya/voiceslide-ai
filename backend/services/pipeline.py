@@ -135,12 +135,20 @@ class HybridPipeline:
         if edited_transcript and self.segments:
             segments_to_use = self._sync_segments_with_transcript(edited_transcript)
         
+        # Get actual audio duration from file (not from segments)
+        actual_audio_duration = None
+        if self.audio_path:
+            from services.video_composer import get_audio_duration
+            actual_audio_duration = get_audio_duration(self.audio_path)
+            print(f"[Pipeline] Actual audio duration from file: {actual_audio_duration:.1f}s")
+        
         self.raw_outline = await generate_outline(
             transcript, 
             segments_to_use, 
             gemini_key=gemini_key,
             slide_count_mode=slide_count_mode,
-            custom_slide_count=custom_slide_count
+            custom_slide_count=custom_slide_count,
+            audio_duration=actual_audio_duration
         )
         
         return {
