@@ -52,8 +52,12 @@ async def compose_video(
         print(f"  OUT: Slide {t.get('slide_number')}: {t.get('start_time', 0):.1f}s - {t.get('end_time', 0):.1f}s, duration={t.get('duration', 0):.1f}s")
     print(f"[VideoComposer] ==========================")
     
-    # 連結ファイルを作成
+    # 連結ファイルを作成（1つのブロックで全て書き込み）
     concat_file = output_path.replace(".mp4", "_concat.txt")
+    
+    # Calculate total concat duration first
+    total_concat_duration = sum(t.get("duration", 0) for t in full_timing)
+    print(f"[Concat] Total duration from all slides: {total_concat_duration:.1f}s")
     
     with open(concat_file, "w") as f:
         for timing in full_timing:
@@ -71,14 +75,9 @@ async def compose_video(
                 f.write(f"file '{abs_path}'\n")
                 f.write(f"duration {duration:.3f}\n")
                 print(f"[Concat] Slide {slide_num}: {os.path.basename(image_path)} duration {duration:.3f}s")
-    
-    # Calculate and log total concat duration
-    total_concat_duration = sum(t.get("duration", 0) for t in full_timing)
-    print(f"[Concat] Total duration from all slides: {total_concat_duration:.1f}s")
         
-    # FFmpegの要件: 最後の画像をもう一度追加（duration無し）
-    # Note: This final entry doesn't add to total duration, it just ensures the last frame displays
-    with open(concat_file, "a") as f:
+        # FFmpegの要件: 最後の画像をもう一度追加（duration無し）
+        # Note: This final entry doesn't add to total duration, it just ensures the last frame displays
         if slide_images:
             last_image = os.path.abspath(slide_images[-1])
             f.write(f"file '{last_image}'\n")
