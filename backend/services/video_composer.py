@@ -78,11 +78,10 @@ async def compose_video(
             concat_lines.append(f"duration {duration:.3f}")
             print(f"[Concat] Slide {slide_num}: {os.path.basename(image_path)} duration {duration:.3f}s")
     
-    # FFmpegの要件: 最後の画像をもう一度追加（duration無し）
-    if slide_images:
-        last_image = os.path.abspath(slide_images[-1])
-        concat_lines.append(f"file '{last_image}'")
-        print(f"[Concat] Final entry: {os.path.basename(slide_images[-1])} (no duration - just for last frame)")
+    # NOTE: 以前「最後の画像をduration無しで追加」していたが、これが余計な時間の原因だった
+    # FFmpegはduration無しのエントリにデフォルトの長さ（数十秒）を追加してしまう
+    # 正しい方法: 全スライドに明示的なdurationを指定して、それ以上は追加しない
+    print(f"[Concat] All slides have explicit durations, no extra entry needed")
     
     # Atomic write: 1回の書き込みで全コンテンツを出力
     concat_content = "\n".join(concat_lines) + "\n"
