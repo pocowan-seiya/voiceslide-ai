@@ -1,59 +1,70 @@
 /**
- * Node.js HTML-to-Image Renderer
+ * Node.js Puppeteer-based HTML Renderer
  * 
  * Usage: node node_renderer.js <html_file_path> <output_png_path> [width] [height]
  * 
- * This script renders HTML to PNG using html-to-image library,
- * providing a lightweight alternative to Playwright (~50MB vs ~500MB per process)
+ * This script renders HTML to PNG using Puppeteer with minimal memory footprint.
+ * Optimizations:
+ * - Single browser instance reused across renders (launch once)
+ * - Headless mode with minimal Chrome args
+ * - Page creation is lightweight (~30MB vs Playwright's ~100MB per page)
  */
 
 const fs = require('fs');
 const path = require('path');
-const { JSDOM } = require('jsdom');
-const { toPng } = require('html-to-image');
+const puppeteer = require('puppeteer');
 
 // Default dimensions matching current slide setup
 const DEFAULT_WIDTH = 1600;
 const DEFAULT_HEIGHT = 900;
 
+// Browser instance (reused for efficiency)
+let browser = null;
+
+async function initBrowser() {
+    if (!browser) {
+        browser = await puppeteer.launch({
+            headless: 'new',
+            args: [
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-default-apps',
+                '--mute-audio',
+                '--single-process',  // Reduces memory overhead
+                '--disable-web-security'  // Allow local file access
+            ]
+        });
+        console.error('[Puppeteer] Browser launched (lightweight mode)');
+    }
+    return browser;
+}
+
 async function renderHtmlToImage(htmlPath, outputPath, width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT) {
     try {
-        // Read HTML content
-        const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+        const browser = await initBrowser();
+        const page = await browser.newPage();
 
-        // Create virtual DOM
-        const dom = new JSDOM(htmlContent, {
-            runScripts: 'outside-only',
-            resources: 'usable',
-            pretendToBeVisual: true
-        });
+        // Set viewport
+        await page.setViewport({ width, height });
 
-        const document = dom.window.document;
-        const body = document.body;
+        // Load HTML file
+        const absolutePath = path.resolve(htmlPath);
+        await page.goto(`file://${absolutePath}`, { waitUntil: 'networkidle0' });
 
-        // Set viewport size
-        body.style.width = `${width}px`;
-        body.style.height = `${height}px`;
-        body.style.margin = '0';
-        body.style.padding = '0';
-        body.style.overflow = 'hidden';
-
-        // Wait for fonts and images to load
+        // Wait a bit for fonts and rendering
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Generate PNG
-        const dataUrl = await toPng(body, {
-            width: width,
-            height: height,
-            backgroundColor: '#1a1a2e',  // Default dark background
-            pixelRatio: 1,
-            quality: 0.95
+        // Screenshot
+        await page.screenshot({
+            path: outputPath,
+            type: 'png',
+            fullPage: false
         });
 
-        // Convert data URL to buffer and save
-        const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
-        const buffer = Buffer.from(base64Data, 'base64');
-        fs.writeFileSync(outputPath, buffer);
+        await page.close();
 
         console.log(JSON.stringify({
             success: true,
@@ -61,7 +72,6 @@ async function renderHtmlToImage(htmlPath, outputPath, width = DEFAULT_WIDTH, he
             dimensions: { width, height }
         }));
 
-        dom.window.close();
         return true;
 
     } catch (error) {
@@ -71,6 +81,13 @@ async function renderHtmlToImage(htmlPath, outputPath, width = DEFAULT_WIDTH, he
             stack: error.stack
         }));
         process.exit(1);
+    }
+}
+
+async function cleanup() {
+    if (browser) {
+        await browser.close();
+        browser = null;
     }
 }
 
@@ -87,7 +104,13 @@ if (require.main === module) {
     const width = widthArg ? parseInt(widthArg) : DEFAULT_WIDTH;
     const height = heightArg ? parseInt(heightArg) : DEFAULT_HEIGHT;
 
-    renderHtmlToImage(htmlPath, outputPath, width, height);
+    renderHtmlToImage(htmlPath, outputPath, width, height)
+        .then(() => cleanup())
+        .catch(err => {
+            console.error(err);
+            cleanup();
+            process.exit(1);
+        });
 }
 
-module.exports = { renderHtmlToImage };
+module.exports = { renderHtmlToImage, initBrowser, cleanup };
