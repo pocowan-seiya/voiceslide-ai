@@ -4,7 +4,8 @@
     "description": "Lightweight HTML-to-image renderer for VoiSlide",
     "main": "services/node_renderer.js",
     "dependencies": {
-        "puppeteer": "^22.0.0"
+        "html-to-image": "^1.11.11",
+        "jsdom": "^24.0.0"
     },
     "scripts": {
         "render": "node services/node_renderer.js"
