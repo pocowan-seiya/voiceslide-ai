@@ -28,13 +28,9 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 # Playwright Chromiumをインストール（HTMLレンダリング用）
 RUN playwright install chromium --with-deps
 
-# Node.js依存関係をインストール（フロントエンド）
+# Node.js依存関係をインストール
 COPY package*.json ./
 RUN npm ci
-
-# Backend Node.js依存関係（html-to-image renderer）
-COPY backend/package*.json ./backend/
-RUN cd backend && npm install
 
 # アプリケーションコードをコピー
 COPY . .
