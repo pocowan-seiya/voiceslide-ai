@@ -2036,8 +2036,17 @@ async def generate_all_custom_slides(
     """
     print(f"[DEBUG] generate_all_custom_slides called for job {job_id}")
     import os
-    from playwright.async_api import async_playwright
     from config import OUTPUT_DIR
+    
+    # Renderer selection: "playwright" (default) or "html-to-image" (lightweight)
+    from services.html_renderer import is_html_to_image_enabled, render_html_to_image
+    use_html_to_image = is_html_to_image_enabled()
+    
+    if use_html_to_image:
+        print(f"[Renderer] Using html-to-image (lightweight mode)")
+    else:
+        print(f"[Renderer] Using Playwright (full browser mode)")
+        from playwright.async_api import async_playwright
     
     slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
     os.makedirs(slides_dir, exist_ok=True)
@@ -2148,16 +2157,28 @@ async def generate_all_custom_slides(
     print(f"[Queue] Job {job_id} entered queue (waiters: {len(queue_waiters)}, active: {len(queue_active)})")
     
     print(f"[DEBUG] Waiting for BROWSER_SEMAPHORE (current value: {BROWSER_SEMAPHORE._value})")
-    async with BROWSER_SEMAPHORE, async_playwright() as p:
+    
+    # Playwright mode: use browser semaphore and start Playwright
+    # html-to-image mode: still use semaphore for rate limiting, but no browser
+    async with BROWSER_SEMAPHORE:
         # Move from waiting to active
         if job_id in queue_waiters:
             del queue_waiters[job_id]
         queue_active[job_id] = time_module.time()
         print(f"[Queue] Job {job_id} now processing (waiters: {len(queue_waiters)}, active: {len(queue_active)})")
         
-        print(f"[DEBUG] BROWSER_SEMAPHORE acquired, launching browser...")
-        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
-        print(f"[DEBUG] Browser launched successfully")
+        # Initialize browser only for Playwright mode
+        browser = None
+        p = None
+        if not use_html_to_image:
+            print(f"[DEBUG] Launching Playwright browser...")
+            from playwright.async_api import async_playwright
+            p_context = async_playwright()
+            p = await p_context.__aenter__()
+            browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+            print(f"[DEBUG] Browser launched successfully")
+        else:
+            print(f"[DEBUG] html-to-image mode - skipping browser startup")
         
         for i, slide in enumerate(slides):
             slide_number = i + 1
@@ -2395,49 +2416,73 @@ Concept to illustrate: """
             
             html_contents.append(html)
             
-            # Render to image with browser restart on crash
+            # Render to image
             output_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
             
             render_success = False
-            for render_attempt in range(3):
-                try:
-                    # Try to create new page (may fail if browser crashed)
+            
+            # html-to-image mode: use lightweight Node.js renderer
+            if use_html_to_image:
+                for render_attempt in range(3):
                     try:
-                        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
-                    except Exception as page_error:
-                        print(f"[Browser] new_page failed, restarting browser... ({str(page_error)[:50]})")
-                        try:
-                            await browser.close()
-                        except:
-                            pass
+                        success = await render_html_to_image(
+                            html_content=html,
+                            output_path=output_path,
+                            width=VIDEO_WIDTH,
+                            height=VIDEO_HEIGHT,
+                            timeout=30.0
+                        )
+                        if success:
+                            render_success = True
+                            break
+                        else:
+                            print(f"[html-to-image] Attempt {render_attempt + 1} failed, retrying...")
+                            await asyncio.sleep(1)
+                    except Exception as e:
+                        print(f"[html-to-image] Attempt {render_attempt + 1} error: {str(e)[:80]}")
                         await asyncio.sleep(1)
-                        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
-                        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
-                    
-                    await page.set_content(html)
-                    await page.wait_for_timeout(800)
-                    
-                    # Screenshot
-                    await page.screenshot(path=output_path, type="png")
-                    await page.close()
-                    render_success = True
-                    break
-                    
-                except Exception as render_error:
-                    print(f"[Render] Attempt {render_attempt + 1} failed: {str(render_error)[:80]}")
+            
+            # Playwright mode: use browser (existing code)
+            else:
+                for render_attempt in range(3):
                     try:
+                        # Try to create new page (may fail if browser crashed)
+                        try:
+                            page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+                        except Exception as page_error:
+                            print(f"[Browser] new_page failed, restarting browser... ({str(page_error)[:50]})")
+                            try:
+                                await browser.close()
+                            except:
+                                pass
+                            await asyncio.sleep(1)
+                            browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+                            page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+                        
+                        await page.set_content(html)
+                        await page.wait_for_timeout(800)
+                        
+                        # Screenshot
+                        await page.screenshot(path=output_path, type="png")
                         await page.close()
-                    except:
-                        pass
-                    if render_attempt < 2:
-                        # Restart browser
+                        render_success = True
+                        break
+                        
+                    except Exception as render_error:
+                        print(f"[Render] Attempt {render_attempt + 1} failed: {str(render_error)[:80]}")
                         try:
-                            await browser.close()
+                            await page.close()
                         except:
                             pass
-                        await asyncio.sleep(1)
-                        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
-                        print(f"[Browser] Restarted for retry {render_attempt + 2}")
+                        if render_attempt < 2:
+                            # Restart browser
+                            try:
+                                await browser.close()
+                            except:
+                                pass
+                            await asyncio.sleep(1)
+                            browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+                            print(f"[Browser] Restarted for retry {render_attempt + 2}")
             
             if not render_success:
                 print(f"[Design Architect] ⚠️ Slide {slide_number} rendering failed, skipping...")
@@ -2456,7 +2501,11 @@ Concept to illustrate: """
             if slide_number < total_slides:
                 await asyncio.sleep(2.5) 
         
-        await browser.close()
+        # Cleanup browser and Playwright context (only if initialized)
+        if browser:
+            await browser.close()
+        if p:
+            await p_context.__aexit__(None, None, None)
     
     # Clean up queue tracking
     if job_id in queue_active:
