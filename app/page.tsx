@@ -904,13 +904,20 @@ export default function Home() {
     }
   };
 
-  // Step 10: Generate Video
+  // Step 10: Generate Video (with edited timing if available)
   const handleGenerateVideo = async () => {
     updateState({ isProcessing: true });
 
     try {
+      // Send edited timing map if available
+      const body = state.timingMap.length > 0
+        ? JSON.stringify({ timing_map: state.timingMap })
+        : undefined;
+
       const res = await fetch(`${API_URL}/api/generate-video/${state.jobId}`, {
         method: "POST",
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Video generation failed");
