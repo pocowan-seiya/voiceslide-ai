@@ -94,6 +94,7 @@ BASE_HTML_TEMPLATE = """<!DOCTYPE html>
         }}
         
         .slide-number {{
+            display: none;  /* Hidden per user request */
             position: absolute;
             bottom: 30px;
             right: 40px;
