@@ -921,6 +921,49 @@ export default function Home() {
     }
   };
 
+  // Delete a slide from the timing map
+  const handleDeleteSlide = (slideIndex: number) => {
+    if (state.timingMap.length <= 1) {
+      // Cannot delete if only one slide remains
+      return;
+    }
+
+    const newTimingMap = [...state.timingMap];
+    const deletedSlide = newTimingMap[slideIndex];
+    const deletedDuration = (deletedSlide.end_time || 0) - (deletedSlide.start_time || 0);
+
+    // Remove the slide
+    newTimingMap.splice(slideIndex, 1);
+
+    // Extend the previous slide's duration (or next if first slide deleted)
+    if (slideIndex > 0) {
+      // Extend previous slide
+      newTimingMap[slideIndex - 1].end_time = (newTimingMap[slideIndex - 1].end_time || 0) + deletedDuration;
+    } else if (newTimingMap.length > 0) {
+      // First slide deleted - adjust start times of remaining slides
+      newTimingMap[0].start_time = 0;
+    }
+
+    // Recalculate continuous timing and renumber slides
+    for (let i = 0; i < newTimingMap.length; i++) {
+      newTimingMap[i].slide_number = i + 1;
+      if (i > 0) {
+        newTimingMap[i].start_time = newTimingMap[i - 1].end_time;
+      }
+    }
+
+    // Also remove from slidePreviews if applicable
+    const newPreviews = [...state.slidePreviews];
+    if (slideIndex < newPreviews.length) {
+      newPreviews.splice(slideIndex, 1);
+    }
+
+    updateState({
+      timingMap: newTimingMap,
+      slidePreviews: newPreviews
+    });
+  };
+
   const handleReset = () => {
     setState({
       jobId: null,
@@ -2696,6 +2739,16 @@ export default function Home() {
                           </div>
                         )}
                       </div>
+                      {/* Delete button - only show if more than 1 slide */}
+                      {state.timingMap.length > 1 && (
+                        <button
+                          onClick={() => handleDeleteSlide(i)}
+                          className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+                          title="このスライドを削除"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </div>
                   );
                 })}
