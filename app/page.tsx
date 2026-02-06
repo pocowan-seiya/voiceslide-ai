@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, DragEvent, useEffect, useMemo } from "react";
+import { useState, useCallback, DragEvent, useEffect, useMemo, useRef } from "react";
 import { Header } from "@/components/Header";
 import { APIKeysSettings, getAPIKeys, hasAPIKeys } from "@/components/APIKeysSettings";
 import { SupportChat } from "@/components/SupportChat";
@@ -119,6 +119,10 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false); // This was originally here, keeping it.
   const [showSettings, setShowSettings] = useState(false);
   const [hasKeys, setHasKeys] = useState(false);
+
+  // Timeline drag state
+  const [draggingBoundary, setDraggingBoundary] = useState<number | null>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
 
   // Support chat error context
   const errorContext = useMemo(() => {
@@ -963,6 +967,58 @@ export default function Home() {
       slidePreviews: newPreviews
     });
   };
+
+  // Timeline drag handlers for adjusting slide boundaries
+  const handleBoundaryDragStart = (boundaryIndex: number) => {
+    setDraggingBoundary(boundaryIndex);
+  };
+
+  const handleBoundaryDrag = useCallback((e: MouseEvent) => {
+    if (draggingBoundary === null || !timelineRef.current) return;
+
+    const rect = timelineRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, mouseX / rect.width));
+
+    const totalDuration = state.timingMap[state.timingMap.length - 1]?.end_time || 1;
+    const newTime = percentage * totalDuration;
+
+    // Get the slides on each side of this boundary
+    const leftSlide = state.timingMap[draggingBoundary];
+    const rightSlide = state.timingMap[draggingBoundary + 1];
+
+    if (!leftSlide || !rightSlide) return;
+
+    // Minimum 3 seconds per slide
+    const minDuration = 3;
+    const minLeftEnd = leftSlide.start_time + minDuration;
+    const maxLeftEnd = rightSlide.end_time - minDuration;
+
+    const clampedTime = Math.max(minLeftEnd, Math.min(maxLeftEnd, newTime));
+
+    // Update timing map
+    const newTimingMap = [...state.timingMap];
+    newTimingMap[draggingBoundary].end_time = clampedTime;
+    newTimingMap[draggingBoundary + 1].start_time = clampedTime;
+
+    updateState({ timingMap: newTimingMap });
+  }, [draggingBoundary, state.timingMap]);
+
+  const handleBoundaryDragEnd = useCallback(() => {
+    setDraggingBoundary(null);
+  }, []);
+
+  // Add/remove mouse listeners when dragging
+  useEffect(() => {
+    if (draggingBoundary !== null) {
+      document.addEventListener('mousemove', handleBoundaryDrag);
+      document.addEventListener('mouseup', handleBoundaryDragEnd);
+      return () => {
+        document.removeEventListener('mousemove', handleBoundaryDrag);
+        document.removeEventListener('mouseup', handleBoundaryDragEnd);
+      };
+    }
+  }, [draggingBoundary, handleBoundaryDrag, handleBoundaryDragEnd]);
 
   const handleReset = () => {
     setState({
@@ -2682,21 +2738,44 @@ export default function Home() {
                 </span>
               </div>
 
-              {/* タイムライン表示 */}
+              {/* タイムライン表示 - ドラッグで調整可能 */}
               <div className="mb-6 p-4 bg-zinc-900 rounded-lg">
-                <div className="flex h-8 rounded-lg overflow-hidden mb-2">
+                <div className="text-xs text-zinc-400 mb-2 flex items-center gap-2">
+                  <span>⬅️➡️ 境界線をドラッグして調整</span>
+                </div>
+                <div
+                  ref={timelineRef}
+                  className="flex h-10 rounded-lg overflow-visible mb-2 relative"
+                  style={{ cursor: draggingBoundary !== null ? 'ew-resize' : 'default' }}
+                >
                   {state.timingMap.map((item, i) => {
                     const totalDuration = state.timingMap[state.timingMap.length - 1]?.end_time || 1;
                     const width = ((item.end_time - item.start_time) / totalDuration) * 100;
                     const colors = ['bg-cyan-600', 'bg-purple-600', 'bg-orange-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-600'];
+                    const isLastSlide = i === state.timingMap.length - 1;
+
                     return (
                       <div
                         key={i}
-                        className={`${colors[i % colors.length]} flex items-center justify-center text-xs font-bold border-r border-zinc-800`}
-                        style={{ width: `${width}%`, minWidth: '20px' }}
+                        className={`${colors[i % colors.length]} flex items-center justify-center text-xs font-bold relative group`}
+                        style={{ width: `${width}%`, minWidth: '30px' }}
                         title={`スライド${item.slide_number}: ${item.start_time?.toFixed(1)}s - ${item.end_time?.toFixed(1)}s`}
                       >
                         {item.slide_number}
+
+                        {/* Drag handle on right edge (not on last slide) */}
+                        {!isLastSlide && (
+                          <div
+                            className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                            style={{ transform: 'translateX(50%)' }}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleBoundaryDragStart(i);
+                            }}
+                          >
+                            <div className="w-1 h-6 bg-white rounded shadow-lg" />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
