@@ -445,6 +445,8 @@ export default function Home() {
         isProcessing: false,
       });
       setEditText(data.polished_transcript);
+      // ブラッシュアップ後は自動で編集モードON（手動修正しやすく）
+      setIsEditingTranscript(true);
     } catch (err: any) {
       updateState({ error: err.message, isProcessing: false });
     }
@@ -775,6 +777,17 @@ export default function Home() {
 
       setSlideFeedback("");
       setSlideImage({ file: null, preview: null });
+
+      // Step 10 (完成画面): スライド変更後、動画を自動再生成
+      if (state.step === 10) {
+        setSelectedSlide(null);
+        setIsRegenerating(false);
+        // 少し待ってから自動で動画再生成を開始
+        setTimeout(() => {
+          handleGenerateVideo();
+        }, 500);
+        return;
+      }
     } catch (err: any) {
       updateState({ error: err.message });
     } finally {
