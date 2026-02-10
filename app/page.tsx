@@ -939,6 +939,8 @@ export default function Home() {
         videoUrl: `${API_URL}${data.video_url}?t=${Date.now()}`,
         step: 10,
         isProcessing: false,
+        // timing_mapをバックエンドから取得（タイムライン編集用）
+        ...(data.timing_map ? { timingMap: data.timing_map } : {}),
       });
     } catch (err: any) {
       updateState({ error: err.message, isProcessing: false });

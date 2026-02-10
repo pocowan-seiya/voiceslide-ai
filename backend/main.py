@@ -1557,12 +1557,24 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["video_url"] = result["video_url"]
     
-    return {
+    # Get timing map for frontend timeline editor
+    timing_map_data = None
+    if edited:
+        timing_map_data = edited
+    elif pipeline.timing_map:
+        timing_map_data = pipeline.timing_map
+    
+    response = {
         "job_id": job_id,
         "step": 10,
         "status": "completed",
         "video_url": result["video_url"]
     }
+    
+    if timing_map_data:
+        response["timing_map"] = timing_map_data
+    
+    return response
 
 
 # ========== Utilities ==========
