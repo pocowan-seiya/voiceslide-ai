@@ -71,8 +71,8 @@ def trim_silence_from_audio(audio_path: str, output_path: str = None, threshold_
         
         # 末尾の無音をカット: 最後の音声が終わる位置を見つける
         end_time = total_duration
-        if silence_starts and float(silence_starts[-1]) > total_duration - 5:
-            # 末尾5秒以内に無音開始がある場合
+        if silence_starts and float(silence_starts[-1]) > total_duration - 2:
+            # 末尾2秒以内に無音開始がある場合のみカット（5秒→2秒に縮小で過剰カット防止）
             end_time = float(silence_starts[-1])
             print(f"[AudioTrim] Trimming {total_duration - end_time:.1f}s from end")
         

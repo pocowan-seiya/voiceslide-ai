@@ -486,7 +486,7 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
         
         cleanup_audio = settings.get("cleanup_audio", True)
         cleanup_mode = settings.get("cleanup_mode", "natural")
-        silence_threshold = settings.get("silence_threshold", 0.5)
+        silence_threshold = settings.get("silence_threshold", 1.0)
         
         # Mode configuration
         mode_config = {
@@ -502,7 +502,7 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
             from services.transcription import trim_silence_from_audio
             original_audio_path = jobs[job_id].get("audio_path")
             if original_audio_path:
-                trimmed_path = trim_silence_from_audio(original_audio_path, threshold_db=-45, min_silence_duration=0.5)
+                trimmed_path = trim_silence_from_audio(original_audio_path, threshold_db=-50, min_silence_duration=1.0)
                 if trimmed_path != original_audio_path:
                     jobs[job_id]["audio_path"] = trimmed_path
                     jobs[job_id]["original_audio_path"] = original_audio_path
@@ -531,13 +531,20 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                         preserve_natural_pauses=config["natural"]
                     )
                     if cleanup_result and cleanup_result.get("cleaned_audio_path"):
-                        jobs[job_id]["audio_path"] = cleanup_result["cleaned_audio_path"]
-                        jobs[job_id]["original_audio_path"] = audio_path
-                        pipeline.audio_path = cleanup_result["cleaned_audio_path"]
-                        print(f"[Cleanup] Duration: {cleanup_result.get('original_duration', 0):.1f}s → {cleanup_result.get('new_duration', 0):.1f}s")
-                        if cleanup_result.get("new_segments"):
-                            result["segments"] = cleanup_result["new_segments"]
-                            pipeline.segments = cleanup_result["new_segments"]
+                        # 過剰カット検出：20%以上カットされている場合はスキップ
+                        orig_dur = cleanup_result.get('original_duration', 0)
+                        removed = cleanup_result.get('total_removed_seconds', 0)
+                        if orig_dur > 0 and removed / orig_dur > 0.20:
+                            print(f"[Cleanup] WARNING: Would remove {removed:.1f}s ({removed/orig_dur*100:.0f}%) - exceeds 20% safety limit, skipping cleanup")
+                            cleanup_result = {"error": "safety_limit", "skipped": True}
+                        else:
+                            jobs[job_id]["audio_path"] = cleanup_result["cleaned_audio_path"]
+                            jobs[job_id]["original_audio_path"] = audio_path
+                            pipeline.audio_path = cleanup_result["cleaned_audio_path"]
+                            print(f"[Cleanup] Duration: {cleanup_result.get('original_duration', 0):.1f}s → {cleanup_result.get('new_duration', 0):.1f}s")
+                            if cleanup_result.get("new_segments"):
+                                result["segments"] = cleanup_result["new_segments"]
+                                pipeline.segments = cleanup_result["new_segments"]
             except Exception as e:
                 print(f"Audio cleanup failed: {e}")
                 cleanup_result = {"error": str(e)}
