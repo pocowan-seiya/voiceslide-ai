@@ -2241,90 +2241,6 @@ export default function Home() {
 
 
 
-                  {/* タイムライン編集（FullAIモード） */}
-                  {state.timingMap.length > 0 && (
-                    <div className="mb-6 p-4 bg-zinc-900 rounded-lg">
-                      <h3 className="text-lg font-bold mb-3 text-white">🎬 タイムライン編集</h3>
-                      <div className="text-xs text-zinc-400 mb-2 flex items-center gap-2">
-                        <span>⬅️➡️ 境界線をドラッグして調整 / 🗑️ で削除</span>
-                      </div>
-                      <div
-                        ref={timelineRef}
-                        className="flex h-10 rounded-lg overflow-visible mb-2 relative"
-                        style={{ cursor: draggingBoundary !== null ? 'ew-resize' : 'default' }}
-                      >
-                        {state.timingMap.map((item, i) => {
-                          const totalDuration = state.timingMap[state.timingMap.length - 1]?.end_time || 1;
-                          const width = ((item.end_time - item.start_time) / totalDuration) * 100;
-                          const colors = ['bg-cyan-600', 'bg-purple-600', 'bg-orange-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-600'];
-                          const isLastSlide = i === state.timingMap.length - 1;
-
-                          return (
-                            <div
-                              key={i}
-                              className={`${colors[i % colors.length]} flex items-center justify-center text-xs font-bold relative group`}
-                              style={{ width: `${width}%`, minWidth: '30px' }}
-                              title={`スライド${item.slide_number}: ${item.start_time?.toFixed(1)}s - ${item.end_time?.toFixed(1)}s`}
-                            >
-                              {item.slide_number}
-                              {!isLastSlide && (
-                                <div
-                                  className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
-                                  style={{ transform: 'translateX(50%)' }}
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    handleBoundaryDragStart(i);
-                                  }}
-                                >
-                                  <div className="w-1 h-6 bg-white rounded shadow-lg" />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="flex justify-between text-xs text-zinc-500 mb-3">
-                        <span>0:00</span>
-                        <span>
-                          {state.timingMap.length > 0 && state.timingMap[state.timingMap.length - 1].end_time
-                            ? `${Math.floor(state.timingMap[state.timingMap.length - 1].end_time / 60)}:${String(Math.floor(state.timingMap[state.timingMap.length - 1].end_time % 60)).padStart(2, '0')}`
-                            : '--:--'}
-                        </span>
-                      </div>
-                      {/* 詳細リスト */}
-                      <div className="space-y-1 max-h-48 overflow-y-auto">
-                        {state.timingMap.map((item, i) => {
-                          const duration = (item.end_time || 0) - (item.start_time || 0);
-                          return (
-                            <div key={i} className="flex items-center gap-3 p-2 bg-zinc-800 rounded-lg">
-                              <span className="w-7 h-7 bg-cyan-500 rounded-full flex items-center justify-center font-bold text-sm">
-                                {item.slide_number}
-                              </span>
-                              <div className="flex-1 flex items-center gap-2 text-sm">
-                                <span className="text-cyan-400 font-mono">
-                                  {Math.floor((item.start_time || 0) / 60)}:{String(Math.floor((item.start_time || 0) % 60)).padStart(2, '0')}
-                                </span>
-                                <span className="text-zinc-600">→</span>
-                                <span className="text-cyan-400 font-mono">
-                                  {Math.floor((item.end_time || 0) / 60)}:{String(Math.floor((item.end_time || 0) % 60)).padStart(2, '0')}
-                                </span>
-                                <span className="text-zinc-500 text-xs">({duration.toFixed(1)}秒)</span>
-                              </div>
-                              {state.timingMap.length > 1 && (
-                                <button
-                                  onClick={() => handleDeleteSlide(i)}
-                                  className="p-1 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
-                                  title="このスライドを削除"
-                                >
-                                  🗑️
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   <div className="flex gap-4 flex-wrap">
                     <button
@@ -3088,6 +3004,94 @@ export default function Home() {
                   </div>
                 )}
 
+                {/* タイムライン編集セクション */}
+                {state.timingMap.length > 0 && (
+                  <div className="bg-zinc-800/50 rounded-xl p-4 mb-4 border border-zinc-700">
+                    <h4 className="font-semibold mb-3 text-white flex items-center gap-2">
+                      ⏱️ タイムライン編集
+                    </h4>
+                    <p className="text-xs text-zinc-400 mb-3">
+                      境界線をドラッグして各スライドの表示時間を調整できます。🗑️で不要なスライドを削除できます。
+                    </p>
+                    {/* Timeline bar */}
+                    <div
+                      ref={timelineRef}
+                      className="flex h-10 rounded-lg overflow-visible mb-2 relative"
+                      style={{ cursor: draggingBoundary !== null ? 'ew-resize' : 'default' }}
+                    >
+                      {state.timingMap.map((item, i) => {
+                        const totalDuration = state.timingMap[state.timingMap.length - 1]?.end_time || 1;
+                        const width = ((item.end_time - item.start_time) / totalDuration) * 100;
+                        const colors = ['bg-cyan-600', 'bg-purple-600', 'bg-orange-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-600'];
+                        const isLastSlide = i === state.timingMap.length - 1;
+
+                        return (
+                          <div
+                            key={i}
+                            className={`${colors[i % colors.length]} flex items-center justify-center text-xs font-bold relative group`}
+                            style={{ width: `${width}%`, minWidth: '30px' }}
+                            title={`スライド${item.slide_number}: ${item.start_time?.toFixed(1)}s - ${item.end_time?.toFixed(1)}s`}
+                          >
+                            {item.slide_number}
+                            {!isLastSlide && (
+                              <div
+                                className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                                style={{ transform: 'translateX(50%)' }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleBoundaryDragStart(i);
+                                }}
+                              >
+                                <div className="w-1 h-6 bg-white rounded shadow-lg" />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-xs text-zinc-500 mb-3">
+                      <span>0:00</span>
+                      <span>
+                        {state.timingMap[state.timingMap.length - 1]?.end_time
+                          ? `${Math.floor(state.timingMap[state.timingMap.length - 1].end_time / 60)}:${String(Math.floor(state.timingMap[state.timingMap.length - 1].end_time % 60)).padStart(2, '0')}`
+                          : '--:--'}
+                      </span>
+                    </div>
+                    {/* Slide timing list */}
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {state.timingMap.map((item, i) => {
+                        const duration = (item.end_time || 0) - (item.start_time || 0);
+                        return (
+                          <div key={i} className="flex items-center gap-3 p-2 bg-zinc-900 rounded-lg">
+                            <span className="w-7 h-7 bg-cyan-500 rounded-full flex items-center justify-center font-bold text-sm shrink-0">
+                              {item.slide_number}
+                            </span>
+                            <div className="flex-1 flex items-center gap-2 text-sm">
+                              <span className="text-cyan-400 font-mono">
+                                {Math.floor((item.start_time || 0) / 60)}:{String(Math.floor((item.start_time || 0) % 60)).padStart(2, '0')}
+                              </span>
+                              <span className="text-zinc-600">→</span>
+                              <span className="text-cyan-400 font-mono">
+                                {Math.floor((item.end_time || 0) / 60)}:{String(Math.floor((item.end_time || 0) % 60)).padStart(2, '0')}
+                              </span>
+                              <span className="text-zinc-500 text-xs">({duration.toFixed(1)}秒)</span>
+                            </div>
+                            {state.timingMap.length > 1 && (
+                              <button
+                                onClick={() => handleDeleteSlide(i)}
+                                className="p-1 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+                                title="このスライドを削除"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Regenerate Video Button */}
                 <button
                   onClick={() => {
@@ -3097,7 +3101,7 @@ export default function Home() {
                   disabled={state.isProcessing}
                   className="btn-secondary w-full"
                 >
-                  🎬 動画を再生成
+                  {state.isProcessing ? "⏳ 動画を再生成中..." : "🎬 動画を再生成"}
                 </button>
 
                 {/* OP/ED Video Section */}
