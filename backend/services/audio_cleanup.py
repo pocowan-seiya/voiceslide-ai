@@ -63,8 +63,25 @@ async def cleanup_audio(
     # 4. カットすべき区間を決定（無音 + フィラー）
     cut_regions = merge_cut_regions(silences, filler_segments)
     
-    # 5. カットしない区間（保持する区間）を計算
+    # 5. 末尾保護: 音声の最後10秒間のカット区間を除外
+    # （末尾の発話が小声やフェードアウトで誤カットされるのを防止）
     audio_duration = get_audio_duration(audio_path)
+    end_protection_start = audio_duration - 10.0
+    if end_protection_start > 0:
+        protected_cuts = []
+        for start, end in cut_regions:
+            if start >= end_protection_start:
+                print(f"  [EndProtection] Skipping cut at {start:.1f}s-{end:.1f}s (within last 10s)")
+                continue
+            elif end > end_protection_start:
+                # 区間が末尾保護にかかる場合は保護開始まで
+                protected_cuts.append((start, end_protection_start))
+                print(f"  [EndProtection] Trimmed cut to {start:.1f}s-{end_protection_start:.1f}s")
+            else:
+                protected_cuts.append((start, end))
+        cut_regions = protected_cuts
+    
+    # 6. カットしない区間（保持する区間）を計算
     keep_regions = invert_regions(cut_regions, audio_duration)
     
     # 6. FFmpegで音声を再構成

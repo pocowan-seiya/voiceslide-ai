@@ -179,17 +179,6 @@ def ensure_all_slides_used(
         # アウトラインからのタイムスタンプを使用（10秒遅延調整あり）
         # 話題が先に述べられ、10秒後にスライドが切り替わることでスムーズな視聴体験
         TRANSITION_DELAY = 10.0  # 秒
-        
-        # タイミングマップが音声長を超えているか確認（クリーンアップ後の音声が短い場合）
-        last_end = max(t.get("end_time", 0) for t in sorted_timing)
-        if last_end > audio_duration + 1.0:
-            # タイミングをスケーリングして音声長に合わせる
-            scale_factor = audio_duration / last_end
-            print(f"[VideoComposer] ⚠️ Timing ({last_end:.1f}s) exceeds audio ({audio_duration:.1f}s) - rescaling by {scale_factor:.3f}")
-            for t in sorted_timing:
-                t["start_time"] = t.get("start_time", 0) * scale_factor
-                t["end_time"] = t.get("end_time", 0) * scale_factor
-        
         print(f"[VideoComposer] ✓ Using outline timestamps with {TRANSITION_DELAY}s transition delay")
         
         result = []
