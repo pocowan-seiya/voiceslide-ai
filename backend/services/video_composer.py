@@ -181,6 +181,7 @@ def ensure_all_slides_used(
         TRANSITION_DELAY = 10.0  # 秒
         print(f"[VideoComposer] ✓ Using outline timestamps with {TRANSITION_DELAY}s transition delay")
         
+        sorted_timing = sorted(timing_map, key=lambda x: x.get("slide_number", 0))
         result = []
         
         for i, timing in enumerate(sorted_timing):
