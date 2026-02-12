@@ -990,6 +990,124 @@ export default function Home() {
     });
   };
 
+  // Slide add/replace state
+  const slideAddInputRef = useRef<HTMLInputElement>(null);
+  const slideReplaceInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAddPosition, setPendingAddPosition] = useState<number | null>(null);
+  const [pendingReplaceIndex, setPendingReplaceIndex] = useState<number | null>(null);
+
+  // スライド追加: 境目の＋ボタンから呼ばれる
+  const handleAddSlide = (position: number) => {
+    setPendingAddPosition(position);
+    if (slideAddInputRef.current) {
+      slideAddInputRef.current.value = '';
+      slideAddInputRef.current.click();
+    }
+  };
+
+  const handleAddSlideFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || pendingAddPosition === null) return;
+
+    const position = pendingAddPosition;
+    setPendingAddPosition(null);
+
+    try {
+      // Upload to backend
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('position', String(position));
+
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/add`, {
+        method: 'POST',
+        headers: getAPIHeaders(),
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+
+      // Update timing map: split the next slide's time in half
+      const newTimingMap = [...state.timingMap];
+      const nextSlide = newTimingMap[position]; // The slide after the boundary
+      if (nextSlide) {
+        const midPoint = nextSlide.start_time + (nextSlide.end_time - nextSlide.start_time) / 2;
+
+        // Insert new slide entry
+        const newEntry = {
+          slide_number: position + 1,
+          start_time: nextSlide.start_time,
+          end_time: midPoint,
+          match_reason: 'ユーザー追加',
+        };
+        newTimingMap.splice(position, 0, newEntry);
+
+        // Adjust the next slide's start time
+        newTimingMap[position + 1].start_time = midPoint;
+
+        // Renumber all slides
+        for (let i = 0; i < newTimingMap.length; i++) {
+          newTimingMap[i].slide_number = i + 1;
+        }
+      }
+
+      // Update slide previews: insert the uploaded image URL
+      const newPreviews = [...state.slidePreviews];
+      newPreviews.splice(position, 0, `${API_URL}${data.image_url}`);
+
+      updateState({
+        timingMap: newTimingMap,
+        slidePreviews: newPreviews,
+      });
+    } catch (err) {
+      console.error('Add slide failed:', err);
+      updateState({ error: 'スライド追加に失敗しました' });
+    }
+  };
+
+  // スライド差し替え: スライド番号クリックから呼ばれる
+  const handleReplaceSlide = (slideIndex: number) => {
+    setPendingReplaceIndex(slideIndex);
+    if (slideReplaceInputRef.current) {
+      slideReplaceInputRef.current.value = '';
+      slideReplaceInputRef.current.click();
+    }
+  };
+
+  const handleReplaceSlideFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || pendingReplaceIndex === null) return;
+
+    const slideIndex = pendingReplaceIndex;
+    setPendingReplaceIndex(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('slide_index', String(slideIndex));
+
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/replace`, {
+        method: 'POST',
+        headers: getAPIHeaders(),
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error('Replace failed');
+      const data = await res.json();
+
+      // Update the slide preview
+      const newPreviews = [...state.slidePreviews];
+      if (slideIndex < newPreviews.length) {
+        newPreviews[slideIndex] = `${API_URL}${data.image_url}?t=${Date.now()}`;
+      }
+
+      updateState({ slidePreviews: newPreviews });
+    } catch (err) {
+      console.error('Replace slide failed:', err);
+      updateState({ error: 'スライド差し替えに失敗しました' });
+    }
+  };
+
   // Timeline drag handlers for adjusting slide boundaries
   const handleBoundaryDragStart = (boundaryIndex: number) => {
     setDraggingBoundary(boundaryIndex);
@@ -1270,6 +1388,22 @@ export default function Home() {
 
       {/* API Keys Settings Modal */}
       {showSettings && <APIKeysSettings onClose={() => setShowSettings(false)} />}
+
+      {/* Hidden file inputs for slide add/replace */}
+      <input
+        ref={slideAddInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleAddSlideFileSelected}
+      />
+      <input
+        ref={slideReplaceInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleReplaceSlideFileSelected}
+      />
 
       {/* Slide Zoom Modal */}
       {zoomedSlide !== null && state.slidePreviews.length > 0 && (
@@ -2765,7 +2899,7 @@ export default function Home() {
               {/* タイムライン表示 - ドラッグで調整可能 */}
               <div className="mb-6 p-4 bg-zinc-900 rounded-lg">
                 <div className="text-xs text-zinc-400 mb-2 flex items-center gap-2">
-                  <span>⬅️➡️ 境界線をドラッグして調整</span>
+                  <span>⬅️➡️ ドラッグで調整 ｜ <span className="text-green-400">＋</span>追加 ｜ <span className="text-cyan-400">番号</span>クリックで差し替え</span>
                 </div>
                 <div
                   ref={timelineRef}
@@ -2785,9 +2919,17 @@ export default function Home() {
                         style={{ width: `${width}%`, minWidth: '30px' }}
                         title={`スライド${item.slide_number}: ${item.start_time?.toFixed(1)}s - ${item.end_time?.toFixed(1)}s`}
                       >
-                        {item.slide_number}
+                        {/* クリックでスライド差し替え */}
+                        <button
+                          className="cursor-pointer hover:scale-110 transition-transform relative z-5"
+                          onClick={() => handleReplaceSlide(i)}
+                          title="クリックでスライド画像を差し替え"
+                        >
+                          <span className="group-hover:hidden">{item.slide_number}</span>
+                          <span className="hidden group-hover:inline">📷</span>
+                        </button>
 
-                        {/* Drag handle on right edge (not on last slide) */}
+                        {/* Drag handle + Add button on right edge (not on last slide) */}
                         {!isLastSlide && (
                           <div
                             className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-center group/handle"
@@ -2808,6 +2950,17 @@ export default function Home() {
                                 切替: {Math.floor(((item.end_time || 0) + 10) / 60)}:{String(Math.floor(((item.end_time || 0) + 10) % 60)).padStart(2, '0')}
                               </div>
                             </div>
+                            {/* ＋ボタン（スライド追加） */}
+                            <button
+                              className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-5 h-5 bg-green-600 hover:bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg opacity-0 group-hover:opacity-100 transition-all hover:scale-125 z-20"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddSlide(i + 1);
+                              }}
+                              title="ここにスライドを追加"
+                            >
+                              +
+                            </button>
                           </div>
                         )}
                       </div>
@@ -3036,7 +3189,7 @@ export default function Home() {
                       ⏱️ タイムライン編集
                     </h4>
                     <p className="text-xs text-zinc-400 mb-3">
-                      境界線をドラッグして各スライドの表示時間を調整できます。🗑️で不要なスライドを削除できます。
+                      境界線をドラッグして調整 ｜ <span className="text-green-400">＋</span>でスライド追加 ｜ <span className="text-cyan-400">番号</span>をクリックで差し替え ｜ 🗑️で削除
                     </p>
                     {/* Timeline bar */}
                     <div
@@ -3057,7 +3210,15 @@ export default function Home() {
                             style={{ width: `${width}%`, minWidth: '30px' }}
                             title={`スライド${item.slide_number}: ${item.start_time?.toFixed(1)}s - ${item.end_time?.toFixed(1)}s`}
                           >
-                            {item.slide_number}
+                            {/* クリックでスライド差し替え */}
+                            <button
+                              className="cursor-pointer hover:scale-110 transition-transform relative z-5"
+                              onClick={() => handleReplaceSlide(i)}
+                              title="クリックでスライド画像を差し替え"
+                            >
+                              <span className="group-hover:hidden">{item.slide_number}</span>
+                              <span className="hidden group-hover:inline">📷</span>
+                            </button>
                             {!isLastSlide && (
                               <div
                                 className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-center group/handle"
@@ -3078,6 +3239,17 @@ export default function Home() {
                                     切替: {Math.floor(((item.end_time || 0) + 10) / 60)}:{String(Math.floor(((item.end_time || 0) + 10) % 60)).padStart(2, '0')}
                                   </div>
                                 </div>
+                                {/* ＋ボタン（スライド追加） */}
+                                <button
+                                  className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-5 h-5 bg-green-600 hover:bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg opacity-0 group-hover:opacity-100 transition-all hover:scale-125 z-20"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddSlide(i + 1);
+                                  }}
+                                  title="ここにスライドを追加"
+                                >
+                                  +
+                                </button>
                               </div>
                             )}
                           </div>

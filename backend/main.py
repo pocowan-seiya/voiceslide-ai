@@ -349,7 +349,92 @@ async def upload_slide_images(
     }
 
 
-# ========== Reference Image Upload (Illustration Mode) ==========
+# ========== Slide Add / Replace ==========
+
+@app.post("/api/slides/{job_id}/add")
+async def add_slide(
+    job_id: str,
+    position: int = Form(...),
+    file: UploadFile = File(...)
+):
+    """タイムラインにスライドを追加"""
+    pipeline = get_or_create_pipeline(job_id)
+    
+    allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(400, f"Unsupported file type: {ext}")
+    
+    # Save the image
+    slides_dir = os.path.join(OUTPUT_DIR, job_id)
+    os.makedirs(slides_dir, exist_ok=True)
+    
+    # Find a unique filename
+    slide_num = position + 1
+    filename = f"user_added_slide_{slide_num}_{int(time.time())}{ext}"
+    filepath = os.path.join(slides_dir, filename)
+    
+    with open(filepath, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    # Insert into pipeline slide_images
+    if hasattr(pipeline, 'slide_images') and pipeline.slide_images:
+        if position <= len(pipeline.slide_images):
+            pipeline.slide_images.insert(position, filepath)
+        else:
+            pipeline.slide_images.append(filepath)
+    
+    print(f"[AddSlide] Added slide at position {position} for job {job_id}: {filename}")
+    
+    return {
+        "success": True,
+        "position": position,
+        "image_url": f"/outputs/{job_id}/{filename}"
+    }
+
+
+@app.post("/api/slides/{job_id}/replace")
+async def replace_slide(
+    job_id: str,
+    slide_index: int = Form(...),
+    file: UploadFile = File(...)
+):
+    """既存スライドの画像を差し替え"""
+    pipeline = get_or_create_pipeline(job_id)
+    
+    allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(400, f"Unsupported file type: {ext}")
+    
+    # Save the replacement image
+    slides_dir = os.path.join(OUTPUT_DIR, job_id)
+    os.makedirs(slides_dir, exist_ok=True)
+    
+    filename = f"user_replaced_slide_{slide_index + 1}_{int(time.time())}{ext}"
+    filepath = os.path.join(slides_dir, filename)
+    
+    with open(filepath, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    # Replace in pipeline slide_images
+    if hasattr(pipeline, 'slide_images') and pipeline.slide_images:
+        if 0 <= slide_index < len(pipeline.slide_images):
+            old_path = pipeline.slide_images[slide_index]
+            pipeline.slide_images[slide_index] = filepath
+            print(f"[ReplaceSlide] Replaced slide {slide_index} for job {job_id}: {os.path.basename(old_path)} → {filename}")
+        else:
+            raise HTTPException(400, f"Invalid slide_index: {slide_index}")
+    else:
+        raise HTTPException(400, "No slides found for this job")
+    
+    return {
+        "success": True,
+        "slide_index": slide_index,
+        "image_url": f"/outputs/{job_id}/{filename}"
+    }
+
+
 
 @app.post("/api/upload-reference-image/{job_id}")
 async def upload_reference_image(
