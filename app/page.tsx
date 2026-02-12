@@ -2941,14 +2941,9 @@ export default function Home() {
                           >
                             <div className="w-1 h-6 bg-white rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" />
                             {/* 境目の時間ラベル（ホバー・ドラッグ時表示） */}
-                            <div className={`absolute -top-12 left-1/2 -translate-x-1/2 bg-zinc-800 border border-cyan-500/50 rounded-lg px-2 py-1 text-[10px] font-mono whitespace-nowrap shadow-xl transition-opacity ${draggingBoundary === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/handle:opacity-100'
+                            <div className={`absolute -top-8 left-1/2 -translate-x-1/2 bg-zinc-800 border border-cyan-500/50 rounded px-2 py-0.5 text-[10px] font-mono whitespace-nowrap shadow-xl transition-opacity text-cyan-400 ${draggingBoundary === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/handle:opacity-100'
                               }`}>
-                              <div className="text-cyan-400">
-                                {Math.floor((item.end_time || 0) / 60)}:{String(Math.floor((item.end_time || 0) % 60)).padStart(2, '0')}
-                              </div>
-                              <div className="text-yellow-400 text-[9px]">
-                                切替: {Math.floor(((item.end_time || 0) + 10) / 60)}:{String(Math.floor(((item.end_time || 0) + 10) % 60)).padStart(2, '0')}
-                              </div>
+                              {Math.floor(((item.end_time || 0) + 10) / 60)}:{String(Math.floor(((item.end_time || 0) + 10) % 60)).padStart(2, '0')}
                             </div>
                             {/* ＋ボタン（スライド追加） */}
                             <button
@@ -3230,14 +3225,9 @@ export default function Home() {
                               >
                                 <div className="w-1 h-6 bg-white rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" />
                                 {/* 境目の時間ラベル（ホバー・ドラッグ時表示） */}
-                                <div className={`absolute -top-12 left-1/2 -translate-x-1/2 bg-zinc-800 border border-cyan-500/50 rounded-lg px-2 py-1 text-[10px] font-mono whitespace-nowrap shadow-xl transition-opacity ${draggingBoundary === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/handle:opacity-100'
+                                <div className={`absolute -top-8 left-1/2 -translate-x-1/2 bg-zinc-800 border border-cyan-500/50 rounded px-2 py-0.5 text-[10px] font-mono whitespace-nowrap shadow-xl transition-opacity text-cyan-400 ${draggingBoundary === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/handle:opacity-100'
                                   }`}>
-                                  <div className="text-cyan-400">
-                                    {Math.floor((item.end_time || 0) / 60)}:{String(Math.floor((item.end_time || 0) % 60)).padStart(2, '0')}
-                                  </div>
-                                  <div className="text-yellow-400 text-[9px]">
-                                    切替: {Math.floor(((item.end_time || 0) + 10) / 60)}:{String(Math.floor(((item.end_time || 0) + 10) % 60)).padStart(2, '0')}
-                                  </div>
+                                  {Math.floor(((item.end_time || 0) + 10) / 60)}:{String(Math.floor(((item.end_time || 0) + 10) % 60)).padStart(2, '0')}
                                 </div>
                                 {/* ＋ボタン（スライド追加） */}
                                 <button
