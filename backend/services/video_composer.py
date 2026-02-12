@@ -14,7 +14,8 @@ async def compose_video(
     audio_path: str,
     slide_images: List[str],
     timing_map: List[Dict[str, Any]],
-    output_path: str
+    output_path: str,
+    user_edited: bool = False
 ) -> str:
     """
     全スライドを使用して動画を生成
@@ -26,6 +27,7 @@ async def compose_video(
         slide_images: スライド画像パスのリスト
         timing_map: AI生成のタイミングマップ
         output_path: 出力動画パス
+        user_edited: ユーザーが手動編集したタイミングかどうか
     
     Returns:
         生成された動画のパス
@@ -34,9 +36,24 @@ async def compose_video(
     # 音声の長さを取得
     audio_duration = get_audio_duration(audio_path)
     
-    # すべてのスライドを使用するタイミングを生成
-    # timing_mapにないスライドも含める
-    full_timing = ensure_all_slides_used(slide_images, timing_map, audio_duration)
+    if user_edited:
+        # ユーザー編集済み: そのまま使用（+10秒遅延の再適用をスキップ）
+        print(f"[VideoComposer] ✓ Using USER-EDITED timing map directly (no transition delay applied)")
+        full_timing = []
+        sorted_tm = sorted(timing_map, key=lambda x: x.get("slide_number", 0))
+        for t in sorted_tm:
+            start = t.get("start_time", 0)
+            end = t.get("end_time", 0)
+            full_timing.append({
+                "slide_number": t.get("slide_number", 1),
+                "start_time": start,
+                "end_time": end,
+                "duration": max(end - start, 0.5),
+                "match_reason": t.get("match_reason", "ユーザー編集")
+            })
+    else:
+        # AI生成タイミング: ensure_all_slides_usedで+10秒遅延を適用
+        full_timing = ensure_all_slides_used(slide_images, timing_map, audio_duration)
     
     # デバッグ: 入力タイミングと最終タイミングを比較
     print(f"[VideoComposer] ===== TIMING DEBUG =====")

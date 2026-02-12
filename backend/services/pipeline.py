@@ -265,7 +265,8 @@ class HybridPipeline:
             audio_path=audio_path,
             slide_images=self.slide_images,
             timing_map=timing,
-            output_path=output_path
+            output_path=output_path,
+            user_edited=edited_timing is not None
         )
         
         return {
