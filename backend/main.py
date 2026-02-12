@@ -358,6 +358,7 @@ async def add_slide(
     file: UploadFile = File(...)
 ):
     """タイムラインにスライドを追加"""
+    import time
     pipeline = get_or_create_pipeline(job_id)
     
     allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
@@ -400,6 +401,7 @@ async def replace_slide(
     file: UploadFile = File(...)
 ):
     """既存スライドの画像を差し替え"""
+    import time
     pipeline = get_or_create_pipeline(job_id)
     
     allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
