@@ -163,35 +163,67 @@ def _transcribe_sync(audio_path: str, openai_key: Optional[str] = None) -> Dict[
     """Synchronous transcription (runs in thread pool)"""
     client = get_openai_client(openai_key)
     
-    with open(audio_path, "rb") as audio_file:
-        response = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            response_format="verbose_json",
-            timestamp_granularities=["segment"]
-        )
+    # Whisper API has a 25MB limit - compress if needed
+    WHISPER_MAX_SIZE = 24 * 1024 * 1024  # 24MB (with safety margin)
+    file_to_send = audio_path
+    compressed_path = None
     
-    segments = []
-    for segment in response.segments:
-        segments.append({
-            "id": segment.id,
-            "start": segment.start,
-            "end": segment.end,
-            "text": segment.text.strip()
-        })
+    file_size = os.path.getsize(audio_path)
+    if file_size > WHISPER_MAX_SIZE:
+        print(f"[Transcribe] Audio file too large ({file_size / 1024 / 1024:.1f}MB), compressing for Whisper...")
+        compressed_path = audio_path.rsplit(".", 1)[0] + "_whisper.mp3"
+        cmd = [
+            "ffmpeg", "-y", "-i", audio_path,
+            "-ac", "1",           # mono (transcription doesn't need stereo)
+            "-ar", "16000",       # 16kHz is sufficient for speech
+            "-b:a", "64k",        # low bitrate for smaller file
+            compressed_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        if result.returncode == 0 and os.path.exists(compressed_path):
+            new_size = os.path.getsize(compressed_path)
+            print(f"[Transcribe] Compressed: {file_size / 1024 / 1024:.1f}MB → {new_size / 1024 / 1024:.1f}MB")
+            file_to_send = compressed_path
+        else:
+            print(f"[Transcribe] Compression failed, trying original file")
     
-    srt_content = generate_srt(segments)
-    srt_path = audio_path.rsplit(".", 1)[0] + ".srt"
-    
-    with open(srt_path, "w", encoding="utf-8") as f:
-        f.write(srt_content)
-    
-    return {
-        "srt_path": srt_path,
-        "segments": segments,
-        "full_text": " ".join([s["text"] for s in segments]),
-        "duration": segments[-1]["end"] if segments else 0
-    }
+    try:
+        with open(file_to_send, "rb") as audio_file:
+            response = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="verbose_json",
+                timestamp_granularities=["segment"]
+            )
+        
+        segments = []
+        for segment in response.segments:
+            segments.append({
+                "id": segment.id,
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip()
+            })
+        
+        srt_content = generate_srt(segments)
+        srt_path = audio_path.rsplit(".", 1)[0] + ".srt"
+        
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt_content)
+        
+        return {
+            "srt_path": srt_path,
+            "segments": segments,
+            "full_text": " ".join([s["text"] for s in segments]),
+            "duration": segments[-1]["end"] if segments else 0
+        }
+    finally:
+        # Cleanup compressed temp file
+        if compressed_path and os.path.exists(compressed_path):
+            try:
+                os.remove(compressed_path)
+            except:
+                pass
 
 
 async def transcribe_audio(audio_path: str, openai_key: Optional[str] = None) -> Dict[str, Any]:
