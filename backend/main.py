@@ -1654,9 +1654,33 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     # Get timing map for frontend timeline editor
     timing_map_data = None
     if edited:
+        # ユーザー編集済み: そのまま返す（すでに実際の切替時間）
         timing_map_data = edited
     elif pipeline.timing_map:
-        timing_map_data = pipeline.timing_map
+        # 初回生成: +10秒遅延を適用した「実際の切替時間」を返す
+        # フロントの表示とユーザー編集を正確にするため
+        from services.video_composer import get_audio_duration
+        audio_dur = get_audio_duration(audio_to_use)
+        TRANSITION_DELAY = 10.0
+        raw = sorted(pipeline.timing_map, key=lambda x: x.get("slide_number", 0))
+        adjusted = []
+        for idx, t in enumerate(raw):
+            if idx == 0:
+                s = 0.0
+            else:
+                s = min(t.get("start_time", 0) + TRANSITION_DELAY, audio_dur)
+            if idx == len(raw) - 1:
+                e = audio_dur
+            else:
+                next_start = raw[idx + 1].get("start_time", 0)
+                e = min(next_start + TRANSITION_DELAY, audio_dur)
+            adjusted.append({
+                "slide_number": t.get("slide_number", idx + 1),
+                "start_time": round(s, 1),
+                "end_time": round(e, 1),
+                "match_reason": t.get("match_reason", "")
+            })
+        timing_map_data = adjusted
     
     response = {
         "job_id": job_id,

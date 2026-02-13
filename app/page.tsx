@@ -929,7 +929,10 @@ export default function Home() {
 
       const res = await fetch(`${API_URL}/api/generate-video/${state.jobId}`, {
         method: "POST",
-        headers: body ? { "Content-Type": "application/json" } : undefined,
+        headers: {
+          ...getAPIHeaders(),
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
         body,
       });
       const data = await res.json();
@@ -939,7 +942,7 @@ export default function Home() {
         videoUrl: `${API_URL}${data.video_url}?t=${Date.now()}`,
         step: 10,
         isProcessing: false,
-        // timing_mapをバックエンドから取得（タイムライン編集用）
+        // バックエンドが+10秒反映済みのtiming_mapを返す
         ...(data.timing_map ? { timingMap: data.timing_map } : {}),
       });
     } catch (err: any) {
@@ -2943,7 +2946,7 @@ export default function Home() {
                             {/* 境目の時間ラベル（ホバー・ドラッグ時表示） */}
                             <div className={`absolute -top-8 left-1/2 -translate-x-1/2 bg-zinc-800 border border-cyan-500/50 rounded px-2 py-0.5 text-[10px] font-mono whitespace-nowrap shadow-xl transition-opacity text-cyan-400 ${draggingBoundary === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/handle:opacity-100'
                               }`}>
-                              {Math.floor(((item.end_time || 0) + 10) / 60)}:{String(Math.floor(((item.end_time || 0) + 10) % 60)).padStart(2, '0')}
+                              {Math.floor((item.end_time || 0) / 60)}:{String(Math.floor((item.end_time || 0) % 60)).padStart(2, '0')}
                             </div>
                             {/* ＋ボタン（スライド追加） */}
                             <button
@@ -3227,7 +3230,7 @@ export default function Home() {
                                 {/* 境目の時間ラベル（ホバー・ドラッグ時表示） */}
                                 <div className={`absolute -top-8 left-1/2 -translate-x-1/2 bg-zinc-800 border border-cyan-500/50 rounded px-2 py-0.5 text-[10px] font-mono whitespace-nowrap shadow-xl transition-opacity text-cyan-400 ${draggingBoundary === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/handle:opacity-100'
                                   }`}>
-                                  {Math.floor(((item.end_time || 0) + 10) / 60)}:{String(Math.floor(((item.end_time || 0) + 10) % 60)).padStart(2, '0')}
+                                  {Math.floor((item.end_time || 0) / 60)}:{String(Math.floor((item.end_time || 0) % 60)).padStart(2, '0')}
                                 </div>
                                 {/* ＋ボタン（スライド追加） */}
                                 <button
