@@ -927,6 +927,13 @@ export default function Home() {
         ? JSON.stringify({ timing_map: state.timingMap })
         : undefined;
 
+      console.log('[Video] === handleGenerateVideo ===');
+      console.log('[Video] timingMap entries:', state.timingMap.length);
+      console.log('[Video] sending body:', body ? 'YES' : 'NO');
+      if (state.timingMap.length > 0) {
+        console.log('[Video] first 3 entries:', state.timingMap.slice(0, 3));
+      }
+
       const res = await fetch(`${API_URL}/api/generate-video/${state.jobId}`, {
         method: "POST",
         headers: {
@@ -936,6 +943,8 @@ export default function Home() {
         body,
       });
       const data = await res.json();
+      console.log('[Video] response status:', res.status);
+      console.log('[Video] response timing_map:', data.timing_map?.length || 0, 'items');
       if (!res.ok) throw new Error(data.detail || "Video generation failed");
 
       updateState({
@@ -946,6 +955,7 @@ export default function Home() {
         ...(data.timing_map ? { timingMap: data.timing_map } : {}),
       });
     } catch (err: any) {
+      console.error('[Video] Error:', err.message);
       updateState({ error: err.message, isProcessing: false });
     }
   };
@@ -3031,7 +3041,7 @@ export default function Home() {
                 <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
               </div>
 
-              <video src={state.videoUrl} controls className="w-full rounded-xl mb-6" />
+              <video key={state.videoUrl} src={state.videoUrl} controls className="w-full rounded-xl mb-6" />
 
               <div className="flex flex-wrap justify-center gap-3 mb-8">
                 <button

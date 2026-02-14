@@ -1618,8 +1618,39 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     """Step 10: Generate final video"""
     pipeline = get_or_create_pipeline(job_id)
     
+    # === DEBUG: Log incoming request ===
+    print(f"[Video] === generate_video called for {job_id} ===")
+    print(f"[Video] update received: {update is not None}")
+    if update:
+        print(f"[Video] timing_map entries: {len(update.timing_map)}")
+        for t in update.timing_map[:3]:
+            print(f"  slide {t.get('slide_number')}: {t.get('start_time')}s - {t.get('end_time')}s")
+        if len(update.timing_map) > 3:
+            print(f"  ... and {len(update.timing_map) - 3} more")
+    
+    print(f"[Video] pipeline.slide_images: {len(pipeline.slide_images)} items")
+    print(f"[Video] pipeline.timing_map: {len(pipeline.timing_map)} items")
+    
     jobs[job_id]["step"] = 10
     jobs[job_id]["status"] = "processing"
+    
+    # Auto-recover slide_images from filesystem if empty
+    if not pipeline.slide_images:
+        print(f"[Video] ⚠️ slide_images is empty, attempting recovery from filesystem...")
+        slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        if os.path.isdir(slides_dir):
+            import glob
+            slide_files = sorted(glob.glob(os.path.join(slides_dir, "slide_*.png")))
+            if slide_files:
+                pipeline.slide_images = slide_files
+                print(f"[Video] ✓ Recovered {len(slide_files)} slide images from {slides_dir}")
+            else:
+                print(f"[Video] ✗ No slide_*.png files found in {slides_dir}")
+        else:
+            print(f"[Video] ✗ Slides directory not found: {slides_dir}")
+    
+    if not pipeline.slide_images:
+        raise HTTPException(500, "スライド画像が見つかりません。スライドを先に生成してください。")
     
     # If no timing provided and no timing_map exists, generate it from outline
     if not update and not pipeline.timing_map:
@@ -1646,6 +1677,7 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
             print(f"[Video] Using original audio: {pipeline.audio_path}")
             audio_to_use = pipeline.audio_path
     
+    print(f"[Video] Calling step_generate_video with edited={'YES' if edited else 'NO'}, slides={len(pipeline.slide_images)}")
     result = await pipeline.step_generate_video(edited, audio_override=audio_to_use)
     
     jobs[job_id]["status"] = "completed"
@@ -1681,6 +1713,8 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
                 "match_reason": t.get("match_reason", "")
             })
         timing_map_data = adjusted
+    
+    print(f"[Video] === generate_video completed, returning timing_map: {len(timing_map_data) if timing_map_data else 0} items ===")
     
     response = {
         "job_id": job_id,
