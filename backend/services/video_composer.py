@@ -126,9 +126,8 @@ async def compose_video(
         "-i", concat_file,
         "-t", str(audio_duration),  # 明示的に音声長で制限
         "-r", "30",  # Explicit output framerate for reliable switching
-        # Ensure dimensions are even (required by H.264/libx264)
-        # pad to nearest even dimensions using ceil
-        "-vf", "fps=30,pad=ceil(iw/2)*2:ceil(ih/2)*2",
+        # Scale all images to consistent dimensions + ensure even dimensions
+        "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,fps=30",
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
         "-preset", "medium",

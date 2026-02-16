@@ -359,6 +359,9 @@ async def add_slide(
 ):
     """タイムラインにスライドを追加"""
     import time
+    import subprocess
+    from config import VIDEO_WIDTH, VIDEO_HEIGHT
+    
     pipeline = get_or_create_pipeline(job_id)
     
     allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
@@ -370,13 +373,36 @@ async def add_slide(
     slides_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(slides_dir, exist_ok=True)
     
-    # Find a unique filename
+    # Find a unique filename (always PNG for consistency)
     slide_num = position + 1
-    filename = f"user_added_slide_{slide_num}_{int(time.time())}{ext}"
+    filename = f"user_added_slide_{slide_num}_{int(time.time())}.png"
     filepath = os.path.join(slides_dir, filename)
     
-    with open(filepath, "wb") as f:
+    # Save uploaded file temporarily
+    temp_upload = filepath + ".tmp"
+    with open(temp_upload, "wb") as f:
         shutil.copyfileobj(file.file, f)
+    
+    # Resize/convert to match slide dimensions using FFmpeg
+    cmd_resize = [
+        "ffmpeg", "-y",
+        "-i", temp_upload,
+        "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black",
+        "-frames:v", "1",
+        filepath
+    ]
+    
+    result = subprocess.run(cmd_resize, capture_output=True, text=True)
+    
+    # Cleanup temp file
+    if os.path.exists(temp_upload):
+        os.remove(temp_upload)
+    
+    if result.returncode != 0:
+        print(f"[AddSlide] FFmpeg resize error: {result.stderr[:200]}")
+        raise HTTPException(500, "画像のリサイズに失敗しました")
+    
+    print(f"[AddSlide] Resized to {VIDEO_WIDTH}x{VIDEO_HEIGHT}: {filename}")
     
     # Insert into pipeline slide_images
     if hasattr(pipeline, 'slide_images') and pipeline.slide_images:
@@ -402,6 +428,9 @@ async def replace_slide(
 ):
     """既存スライドの画像を差し替え"""
     import time
+    import subprocess
+    from config import VIDEO_WIDTH, VIDEO_HEIGHT
+    
     pipeline = get_or_create_pipeline(job_id)
     
     allowed_ext = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
@@ -409,15 +438,40 @@ async def replace_slide(
     if ext not in allowed_ext:
         raise HTTPException(400, f"Unsupported file type: {ext}")
     
-    # Save the replacement image
+    # Save the replacement image (temporary)
     slides_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(slides_dir, exist_ok=True)
     
-    filename = f"user_replaced_slide_{slide_index + 1}_{int(time.time())}{ext}"
+    # Always save as PNG for consistency with AI-generated slides
+    filename = f"user_replaced_slide_{slide_index + 1}_{int(time.time())}.png"
     filepath = os.path.join(slides_dir, filename)
     
-    with open(filepath, "wb") as f:
+    # Save uploaded file temporarily
+    temp_upload = filepath + ".tmp"
+    with open(temp_upload, "wb") as f:
         shutil.copyfileobj(file.file, f)
+    
+    # Resize/convert to match slide dimensions using FFmpeg
+    # This ensures all slides in the concat file have identical dimensions
+    cmd_resize = [
+        "ffmpeg", "-y",
+        "-i", temp_upload,
+        "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black",
+        "-frames:v", "1",
+        filepath
+    ]
+    
+    result = subprocess.run(cmd_resize, capture_output=True, text=True)
+    
+    # Cleanup temp file
+    if os.path.exists(temp_upload):
+        os.remove(temp_upload)
+    
+    if result.returncode != 0:
+        print(f"[ReplaceSlide] FFmpeg resize error: {result.stderr[:200]}")
+        raise HTTPException(500, "画像のリサイズに失敗しました")
+    
+    print(f"[ReplaceSlide] Resized to {VIDEO_WIDTH}x{VIDEO_HEIGHT}: {filename}")
     
     # Replace in pipeline slide_images
     if hasattr(pipeline, 'slide_images') and pipeline.slide_images:
