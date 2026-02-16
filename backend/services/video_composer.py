@@ -95,10 +95,14 @@ async def compose_video(
             concat_lines.append(f"duration {duration:.3f}")
             print(f"[Concat] Slide {slide_num}: {os.path.basename(image_path)} duration {duration:.3f}s")
     
-    # NOTE: 以前「最後の画像をduration無しで追加」していたが、これが余計な時間の原因だった
-    # FFmpegはduration無しのエントリにデフォルトの長さ（数十秒）を追加してしまう
-    # 正しい方法: 全スライドに明示的なdurationを指定して、それ以上は追加しない
-    print(f"[Concat] All slides have explicit durations, no extra entry needed")
+    # FFmpeg concatの仕様: `duration`は「次のファイルが始まるまでの時間」を定義する
+    # 最後のエントリにはdurationだけでは不十分（次のファイルがないため無視される）
+    # 解決策: 最後のファイルをduration無しで再追加して、直前のdurationを有効にする
+    if concat_lines:
+        # 最後に追加されたファイルパスを取得（concat_linesの末尾から2番目 = file行）
+        last_file_line = concat_lines[-2]  # "file '/path/to/last_slide.png'"
+        concat_lines.append(last_file_line)
+        print(f"[Concat] Added final entry (no duration) to ensure last slide duration is respected")
     
     # Atomic write: 1回の書き込みで全コンテンツを出力
     concat_content = "\n".join(concat_lines) + "\n"
