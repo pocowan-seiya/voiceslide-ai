@@ -80,13 +80,11 @@ job_timestamps: Dict[str, datetime] = {}
 
 # Cleanup configuration
 CLEANUP_INTERVAL_HOURS = 1  # Run cleanup every hour
-JOB_MAX_AGE_HOURS = 6  # Delete jobs older than 6 hours
-ORPHAN_MAX_AGE_HOURS = 12  # Delete orphaned filesystem files older than 12 hours
+JOB_MAX_AGE_HOURS = 24  # Delete jobs older than 24 hours
 
 async def cleanup_old_jobs():
     """Remove old job data from memory and disk to prevent resource accumulation"""
-    import time as time_mod
-    import glob
+    import time
     while True:
         try:
             now = datetime.now()
@@ -115,7 +113,7 @@ async def cleanup_old_jobs():
                 except:
                     pass
                 
-                # Clean disk: output directories (_slides, _user_images, _reference)
+                # Clean disk (output files)
                 for suffix in ["_slides", "_user_images", "_reference"]:
                     dir_path = os.path.join(OUTPUT_DIR, f"{job_id}{suffix}")
                     if os.path.exists(dir_path):
@@ -125,88 +123,16 @@ async def cleanup_old_jobs():
                         except Exception as e:
                             print(f"[Cleanup] Failed to delete {dir_path}: {e}")
                 
-                # Clean disk: output job directory (for slide add/replace images)
-                job_output_dir = os.path.join(OUTPUT_DIR, job_id)
-                if os.path.isdir(job_output_dir):
+                # Clean uploads
+                upload_dir = os.path.join(UPLOAD_DIR, job_id)
+                if os.path.exists(upload_dir):
                     try:
-                        shutil.rmtree(job_output_dir)
-                        print(f"[Cleanup] Deleted job output dir: {job_output_dir}")
-                    except:
-                        pass
-                
-                # Clean disk: video files (mp4, temp, concat)
-                for ext in [".mp4", "_temp.mp4", "_concat.txt"]:
-                    video_path = os.path.join(OUTPUT_DIR, f"{job_id}{ext}")
-                    if os.path.exists(video_path):
-                        try:
-                            os.remove(video_path)
-                            print(f"[Cleanup] Deleted file: {video_path}")
-                        except:
-                            pass
-                
-                # Clean disk: OP/ED video files
-                for pattern_suffix in ["_with_oped.mp4", "_op.mp4", "_ed.mp4"]:
-                    path = os.path.join(OUTPUT_DIR, f"{job_id}{pattern_suffix}")
-                    if os.path.exists(path):
-                        try:
-                            os.remove(path)
-                        except:
-                            pass
-                
-                # Clean disk: upload files (flat files with job_id prefix)
-                upload_patterns = glob.glob(os.path.join(UPLOAD_DIR, f"{job_id}*"))
-                for upload_file in upload_patterns:
-                    try:
-                        if os.path.isfile(upload_file):
-                            os.remove(upload_file)
-                            print(f"[Cleanup] Deleted upload: {os.path.basename(upload_file)}")
-                        elif os.path.isdir(upload_file):
-                            shutil.rmtree(upload_file)
+                        shutil.rmtree(upload_dir)
                     except:
                         pass
             
             if jobs_to_delete:
                 print(f"[Cleanup] Removed {len(jobs_to_delete)} old jobs")
-            
-            # === Filesystem orphan cleanup ===
-            # Catch files not tracked in job_timestamps (e.g. from server restarts)
-            orphan_cutoff = time_mod.time() - (ORPHAN_MAX_AGE_HOURS * 3600)
-            orphan_count = 0
-            
-            # Clean old files in outputs/
-            if os.path.isdir(OUTPUT_DIR):
-                for entry in os.listdir(OUTPUT_DIR):
-                    full_path = os.path.join(OUTPUT_DIR, entry)
-                    try:
-                        mtime = os.path.getmtime(full_path)
-                        if mtime < orphan_cutoff:
-                            if os.path.isdir(full_path):
-                                shutil.rmtree(full_path)
-                                orphan_count += 1
-                            elif os.path.isfile(full_path):
-                                os.remove(full_path)
-                                orphan_count += 1
-                    except:
-                        pass
-            
-            # Clean old files in uploads/
-            if os.path.isdir(UPLOAD_DIR):
-                for entry in os.listdir(UPLOAD_DIR):
-                    full_path = os.path.join(UPLOAD_DIR, entry)
-                    try:
-                        mtime = os.path.getmtime(full_path)
-                        if mtime < orphan_cutoff:
-                            if os.path.isfile(full_path):
-                                os.remove(full_path)
-                                orphan_count += 1
-                            elif os.path.isdir(full_path):
-                                shutil.rmtree(full_path)
-                                orphan_count += 1
-                    except:
-                        pass
-            
-            if orphan_count > 0:
-                print(f"[Cleanup] Removed {orphan_count} orphaned files/dirs (>{ORPHAN_MAX_AGE_HOURS}h old)")
         
         except Exception as e:
             print(f"[Cleanup] Error: {e}")
@@ -219,114 +145,6 @@ async def startup_event():
     """Start background cleanup task on server startup"""
     asyncio.create_task(cleanup_old_jobs())
     print("[Startup] Cleanup task started")
-    
-    # Run immediate orphan cleanup on startup to free space from previous deployments
-    import time as time_mod
-    orphan_cutoff = time_mod.time() - (ORPHAN_MAX_AGE_HOURS * 3600)
-    count = 0
-    for dir_path in [OUTPUT_DIR, UPLOAD_DIR]:
-        if os.path.isdir(dir_path):
-            for entry in os.listdir(dir_path):
-                full_path = os.path.join(dir_path, entry)
-                try:
-                    if os.path.getmtime(full_path) < orphan_cutoff:
-                        if os.path.isdir(full_path):
-                            shutil.rmtree(full_path)
-                        else:
-                            os.remove(full_path)
-                        count += 1
-                except:
-                    pass
-    if count > 0:
-        print(f"[Startup] Cleaned {count} orphaned files from previous deployment")
-
-
-def _get_dir_size(path: str) -> int:
-    """Get total size of a directory in bytes"""
-    total = 0
-    if os.path.isdir(path):
-        for dirpath, dirnames, filenames in os.walk(path):
-            for f in filenames:
-                fp = os.path.join(dirpath, f)
-                try:
-                    total += os.path.getsize(fp)
-                except:
-                    pass
-    return total
-
-
-@app.get("/api/admin/disk-usage")
-async def disk_usage():
-    """Check disk usage of uploads and outputs directories"""
-    uploads_size = _get_dir_size(UPLOAD_DIR)
-    outputs_size = _get_dir_size(OUTPUT_DIR)
-    total = uploads_size + outputs_size
-    
-    uploads_count = len(os.listdir(UPLOAD_DIR)) if os.path.isdir(UPLOAD_DIR) else 0
-    outputs_count = len(os.listdir(OUTPUT_DIR)) if os.path.isdir(OUTPUT_DIR) else 0
-    
-    return {
-        "uploads_mb": round(uploads_size / 1024 / 1024, 1),
-        "outputs_mb": round(outputs_size / 1024 / 1024, 1),
-        "total_mb": round(total / 1024 / 1024, 1),
-        "uploads_files": uploads_count,
-        "outputs_files": outputs_count,
-        "active_jobs": len(jobs),
-        "tracked_jobs": len(job_timestamps),
-    }
-
-
-@app.post("/api/admin/cleanup")
-async def manual_cleanup(max_age_hours: int = 1):
-    """Manually trigger cleanup of old data"""
-    import time as time_mod
-    import glob
-    
-    cutoff = time_mod.time() - (max_age_hours * 3600)
-    deleted_count = 0
-    freed_bytes = 0
-    
-    for dir_path in [OUTPUT_DIR, UPLOAD_DIR]:
-        if not os.path.isdir(dir_path):
-            continue
-        for entry in os.listdir(dir_path):
-            full_path = os.path.join(dir_path, entry)
-            try:
-                if os.path.getmtime(full_path) < cutoff:
-                    size = 0
-                    if os.path.isdir(full_path):
-                        size = _get_dir_size(full_path)
-                        shutil.rmtree(full_path)
-                    else:
-                        size = os.path.getsize(full_path)
-                        os.remove(full_path)
-                    freed_bytes += size
-                    deleted_count += 1
-            except:
-                pass
-    
-    # Also clean memory
-    now = datetime.now()
-    mem_cleaned = 0
-    for job_id in list(job_timestamps.keys()):
-        age_h = (now - job_timestamps[job_id]).total_seconds() / 3600
-        if age_h > max_age_hours:
-            jobs.pop(job_id, None)
-            api_keys.pop(job_id, None)
-            slide_progress.pop(job_id, None)
-            slide_history.pop(job_id, None)
-            job_timestamps.pop(job_id, None)
-            try:
-                delete_pipeline(job_id)
-            except:
-                pass
-            mem_cleaned += 1
-    
-    return {
-        "deleted_files": deleted_count,
-        "freed_mb": round(freed_bytes / 1024 / 1024, 1),
-        "memory_cleaned_jobs": mem_cleaned,
-    }
 
 
 # Request models
