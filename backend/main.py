@@ -491,6 +491,30 @@ async def replace_slide(
     }
 
 
+@app.delete("/api/slides/{job_id}/{slide_index}")
+async def delete_slide(job_id: str, slide_index: int):
+    """バックエンドのpipeline.slide_imagesからスライドを削除"""
+    pipeline = get_or_create_pipeline(job_id)
+    
+    if not hasattr(pipeline, 'slide_images') or not pipeline.slide_images:
+        raise HTTPException(400, "No slides found for this job")
+    
+    if slide_index < 0 or slide_index >= len(pipeline.slide_images):
+        raise HTTPException(400, f"Invalid slide_index: {slide_index} (total: {len(pipeline.slide_images)})")
+    
+    if len(pipeline.slide_images) <= 1:
+        raise HTTPException(400, "Cannot delete the last remaining slide")
+    
+    removed_path = pipeline.slide_images.pop(slide_index)
+    print(f"[DeleteSlide] Removed slide {slide_index} for job {job_id}: {os.path.basename(removed_path)}")
+    print(f"[DeleteSlide] Remaining slides: {len(pipeline.slide_images)}")
+    
+    return {
+        "success": True,
+        "slide_index": slide_index,
+        "remaining_slides": len(pipeline.slide_images)
+    }
+
 
 @app.post("/api/upload-reference-image/{job_id}")
 async def upload_reference_image(

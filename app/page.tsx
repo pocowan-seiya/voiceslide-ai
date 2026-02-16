@@ -961,10 +961,25 @@ export default function Home() {
   };
 
   // Delete a slide from the timing map
-  const handleDeleteSlide = (slideIndex: number) => {
+  const handleDeleteSlide = async (slideIndex: number) => {
     if (state.timingMap.length <= 1) {
       // Cannot delete if only one slide remains
       return;
+    }
+
+    try {
+      // バックエンドのpipeline.slide_imagesからも削除
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/${slideIndex}`, {
+        method: 'DELETE',
+        headers: getAPIHeaders(),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        console.error('[DeleteSlide] Backend error:', data.detail);
+      }
+    } catch (err) {
+      console.error('[DeleteSlide] Backend call failed:', err);
+      // フロントの状態は更新を続行（ベストエフォート）
     }
 
     const newTimingMap = [...state.timingMap];
