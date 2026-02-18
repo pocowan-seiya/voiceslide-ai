@@ -57,8 +57,32 @@ app.add_middleware(
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Static files
+# Static files (for non-video assets like slide images)
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+
+
+@app.get("/video/{job_id}")
+async def serve_video(job_id: str):
+    """動画ファイルをキャッシュ無効化ヘッダー付きで配信
+    
+    StaticFilesのデフォルトではETag/Last-Modifiedにより304が返され、
+    ブラウザが古いキャッシュ動画を再生してしまう問題を解決
+    """
+    from fastapi.responses import FileResponse
+    
+    video_path = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
+    if not os.path.exists(video_path):
+        raise HTTPException(404, "Video not found")
+    
+    return FileResponse(
+        video_path,
+        media_type="video/mp4",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
 
 # Job storage
 jobs: Dict[str, Dict[str, Any]] = {}

@@ -273,7 +273,7 @@ class HybridPipeline:
             "step": 10,
             "status": "completed",
             "video_path": self.video_path,
-            "video_url": f"/outputs/{self.job_id}.mp4"
+            "video_url": f"/video/{self.job_id}"
         }
 
 
