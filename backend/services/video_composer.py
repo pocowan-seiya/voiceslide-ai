@@ -126,8 +126,9 @@ async def compose_video(
         "-i", concat_file,
         "-t", str(audio_duration),  # 明示的に音声長で制限
         "-r", "30",  # Explicit output framerate for reliable switching
-        # Scale all images to consistent dimensions + ensure even dimensions
-        "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,fps=30",
+        # Scale to consistent dimensions and convert pixel format explicitly
+        # Using simple scale (not pad) since user images are pre-resized at upload
+        "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT},format=yuv420p,fps=30",
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
         "-preset", "medium",
