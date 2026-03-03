@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Optional
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 
-from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
+from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT, get_video_dimensions
 from services.ai_utils import safe_gemini_generate
 
 # Global semaphore to limit concurrent browser instances
@@ -2029,15 +2029,21 @@ async def generate_all_custom_slides(
     reference_image_path: Optional[str] = None,  # Reference image for illustration style
     illustration_request: Optional[str] = None,  # User's text request for illustrations
     add_illustrations: bool = False,  # Whether to add AI-generated illustrations to slides
-    illustration_percentage: int = 50  # Percentage of slides to add illustrations (10-100)
+    illustration_percentage: int = 50,  # Percentage of slides to add illustrations (10-100)
+    video_width: int = VIDEO_WIDTH,  # Dynamic video width (for portrait support)
+    video_height: int = VIDEO_HEIGHT  # Dynamic video height (for portrait support)
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
     """
-    print(f"[DEBUG] generate_all_custom_slides called for job {job_id}")
+    print(f"[DEBUG] generate_all_custom_slides called for job {job_id}, dimensions={video_width}x{video_height}")
     import os
     from playwright.async_api import async_playwright
     from config import OUTPUT_DIR
+
+    # Local shorthand for viewport dimensions
+    vw = video_width
+    vh = video_height
     
     slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
     os.makedirs(slides_dir, exist_ok=True)
@@ -2403,7 +2409,7 @@ Concept to illustrate: """
                 try:
                     # Try to create new page (may fail if browser crashed)
                     try:
-                        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+                        page = await browser.new_page(viewport={"width": vw, "height": vh})
                     except Exception as page_error:
                         print(f"[Browser] new_page failed, restarting browser... ({str(page_error)[:50]})")
                         try:
@@ -2412,7 +2418,7 @@ Concept to illustrate: """
                             pass
                         await asyncio.sleep(1)
                         browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
-                        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+                        page = await browser.new_page(viewport={"width": vw, "height": vh})
                     
                     await page.set_content(html)
                     await page.wait_for_timeout(800)
@@ -2628,7 +2634,7 @@ async def validate_and_regenerate_slide(
             )
             
             # Re-render
-            page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+            page = await browser.new_page(viewport={"width": vw, "height": vh})
             await page.set_content(html)
             await page.wait_for_timeout(1000)
             await page.screenshot(path=path, type="png")

@@ -325,7 +325,6 @@ BASE_HTML_TEMPLATE = """<!DOCTYPE html>
             color: {text_secondary};
         }}
         
-        /* Bottom quote bar */
         .bottom-quote {{
             position: absolute;
             bottom: 60px;
@@ -336,6 +335,8 @@ BASE_HTML_TEMPLATE = """<!DOCTYPE html>
             color: {text_secondary};
             font-style: italic;
         }}
+        
+        {portrait_css}
     </style>
 </head>
 <body>
@@ -441,6 +442,74 @@ def generate_slide_html(
     if background_image_base64:
         bg_tag = f'<img class="background-image" src="data:image/png;base64,{background_image_base64}" />'
     
+    # Generate portrait CSS overrides (when height > width)
+    is_portrait = video_height > video_width
+    portrait_css = ""
+    if is_portrait:
+        portrait_css = """
+        /* Portrait (9:16) Overrides */
+        .content {
+            padding: 40px 40px;
+        }
+        .title {
+            font-size: 38px;
+        }
+        .subtitle {
+            font-size: 18px;
+            margin-bottom: 24px;
+        }
+        .columns-container {
+            flex-direction: column;
+            gap: 16px;
+        }
+        .column-card {
+            padding: 24px 20px;
+        }
+        .column-title {
+            font-size: 20px;
+        }
+        .column-description {
+            font-size: 13px;
+        }
+        .flow-container {
+            flex-direction: column;
+            gap: 12px;
+        }
+        .flow-arrow {
+            transform: rotate(90deg);
+        }
+        .flow-title {
+            font-size: 18px;
+        }
+        .flow-card {
+            padding: 16px;
+        }
+        .point-item {
+            margin-bottom: 20px;
+        }
+        .point-title {
+            font-size: 18px;
+        }
+        .point-description {
+            font-size: 14px;
+        }
+        .title-slide .title {
+            font-size: 50px;
+        }
+        .title-slide .subtitle {
+            font-size: 20px;
+            max-width: 90%;
+        }
+        .quote-text {
+            font-size: 26px;
+            max-width: 90%;
+        }
+        .bottom-quote {
+            left: 40px;
+            right: 40px;
+        }
+        """
+    
     # Generate full HTML
     html = BASE_HTML_TEMPLATE.format(
         width=video_width,
@@ -454,7 +523,8 @@ def generate_slide_html(
         background_image_tag=bg_tag,
         content=content,
         slide_number=slide_number,
-        total_slides=total_slides
+        total_slides=total_slides,
+        portrait_css=portrait_css
     )
     
     return html

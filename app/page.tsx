@@ -306,7 +306,7 @@ export default function Home() {
     updateState({ error: `[${timestamp}] ${message}`, isProcessing });
   };
 
-  // Step 1: Upload Audio
+  // Step 1: Upload Audio (or Video → auto-extract audio + face cam)
   const handleUploadAudio = async (file: File) => {
     updateState({ isProcessing: true, error: null });
 
@@ -320,6 +320,13 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Upload failed");
+
+      // Auto-set face cam if video was uploaded
+      if (data.facecam_auto_set) {
+        setFacecamUploaded(true);
+        setFacecamFile(file);
+        console.log('[Upload] Video uploaded — face cam auto-set');
+      }
 
       updateState({ jobId: data.job_id, step: 2, isProcessing: false });
     } catch (err: any) {
@@ -559,6 +566,9 @@ export default function Home() {
       updateState({ error: "APIキーを設定してください" });
       return;
     }
+
+    // Sync aspect ratio settings before generating
+    await syncVideoSettings();
 
     updateState({ isProcessing: true });
     setProgress({ percent: 0, message: startSlide === 1 ? "デザイン戦略を生成中..." : `スライド ${startSlide} から生成中...` });
@@ -1678,7 +1688,7 @@ export default function Home() {
               {state.workflowMode && (
                 <>
                   <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold gradient-text">音声ファイルをアップロード</h2>
+                    <h2 className="text-2xl font-bold gradient-text">音声 / 動画ファイルをアップロード</h2>
                     <button
                       onClick={() => updateState({ workflowMode: null })}
                       className="text-sm text-zinc-500 hover:text-zinc-300"
@@ -1705,20 +1715,21 @@ export default function Home() {
                       const files = e.dataTransfer.files;
                       if (files?.[0]) {
                         const ext = files[0].name.split('.').pop()?.toLowerCase();
-                        if (['mp3', 'wav', 'm4a'].includes(ext || '')) {
+                        if (['mp3', 'wav', 'm4a', 'mp4', 'mov', 'webm'].includes(ext || '')) {
                           handleUploadAudio(files[0]);
                         } else {
-                          updateState({ error: '対応形式: MP3, WAV, M4A' });
+                          updateState({ error: '対応形式: MP3, WAV, M4A, MP4, MOV, WebM' });
                         }
                       }
                     }}
                   >
                     <span className="text-5xl mb-4">{isDragging ? '📎' : '🎙️'}</span>
-                    <p className="text-lg">{isDragging ? 'ここにドロップ！' : '音声ファイルをドラッグ&ドロップ'}</p>
-                    <p className="text-sm text-zinc-500">MP3, WAV, M4A対応</p>
+                    <p className="text-lg">{isDragging ? 'ここにドロップ！' : '音声 or 動画ファイルをドラッグ&ドロップ'}</p>
+                    <p className="text-sm text-zinc-500">MP3, WAV, M4A, MP4, MOV, WebM対応</p>
+                    <p className="text-xs text-zinc-600 mt-1">💡 動画の場合は音声を自動抽出し、映像をワイプに使用します</p>
                     <input
                       type="file"
-                      accept=".mp3,.wav,.m4a"
+                      accept=".mp3,.wav,.m4a,.mp4,.mov,.webm"
                       className="hidden"
                       onChange={(e) => e.target.files?.[0] && handleUploadAudio(e.target.files[0])}
                       disabled={state.isProcessing}
@@ -2485,8 +2496,8 @@ export default function Home() {
                         <button
                           onClick={() => setAspectRatio("landscape")}
                           className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "landscape"
-                              ? "border-indigo-500 bg-indigo-500/20 text-white"
-                              : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                            ? "border-indigo-500 bg-indigo-500/20 text-white"
+                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
                             }`}
                         >
                           <div className="text-2xl mb-1">🖥️</div>
@@ -2496,8 +2507,8 @@ export default function Home() {
                         <button
                           onClick={() => setAspectRatio("portrait")}
                           className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "portrait"
-                              ? "border-indigo-500 bg-indigo-500/20 text-white"
-                              : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                            ? "border-indigo-500 bg-indigo-500/20 text-white"
+                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
                             }`}
                         >
                           <div className="text-2xl mb-1">📱</div>
@@ -2544,8 +2555,8 @@ export default function Home() {
                                 key={pos}
                                 onClick={() => setFacecamPosition(pos)}
                                 className={`py-2 rounded-lg border text-sm transition-all ${facecamPosition === pos
-                                    ? "border-indigo-500 bg-indigo-500/20 text-white"
-                                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                                  ? "border-indigo-500 bg-indigo-500/20 text-white"
+                                  : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
                                   }`}
                               >
                                 {label}
@@ -2564,8 +2575,8 @@ export default function Home() {
                                 key={size}
                                 onClick={() => setFacecamSize(size)}
                                 className={`flex-1 py-2 rounded-lg border text-sm transition-all ${facecamSize === size
-                                    ? "border-indigo-500 bg-indigo-500/20 text-white"
-                                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                                  ? "border-indigo-500 bg-indigo-500/20 text-white"
+                                  : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
                                   }`}
                               >
                                 {label} ({size}px)
@@ -2887,6 +2898,39 @@ export default function Home() {
                     )}
                   </div>
                 </>
+              </div>
+
+              {/* Aspect Ratio Selector */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-zinc-400 mb-2">
+                  📰 アスペクト比
+                </label>
+                <div className="flex justify-center gap-4 max-w-sm mx-auto">
+                  <button
+                    type="button"
+                    onClick={() => setAspectRatio("landscape")}
+                    className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "landscape"
+                        ? "border-cyan-500 bg-cyan-500/20 text-white"
+                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                      }`}
+                  >
+                    <div className="text-xl">🖥️</div>
+                    <div className="text-sm font-medium">16:9 横長</div>
+                    <div className="text-xs text-zinc-500">YouTube / 通常</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAspectRatio("portrait")}
+                    className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "portrait"
+                        ? "border-cyan-500 bg-cyan-500/20 text-white"
+                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                      }`}
+                  >
+                    <div className="text-xl">📱</div>
+                    <div className="text-sm font-medium">9:16 縦長</div>
+                    <div className="text-xs text-zinc-500">Shorts / Reels</div>
+                  </button>
+                </div>
               </div>
 
               <button

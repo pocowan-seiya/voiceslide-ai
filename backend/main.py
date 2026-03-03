@@ -588,17 +588,45 @@ async def upload_reference_image(
 
 @app.post("/api/upload-audio")
 async def upload_audio(file: UploadFile = File(...)):
-    """Step 1: Upload audio file"""
-    allowed_ext = [".mp3", ".wav", ".m4a"]
+    """Step 1: Upload audio or video file. For video, audio is auto-extracted."""
+    audio_ext = [".mp3", ".wav", ".m4a"]
+    video_ext = [".mp4", ".mov", ".webm", ".avi", ".mkv"]
+    allowed_ext = audio_ext + video_ext
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in allowed_ext:
-        raise HTTPException(400, f"対応形式: MP3, WAV, M4A")
+        raise HTTPException(400, f"対応形式: MP3, WAV, M4A, MP4, MOV, WebM")
     
     job_id = str(uuid.uuid4())
-    audio_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+    upload_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
     
-    with open(audio_path, "wb") as f:
+    with open(upload_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
+    
+    is_video = ext in video_ext
+    facecam_auto_set = False
+    
+    if is_video:
+        # Extract audio from video using FFmpeg
+        audio_path = os.path.join(UPLOAD_DIR, f"{job_id}.wav")
+        import subprocess
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", upload_path,
+            "-vn",  # No video
+            "-acodec", "pcm_s16le",
+            "-ar", "44100",
+            "-ac", "1",
+            audio_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"[Upload] FFmpeg audio extraction error: {result.stderr[:200]}")
+            raise HTTPException(500, "動画から音声を抽出できませんでした")
+        
+        print(f"[Upload] Extracted audio from video: {audio_path}")
+        facecam_auto_set = True
+    else:
+        audio_path = upload_path
     
     # Initialize job
     jobs[job_id] = {
@@ -613,9 +641,19 @@ async def upload_audio(file: UploadFile = File(...)):
     job_timestamps[job_id] = datetime.now()
     
     # Initialize pipeline
-    get_or_create_pipeline(job_id, audio_path)
+    pipeline = get_or_create_pipeline(job_id, audio_path)
     
-    return {"job_id": job_id, "message": "音声アップロード完了"}
+    # Auto-set face cam if video was uploaded
+    if facecam_auto_set:
+        pipeline.facecam_video_path = upload_path
+        print(f"[Upload] Auto-set face cam video: {upload_path}")
+    
+    return {
+        "job_id": job_id,
+        "message": "動画アップロード完了" if is_video else "音声アップロード完了",
+        "is_video": is_video,
+        "facecam_auto_set": facecam_auto_set
+    }
 
 
 # ========== STEP 2: Transcribe ==========
@@ -1348,6 +1386,9 @@ async def generate_slides_batch_endpoint(
                     "status": "processing"
                 }
             
+            # Get video dimensions from pipeline's aspect ratio
+            video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
+            
             # Generate batch of slides
             image_paths = await generate_all_custom_slides(
                 slides=slides,
@@ -1365,7 +1406,9 @@ async def generate_slides_batch_endpoint(
                 reference_image_path=getattr(pipeline, 'reference_image', None),
                 illustration_request=getattr(pipeline, 'illustration_request', None),
                 add_illustrations=request.add_illustrations,
-                illustration_percentage=request.illustration_percentage
+                illustration_percentage=request.illustration_percentage,
+                video_width=video_w,
+                video_height=video_h
             )
             
             # パイプラインに保存
