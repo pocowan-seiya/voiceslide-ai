@@ -1496,6 +1496,149 @@ async def get_queue_status(job_id: str):
 
 
 
+# ========== Slide Direct Text Editing ==========
+
+@app.get("/api/slides/{job_id}/text/{slide_number}")
+async def get_slide_text(job_id: str, slide_number: int):
+    """Extract current text content from a slide's HTML"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    from services.ai_slide_generator import get_html_content
+    from bs4 import BeautifulSoup
+    
+    html = get_html_content(job_id, slide_number)
+    if not html:
+        raise HTTPException(404, f"Slide {slide_number} not found")
+    
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Extract title
+        title_el = soup.find('h1') or soup.select_one('.title') or soup.find('div', class_='title')
+        title = title_el.get_text(strip=True) if title_el else ""
+        
+        # Extract subtitle
+        subtitle_el = soup.find('h2') or soup.find('h3') or soup.select_one('.subtitle') or soup.find('div', class_='subtitle')
+        subtitle = subtitle_el.get_text(strip=True) if subtitle_el else ""
+        
+        # Extract points
+        points = []
+        # Try UL/OL first
+        ul_el = soup.find('ul') or soup.find('ol')
+        if ul_el:
+            for li in ul_el.find_all('li'):
+                points.append(li.get_text(strip=True))
+        else:
+            # Try .points or .point elements
+            point_els = soup.select('.point') or soup.select('.card')
+            for el in point_els:
+                text = el.get_text(strip=True)
+                # Skip very short texts (likely just icons)
+                if len(text) > 1:
+                    points.append(text)
+        
+        return {
+            "slide_number": slide_number,
+            "title": title,
+            "subtitle": subtitle,
+            "points": points
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Failed to extract text: {str(e)}")
+
+
+class SlideTextUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    points: Optional[List[str]] = None
+
+
+@app.put("/api/slides/{job_id}/text/{slide_number}")
+async def update_slide_text(
+    job_id: str,
+    slide_number: int,
+    request: SlideTextUpdateRequest,
+    x_gemini_key: Optional[str] = Header(None)
+):
+    """Update slide text directly (no AI) and re-render"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    from services.ai_slide_generator import (
+        get_html_content, update_html_content, update_html_text_content,
+        fix_body_dimensions
+    )
+    from playwright.async_api import async_playwright
+    
+    html = get_html_content(job_id, slide_number)
+    if not html:
+        raise HTTPException(404, f"Slide {slide_number} not found")
+    
+    try:
+        # Save to history before editing
+        if job_id not in slide_history:
+            slide_history[job_id] = {}
+        if slide_number not in slide_history[job_id]:
+            slide_history[job_id][slide_number] = []
+        
+        slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        current_image_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
+        backup_image_path = os.path.join(slides_dir, f"slide_{slide_number:03d}_v{len(slide_history[job_id][slide_number])}.png")
+        if os.path.exists(current_image_path):
+            shutil.copy(current_image_path, backup_image_path)
+        
+        slide_history[job_id][slide_number].append({
+            "html": html,
+            "image_path": backup_image_path,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Build update dict (only include provided fields)
+        new_copy = {}
+        if request.title is not None:
+            new_copy["title"] = request.title
+        if request.subtitle is not None:
+            new_copy["subtitle"] = request.subtitle
+        if request.points is not None:
+            new_copy["points"] = request.points
+        
+        # Apply text changes via BeautifulSoup (preserves layout)
+        new_html = update_html_text_content(html, new_copy)
+        
+        # Fix body dimensions for portrait mode
+        pipeline = get_or_create_pipeline(job_id)
+        video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
+        new_html = fix_body_dimensions(new_html, video_w, video_h)
+        
+        # Save updated HTML
+        update_html_content(job_id, slide_number, new_html)
+        
+        # Re-render screenshot
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
+            page = await browser.new_page(viewport={"width": video_w, "height": video_h})
+            await page.set_content(new_html)
+            await page.wait_for_timeout(800)
+            
+            new_image_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
+            await page.screenshot(path=new_image_path, type="png")
+            await page.close()
+            await browser.close()
+        
+        import time
+        return {
+            "success": True,
+            "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}",
+            "can_undo": True,
+            "history_count": len(slide_history[job_id][slide_number])
+        }
+        
+    except Exception as e:
+        print(f"[Text Edit] Error: {e}")
+        raise HTTPException(500, f"Failed to update text: {str(e)}")
+
+
 # ========== Slide Feedback & Editing ==========
 
 class SlideFeedbackRequest(BaseModel):

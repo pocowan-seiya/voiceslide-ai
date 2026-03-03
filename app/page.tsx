@@ -146,6 +146,14 @@ export default function Home() {
   const [slideImage, setSlideImage] = useState<{ file: File | null; preview: string | null }>({ file: null, preview: null });
   const [isRegenerating, setIsRegenerating] = useState(false);
 
+  // Direct text editing
+  const [isTextEditing, setIsTextEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSubtitle, setEditSubtitle] = useState("");
+  const [editPoints, setEditPoints] = useState<string[]>([]);
+  const [isSavingText, setIsSavingText] = useState(false);
+  const [isLoadingText, setIsLoadingText] = useState(false);
+
   // Slide zoom modal
   const [zoomedSlide, setZoomedSlide] = useState<number | null>(null);
 
@@ -740,6 +748,61 @@ export default function Home() {
 
     } catch (err: any) {
       updateState({ error: err.message, isProcessing: false });
+    }
+  };
+
+  // Direct text editing: Load slide text
+  const handleLoadSlideText = async (slideNum: number) => {
+    if (!state.jobId) return;
+    setIsLoadingText(true);
+    try {
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/text/${slideNum}`, {
+        headers: { ...getAPIHeaders() }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEditTitle(data.title || "");
+        setEditSubtitle(data.subtitle || "");
+        setEditPoints(data.points || []);
+        setIsTextEditing(true);
+      }
+    } catch (err) {
+      console.error("Failed to load slide text:", err);
+    } finally {
+      setIsLoadingText(false);
+    }
+  };
+
+  // Direct text editing: Save slide text
+  const handleSaveSlideText = async () => {
+    if (!state.jobId || !selectedSlide) return;
+    setIsSavingText(true);
+    try {
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/text/${selectedSlide}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAPIHeaders()
+        },
+        body: JSON.stringify({
+          title: editTitle,
+          subtitle: editSubtitle,
+          points: editPoints.filter(p => p.trim() !== "")
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Update slide preview
+        const newPreviews = [...(state.slidePreviews || [])];
+        newPreviews[selectedSlide - 1] = `${API_URL}${data.preview_url}`;
+        updateState({ slidePreviews: newPreviews });
+        setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
+        setIsTextEditing(false);
+      }
+    } catch (err) {
+      console.error("Failed to save slide text:", err);
+    } finally {
+      setIsSavingText(false);
     }
   };
 
@@ -2351,131 +2414,219 @@ export default function Home() {
                               {/* この行に選択中のスライドがある場合、フィードバック入力を表示 */}
                               {rowContainsSelected && selectedSlide && (
                                 <div className="mt-4 bg-zinc-800/50 rounded-xl p-4 border border-amber-500/50 animate-fadeIn">
-                                  <h4 className="font-semibold mb-2 text-amber-400">
-                                    📝 スライド {selectedSlide} を編集
-                                  </h4>
-                                  <textarea
-                                    value={slideFeedback}
-                                    onChange={(e) => setSlideFeedback(e.target.value)}
-                                    placeholder="例：タイトルを「価値の創造」に変更。背景をもっと暗く。ポイントを3つに減らして..."
-                                    className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-2"
-                                    autoFocus
-                                  />
-
-                                  {/* フィードバック定型文ボタン */}
-                                  <div className="flex flex-wrap gap-1 mb-3">
-                                    <button
-                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'レイアウトを再構築してください')}
-                                      className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
-                                    >
-                                      📐 レイアウト再構築
-                                    </button>
-                                    <button
-                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'タイトルを「〇〇」に変更してください')}
-                                      className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
-                                    >
-                                      ✏️ タイトル変更
-                                    </button>
-                                    <button
-                                      onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右カラムに挿入してください')}
-                                      className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
-                                    >
-                                      🖼️ 画像挿入
-                                    </button>
-                                  </div>
-
-                                  {/* 画像アップロード（コンパクト版） */}
-                                  <div className="flex items-center gap-3 mb-3">
-                                    <label className="cursor-pointer flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-300">
-                                      {slideImage.preview ? (
-                                        <>
-                                          <img src={slideImage.preview} alt="Preview" className="w-10 h-8 object-cover rounded" />
-                                          <span className="text-cyan-400">{slideImage.file?.name}</span>
-                                          <button
-                                            onClick={(e) => { e.preventDefault(); setSlideImage({ file: null, preview: null }); }}
-                                            className="text-red-400 hover:text-red-300"
-                                          >
-                                            ✕
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <span>📎 画像を追加</span>
-                                      )}
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            const preview = URL.createObjectURL(file);
-                                            setSlideImage({ file, preview });
-                                          }
-                                        }}
-                                      />
-                                    </label>
-                                  </div>
-
-                                  {/* 更新ボタン（1ボタンに統合） */}
-                                  <div className="flex gap-2 mb-3">
-                                    <button
-                                      onClick={() => handleSlideFeedback('general')}
-                                      disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
-                                      className="flex-1 group relative overflow-hidden bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-medium py-3 px-4 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
-                                    >
-                                      <div className="flex items-center justify-center gap-2">
-                                        {isRegenerating ? (
-                                          <>
-                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            <span>更新中...</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <span className="text-lg">✨</span>
-                                            <span>スライドを更新</span>
-                                          </>
-                                        )}
-                                      </div>
-                                    </button>
-
-                                    {/* イラスト再生成（イラストモード時のみ） */}
-                                    {addIllustrations && (
-                                      <button
-                                        onClick={() => handleSlideFeedback('image')}
-                                        disabled={isRegenerating}
-                                        className="group relative overflow-hidden bg-gradient-to-br from-pink-600/40 to-pink-700/50 hover:from-pink-500/50 hover:to-pink-600/60 border border-pink-500/30 text-white text-xs py-3 px-3 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                                        title="イラストのみ再生成"
-                                      >
-                                        <span className="text-lg">🎨</span>
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  <div className="flex gap-2 mt-2">
-                                    <button
-                                      onClick={handleSlideUndo}
-                                      disabled={isUndoing || isRegenerating || !slideCanUndo[selectedSlide]}
-                                      className={`flex-1 text-sm py-2 rounded-lg transition-all ${slideCanUndo[selectedSlide]
-                                        ? 'bg-amber-600/20 border border-amber-500/30 text-amber-400 hover:bg-amber-600/30'
-                                        : 'bg-zinc-800/50 border border-zinc-700 text-zinc-500 cursor-not-allowed'
-                                        }`}
-                                    >
-                                      {isUndoing ? "戻し中..." : slideCanUndo[selectedSlide] ? "↩️ 前に戻す" : "↩️ 履歴なし"}
-                                    </button>
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h4 className="font-semibold text-amber-400">
+                                      📝 スライド {selectedSlide} を編集
+                                    </h4>
                                     <button
                                       onClick={() => {
-                                        setSelectedSlide(null);
-                                        setSlideFeedback("");
-                                        setSlideImage({ file: null, preview: null });
+                                        if (isTextEditing) {
+                                          setIsTextEditing(false);
+                                        } else {
+                                          handleLoadSlideText(selectedSlide);
+                                        }
                                       }}
-                                      className="px-4 text-sm py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-700"
+                                      disabled={isLoadingText}
+                                      className={`text-xs px-3 py-1.5 rounded-lg transition-all ${isTextEditing
+                                        ? 'bg-amber-500/20 border border-amber-500/50 text-amber-400'
+                                        : 'bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 border border-zinc-600'
+                                        }`}
                                     >
-                                      ✕ 閉じる
+                                      {isLoadingText ? '読込中...' : isTextEditing ? '← AI修正に戻る' : '✏️ テキスト直接編集'}
                                     </button>
                                   </div>
+
+                                  {/* Direct Text Editing Mode */}
+                                  {isTextEditing ? (
+                                    <div className="space-y-3">
+                                      <div>
+                                        <label className="text-xs text-zinc-400 mb-1 block">タイトル</label>
+                                        <input
+                                          type="text"
+                                          value={editTitle}
+                                          onChange={(e) => setEditTitle(e.target.value)}
+                                          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="text-xs text-zinc-400 mb-1 block">サブタイトル</label>
+                                        <input
+                                          type="text"
+                                          value={editSubtitle}
+                                          onChange={(e) => setEditSubtitle(e.target.value)}
+                                          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none"
+                                        />
+                                      </div>
+                                      {editPoints.length > 0 && (
+                                        <div>
+                                          <label className="text-xs text-zinc-400 mb-1 block">ポイント</label>
+                                          {editPoints.map((point, idx) => (
+                                            <div key={idx} className="flex gap-2 mb-1.5">
+                                              <input
+                                                type="text"
+                                                value={point}
+                                                onChange={(e) => {
+                                                  const newPoints = [...editPoints];
+                                                  newPoints[idx] = e.target.value;
+                                                  setEditPoints(newPoints);
+                                                }}
+                                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-amber-500 focus:outline-none"
+                                              />
+                                              <button
+                                                onClick={() => setEditPoints(editPoints.filter((_, i) => i !== idx))}
+                                                className="text-red-400 hover:text-red-300 text-sm px-2"
+                                                title="削除"
+                                              >✕</button>
+                                            </div>
+                                          ))}
+                                          <button
+                                            onClick={() => setEditPoints([...editPoints, ""])}
+                                            className="text-xs text-cyan-400 hover:text-cyan-300 mt-1"
+                                          >＋ ポイント追加</button>
+                                        </div>
+                                      )}
+                                      <div className="flex gap-2 pt-2">
+                                        <button
+                                          onClick={handleSaveSlideText}
+                                          disabled={isSavingText}
+                                          className="flex-1 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-white font-medium py-2.5 px-4 rounded-xl transition-all disabled:opacity-40 shadow-lg"
+                                        >
+                                          {isSavingText ? (
+                                            <span className="flex items-center justify-center gap-2">
+                                              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                              保存中...
+                                            </span>
+                                          ) : '💾 テキストを保存'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {/* AI Feedback Mode (existing) */}
+                                      <textarea
+                                        value={slideFeedback}
+                                        onChange={(e) => setSlideFeedback(e.target.value)}
+                                        placeholder="例：タイトルを「価値の創造」に変更。背景をもっと暗く。ポイントを3つに減らして..."
+                                        className="w-full h-20 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white resize-none mb-2"
+                                        autoFocus
+                                      />
+
+                                      {/* フィードバック定型文ボタン */}
+                                      <div className="flex flex-wrap gap-1 mb-3">
+                                        <button
+                                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'レイアウトを再構築してください')}
+                                          className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                                        >
+                                          📐 レイアウト再構築
+                                        </button>
+                                        <button
+                                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + 'タイトルを「〇〇」に変更してください')}
+                                          className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                                        >
+                                          ✏️ タイトル変更
+                                        </button>
+                                        <button
+                                          onClick={() => setSlideFeedback(prev => prev + (prev ? '\n' : '') + '添付の画像を右カラムに挿入してください')}
+                                          className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                                        >
+                                          🖼️ 画像挿入
+                                        </button>
+                                      </div>
+
+                                      {/* 画像アップロード（コンパクト版） */}
+                                      <div className="flex items-center gap-3 mb-3">
+                                        <label className="cursor-pointer flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-300">
+                                          {slideImage.preview ? (
+                                            <>
+                                              <img src={slideImage.preview} alt="Preview" className="w-10 h-8 object-cover rounded" />
+                                              <span className="text-cyan-400">{slideImage.file?.name}</span>
+                                              <button
+                                                onClick={(e) => { e.preventDefault(); setSlideImage({ file: null, preview: null }); }}
+                                                className="text-red-400 hover:text-red-300"
+                                              >
+                                                ✕
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <span>📎 画像を追加</span>
+                                          )}
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                const preview = URL.createObjectURL(file);
+                                                setSlideImage({ file, preview });
+                                              }
+                                            }}
+                                          />
+                                        </label>
+                                      </div>
+
+                                      {/* 更新ボタン（1ボタンに統合） */}
+                                      <div className="flex gap-2 mb-3">
+                                        <button
+                                          onClick={() => handleSlideFeedback('general')}
+                                          disabled={isRegenerating || (!slideFeedback.trim() && !slideImage.file)}
+                                          className="flex-1 group relative overflow-hidden bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-medium py-3 px-4 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
+                                        >
+                                          <div className="flex items-center justify-center gap-2">
+                                            {isRegenerating ? (
+                                              <>
+                                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                <span>更新中...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <span className="text-lg">✨</span>
+                                                <span>スライドを更新</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </button>
+
+                                        {/* イラスト再生成（イラストモード時のみ） */}
+                                        {addIllustrations && (
+                                          <button
+                                            onClick={() => handleSlideFeedback('image')}
+                                            disabled={isRegenerating}
+                                            className="group relative overflow-hidden bg-gradient-to-br from-pink-600/40 to-pink-700/50 hover:from-pink-500/50 hover:to-pink-600/60 border border-pink-500/30 text-white text-xs py-3 px-3 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="イラストのみ再生成"
+                                          >
+                                            <span className="text-lg">🎨</span>
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div className="flex gap-2 mt-2">
+                                        <button
+                                          onClick={handleSlideUndo}
+                                          disabled={isUndoing || isRegenerating || !slideCanUndo[selectedSlide]}
+                                          className={`flex-1 text-sm py-2 rounded-lg transition-all ${slideCanUndo[selectedSlide]
+                                            ? 'bg-amber-600/20 border border-amber-500/30 text-amber-400 hover:bg-amber-600/30'
+                                            : 'bg-zinc-800/50 border border-zinc-700 text-zinc-500 cursor-not-allowed'
+                                            }`}
+                                        >
+                                          {isUndoing ? "戻し中..." : slideCanUndo[selectedSlide] ? "↩️ 前に戻す" : "↩️ 履歴なし"}
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setSelectedSlide(null);
+                                            setSlideFeedback("");
+                                            setSlideImage({ file: null, preview: null });
+                                            setIsTextEditing(false);
+                                          }}
+                                          className="px-4 text-sm py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-700"
+                                        >
+                                          ✕ 閉じる
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
-                              )
-                              }
+                              )}
                             </div>
                           );
                         })}
@@ -2910,8 +3061,8 @@ export default function Home() {
                     type="button"
                     onClick={() => setAspectRatio("landscape")}
                     className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "landscape"
-                        ? "border-cyan-500 bg-cyan-500/20 text-white"
-                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                      ? "border-cyan-500 bg-cyan-500/20 text-white"
+                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
                       }`}
                   >
                     <div className="text-xl">🖥️</div>
@@ -2922,8 +3073,8 @@ export default function Home() {
                     type="button"
                     onClick={() => setAspectRatio("portrait")}
                     className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "portrait"
-                        ? "border-cyan-500 bg-cyan-500/20 text-white"
-                        : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                      ? "border-cyan-500 bg-cyan-500/20 text-white"
+                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
                       }`}
                   >
                     <div className="text-xl">📱</div>
