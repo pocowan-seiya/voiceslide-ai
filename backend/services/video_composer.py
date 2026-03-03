@@ -10,17 +10,73 @@ from typing import List, Dict, Any, Optional
 from config import VIDEO_WIDTH, VIDEO_HEIGHT
 
 
+# =============================================
+# Face Cam PiP Overlay Helper
+# =============================================
+
+def _calculate_facecam_position(position: str, video_width: int, video_height: int, cam_size: int, margin: int = 30) -> str:
+    """Calculate FFmpeg overlay position string for face cam."""
+    positions = {
+        "top-left": f"{margin}:{margin}",
+        "top-right": f"{video_width - cam_size - margin}:{margin}",
+        "bottom-left": f"{margin}:{video_height - cam_size - margin}",
+        "bottom-right": f"{video_width - cam_size - margin}:{video_height - cam_size - margin}",
+    }
+    return positions.get(position, positions["bottom-right"])
+
+
+def _build_facecam_filter(cam_size: int, position: str, video_width: int, video_height: int) -> str:
+    """
+    Build FFmpeg filtergraph for circular face cam overlay.
+    Input 0 = main video, Input 1 = face cam video.
+    """
+    overlay_pos = _calculate_facecam_position(position, video_width, video_height, cam_size)
+    
+    # 1) Scale facecam to cam_size x cam_size (square crop from center)
+    # 2) Create circular alpha mask using geq
+    # 3) Overlay on main video
+    # Also add a subtle border ring for visual polish
+    r = cam_size // 2
+    border = 3  # Border thickness in pixels
+    
+    filter_str = (
+        # Scale and center-crop facecam to square
+        f"[1:v]scale={cam_size}:{cam_size}:force_original_aspect_ratio=increase,"
+        f"crop={cam_size}:{cam_size},"
+        # Apply circular mask via alpha channel
+        f"format=yuva420p,"
+        f"geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':"
+        f"a='if(lte(sqrt(pow(X-{r},2)+pow(Y-{r},2)),{r}),255,0)'"
+        f"[pip];"
+        # Create circular border (slightly larger circle, white)
+        f"color=white:s={cam_size}x{cam_size},"
+        f"format=yuva420p,"
+        f"geq=lum='if(between(sqrt(pow(X-{r},2)+pow(Y-{r},2)),{r-border},{r}),255,0)':"
+        f"cb='128':cr='128':"
+        f"a='if(between(sqrt(pow(X-{r},2)+pow(Y-{r},2)),{r-border},{r}),180,0)'"
+        f"[border];"
+        # Overlay border then facecam on main video
+        f"[0:v][border]overlay={overlay_pos}:shortest=1[bg_border];"
+        f"[bg_border][pip]overlay={overlay_pos}:shortest=1"
+    )
+    
+    return filter_str
+
+
 async def compose_video(
     audio_path: str,
     slide_images: List[str],
     timing_map: List[Dict[str, Any]],
     output_path: str,
-    user_edited: bool = False
+    user_edited: bool = False,
+    video_width: int = VIDEO_WIDTH,
+    video_height: int = VIDEO_HEIGHT,
+    facecam_video_path: Optional[str] = None,
+    facecam_position: str = "bottom-right",
+    facecam_size: int = 200
 ) -> str:
     """
     全スライドを使用して動画を生成
-    
-    重要: アップロードされたすべてのスライドを必ず使用する
     
     Args:
         audio_path: 音声ファイルパス
@@ -28,6 +84,11 @@ async def compose_video(
         timing_map: AI生成のタイミングマップ
         output_path: 出力動画パス
         user_edited: ユーザーが手動編集したタイミングかどうか
+        video_width: 動画の幅（デフォルト: 1920）
+        video_height: 動画の高さ（デフォルト: 1080）
+        facecam_video_path: 顔カメラ動画のパス（任意）
+        facecam_position: ワイプ位置（top-left, top-right, bottom-left, bottom-right）
+        facecam_size: ワイプの直径（ピクセル）
     
     Returns:
         生成された動画のパス
@@ -58,6 +119,8 @@ async def compose_video(
     # デバッグ: 入力タイミングと最終タイミングを比較
     print(f"[VideoComposer] ===== TIMING DEBUG =====")
     print(f"[VideoComposer] Audio duration: {audio_duration:.1f}s")
+    print(f"[VideoComposer] Video dimensions: {video_width}x{video_height}")
+    print(f"[VideoComposer] Face cam: {'YES (' + facecam_position + ', ' + str(facecam_size) + 'px)' if facecam_video_path else 'NO'}")
     print(f"[VideoComposer] Slide images ({len(slide_images)} images):")
     for idx, img_path in enumerate(slide_images):
         print(f"  IMAGE[{idx}] = {os.path.basename(img_path)} (maps to slide_number {idx+1})")
@@ -128,7 +191,7 @@ async def compose_video(
         "-r", "30",  # Explicit output framerate for reliable switching
         # Scale to consistent dimensions and convert pixel format explicitly
         # Using simple scale (not pad) since user images are pre-resized at upload
-        "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT},format=yuv420p,fps=30",
+        "-vf", f"scale={video_width}:{video_height},format=yuv420p,fps=30",
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
         "-preset", "medium",
@@ -146,10 +209,45 @@ async def compose_video(
     temp_duration = get_audio_duration(temp_video)
     print(f"[FFmpeg] Temp video duration: {temp_duration:.1f}s (target: {audio_duration:.1f}s)")
     
+    # Step 1.5: Face cam overlay (if provided)
+    video_for_audio = temp_video
+    if facecam_video_path and os.path.exists(facecam_video_path):
+        print(f"[FFmpeg] Applying face cam overlay: {facecam_position}, {facecam_size}px")
+        temp_with_facecam = output_path.replace(".mp4", "_temp_facecam.mp4")
+        
+        facecam_filter = _build_facecam_filter(
+            cam_size=facecam_size,
+            position=facecam_position,
+            video_width=video_width,
+            video_height=video_height
+        )
+        
+        cmd_facecam = [
+            "ffmpeg", "-y",
+            "-i", temp_video,            # Input 0: slide video
+            "-i", facecam_video_path,    # Input 1: face cam video
+            "-filter_complex", facecam_filter,
+            "-t", str(audio_duration),
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            temp_with_facecam
+        ]
+        
+        result = subprocess.run(cmd_facecam, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"[FFmpeg] Face cam overlay error: {result.stderr[:300]}")
+            print(f"[FFmpeg] ⚠️ Continuing without face cam overlay")
+            # Continue without facecam rather than failing the whole job
+        else:
+            print(f"[FFmpeg] ✓ Face cam overlay applied successfully")
+            video_for_audio = temp_with_facecam
+    
     # Step 2: 音声を追加（同じく明示的に制限）
     cmd_final = [
         "ffmpeg", "-y",
-        "-i", temp_video,
+        "-i", video_for_audio,
         "-i", audio_path,
         "-t", str(audio_duration),  # 最終出力も明示的に制限
         "-c:v", "copy",
@@ -167,10 +265,9 @@ async def compose_video(
         raise Exception(f"音声合成エラー: {result.stderr[:200]}")
     
     # 一時ファイルをクリーンアップ
-    if os.path.exists(temp_video):
-        os.remove(temp_video)
-    if os.path.exists(concat_file):
-        os.remove(concat_file)
+    for tmp_file in [temp_video, output_path.replace(".mp4", "_temp_facecam.mp4"), concat_file]:
+        if os.path.exists(tmp_file):
+            os.remove(tmp_file)
     
     return output_path
 
@@ -391,7 +488,9 @@ async def concatenate_with_intro_outro(
     main_video_path: str,
     output_path: str,
     intro_video_path: Optional[str] = None,
-    outro_video_path: Optional[str] = None
+    outro_video_path: Optional[str] = None,
+    video_width: int = VIDEO_WIDTH,
+    video_height: int = VIDEO_HEIGHT
 ) -> str:
     """
     メイン動画にオープニング・エンディング動画を結合
@@ -401,6 +500,8 @@ async def concatenate_with_intro_outro(
         output_path: 出力動画のパス
         intro_video_path: オープニング動画（任意）
         outro_video_path: エンディング動画（任意）
+        video_width: 動画の幅
+        video_height: 動画の高さ
     
     Returns:
         結合された動画のパス
@@ -443,11 +544,11 @@ async def concatenate_with_intro_outro(
     for i, video_path in enumerate(videos_to_concat):
         normalized_path = os.path.join(temp_dir, f"_normalized_{i}.mp4")
         
-        # 動画を1920x1080、30fps、同じコーデックに変換
+        # 動画を指定解像度、30fps、同じコーデックに変換
         cmd_normalize = [
             "ffmpeg", "-y",
             "-i", video_path,
-            "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black",
+            "-vf", f"scale={video_width}:{video_height}:force_original_aspect_ratio=decrease,pad={video_width}:{video_height}:(ow-iw)/2:(oh-ih)/2:black",
             "-r", "30",
             "-c:v", "libx264",
             "-preset", "fast",

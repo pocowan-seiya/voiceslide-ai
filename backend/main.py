@@ -17,7 +17,7 @@ import hashlib
 import secrets
 import asyncio
 
-from config import UPLOAD_DIR, OUTPUT_DIR, ACCESS_PASSWORD
+from config import UPLOAD_DIR, OUTPUT_DIR, ASPECT_RATIO_PRESETS, get_video_dimensions, ACCESS_PASSWORD
 from services.pipeline import get_or_create_pipeline, delete_pipeline, pipelines
 from services.outline_generator import format_outline_for_export
 
@@ -1711,6 +1711,85 @@ async def map_slides(job_id: str):
         "step": 9,
         "timing_map": result["timing_map"]
     }
+
+
+# ========== Video Settings (Face Cam & Aspect Ratio) ==========
+
+class VideoSettingsRequest(BaseModel):
+    aspect_ratio: Optional[str] = None  # "landscape" or "portrait"
+    facecam_position: Optional[str] = None  # top-left, top-right, bottom-left, bottom-right
+    facecam_size: Optional[int] = None  # 150, 200, 280
+
+
+@app.get("/api/aspect-ratios")
+async def get_aspect_ratios():
+    """Get available aspect ratio presets"""
+    return {"presets": ASPECT_RATIO_PRESETS}
+
+
+@app.post("/api/settings/{job_id}")
+async def update_video_settings(job_id: str, settings: VideoSettingsRequest):
+    """Update video settings (aspect ratio, face cam position/size)"""
+    pipeline = get_or_create_pipeline(job_id)
+    
+    if settings.aspect_ratio and settings.aspect_ratio in ASPECT_RATIO_PRESETS:
+        pipeline.aspect_ratio = settings.aspect_ratio
+        print(f"[Settings] Aspect ratio set to: {settings.aspect_ratio}")
+    
+    if settings.facecam_position:
+        pipeline.facecam_position = settings.facecam_position
+        print(f"[Settings] Face cam position set to: {settings.facecam_position}")
+    
+    if settings.facecam_size:
+        pipeline.facecam_size = settings.facecam_size
+        print(f"[Settings] Face cam size set to: {settings.facecam_size}px")
+    
+    return {
+        "job_id": job_id,
+        "aspect_ratio": pipeline.aspect_ratio,
+        "facecam_position": pipeline.facecam_position,
+        "facecam_size": pipeline.facecam_size,
+        "facecam_video": pipeline.facecam_video_path is not None
+    }
+
+
+@app.post("/api/upload-facecam/{job_id}")
+async def upload_facecam(job_id: str, file: UploadFile = File(...)):
+    """Upload face cam video for PiP overlay"""
+    pipeline = get_or_create_pipeline(job_id)
+    
+    allowed_ext = [".mp4", ".mov", ".webm", ".avi", ".mkv"]
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(400, f"対応形式: MP4, MOV, WebM, AVI, MKV")
+    
+    # Save face cam video
+    facecam_path = os.path.join(UPLOAD_DIR, f"{job_id}_facecam{ext}")
+    with open(facecam_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    pipeline.facecam_video_path = facecam_path
+    print(f"[FaceCam] Uploaded: {facecam_path}")
+    
+    return {
+        "job_id": job_id,
+        "facecam_path": facecam_path,
+        "message": "顔カメラ動画をアップロードしました"
+    }
+
+
+@app.delete("/api/facecam/{job_id}")
+async def delete_facecam(job_id: str):
+    """Remove face cam video from job"""
+    pipeline = get_or_create_pipeline(job_id)
+    
+    if pipeline.facecam_video_path and os.path.exists(pipeline.facecam_video_path):
+        os.remove(pipeline.facecam_video_path)
+    
+    pipeline.facecam_video_path = None
+    print(f"[FaceCam] Removed for job {job_id}")
+    
+    return {"job_id": job_id, "message": "顔カメラ動画を削除しました"}
 
 
 # ========== STEP 10: Generate Video ==========

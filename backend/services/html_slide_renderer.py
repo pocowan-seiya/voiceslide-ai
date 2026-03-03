@@ -355,7 +355,9 @@ def generate_slide_html(
     design: Dict[str, Any],
     slide_number: int,
     total_slides: int,
-    background_image_base64: Optional[str] = None
+    background_image_base64: Optional[str] = None,
+    video_width: int = VIDEO_WIDTH,
+    video_height: int = VIDEO_HEIGHT
 ) -> str:
     """
     Generate HTML for a slide based on content and design
@@ -441,8 +443,8 @@ def generate_slide_html(
     
     # Generate full HTML
     html = BASE_HTML_TEMPLATE.format(
-        width=VIDEO_WIDTH,
-        height=VIDEO_HEIGHT,
+        width=video_width,
+        height=video_height,
         background=colors.get("background", "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"),
         text_color=colors.get("text", "#FFFFFF"),
         text_secondary=colors.get("text_secondary", "#94A3B8"),
@@ -608,7 +610,12 @@ def generate_quote_layout(slide: Dict, title: str) -> str:
     """
 
 
-async def render_html_to_image(html: str, output_path: str) -> str:
+async def render_html_to_image(
+    html: str, 
+    output_path: str,
+    video_width: int = VIDEO_WIDTH,
+    video_height: int = VIDEO_HEIGHT
+) -> str:
     """
     Render HTML to PNG image using Playwright
     """
@@ -616,7 +623,7 @@ async def render_html_to_image(html: str, output_path: str) -> str:
     
     async with async_playwright() as p:
         browser = await p.chromium.launch()
-        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+        page = await browser.new_page(viewport={"width": video_width, "height": video_height})
         
         await page.set_content(html)
         
@@ -635,7 +642,9 @@ async def generate_html_slides(
     slides: List[Dict[str, Any]],
     designs: List[Dict[str, Any]],
     job_id: str,
-    background_images: Optional[List[bytes]] = None
+    background_images: Optional[List[bytes]] = None,
+    video_width: int = VIDEO_WIDTH,
+    video_height: int = VIDEO_HEIGHT
 ) -> List[str]:
     """
     Generate all slide images from HTML
@@ -660,12 +669,14 @@ async def generate_html_slides(
             design=design,
             slide_number=slide_number,
             total_slides=total_slides,
-            background_image_base64=bg_base64
+            background_image_base64=bg_base64,
+            video_width=video_width,
+            video_height=video_height
         )
         
         # Render to image
         output_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
-        await render_html_to_image(html, output_path)
+        await render_html_to_image(html, output_path, video_width=video_width, video_height=video_height)
         
         image_paths.append(output_path)
         print(f"[HTML Renderer] Generated slide {slide_number}/{total_slides}")

@@ -228,6 +228,13 @@ export default function Home() {
   // Slide undo history
   const [slideCanUndo, setSlideCanUndo] = useState<{ [key: number]: boolean }>({});
   const [isUndoing, setIsUndoing] = useState(false);
+
+  // Aspect ratio & Face cam settings
+  const [aspectRatio, setAspectRatio] = useState<"landscape" | "portrait">("landscape");
+  const [facecamFile, setFacecamFile] = useState<File | null>(null);
+  const [facecamUploaded, setFacecamUploaded] = useState(false);
+  const [facecamPosition, setFacecamPosition] = useState<string>("bottom-right");
+  const [facecamSize, setFacecamSize] = useState<number>(200);
   // Check for API keys on mount
   useEffect(() => {
     setHasKeys(hasAPIKeys());
@@ -917,11 +924,63 @@ export default function Home() {
     }
   };
 
+  // Upload face cam video
+  const handleUploadFacecam = async (file: File) => {
+    if (!state.jobId) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await fetch(`${API_URL}/api/upload-facecam/${state.jobId}`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Face cam upload failed");
+      setFacecamFile(file);
+      setFacecamUploaded(true);
+      console.log('[FaceCam] Uploaded successfully');
+    } catch (err: any) {
+      updateState({ error: err.message });
+    }
+  };
+
+  // Remove face cam video
+  const handleRemoveFacecam = async () => {
+    if (!state.jobId) return;
+    try {
+      await fetch(`${API_URL}/api/facecam/${state.jobId}`, { method: "DELETE" });
+      setFacecamFile(null);
+      setFacecamUploaded(false);
+    } catch (err: any) {
+      console.error('[FaceCam] Remove error:', err);
+    }
+  };
+
+  // Sync video settings (aspect ratio, facecam position/size) to backend
+  const syncVideoSettings = async () => {
+    if (!state.jobId) return;
+    try {
+      await fetch(`${API_URL}/api/settings/${state.jobId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          aspect_ratio: aspectRatio,
+          facecam_position: facecamPosition,
+          facecam_size: facecamSize,
+        }),
+      });
+    } catch (err) {
+      console.error('[Settings] Sync error:', err);
+    }
+  };
+
   // Step 10: Generate Video (with edited timing if available)
   const handleGenerateVideo = async () => {
     updateState({ isProcessing: true });
 
     try {
+      // Sync video settings before generating
+      await syncVideoSettings();
+
       // Send edited timing map if available
       const body = state.timingMap.length > 0
         ? JSON.stringify({ timing_map: state.timingMap })
@@ -929,10 +988,8 @@ export default function Home() {
 
       console.log('[Video] === handleGenerateVideo ===');
       console.log('[Video] timingMap entries:', state.timingMap.length);
-      console.log('[Video] sending body:', body ? 'YES' : 'NO');
-      if (state.timingMap.length > 0) {
-        console.log('[Video] first 3 entries:', state.timingMap.slice(0, 3));
-      }
+      console.log('[Video] aspectRatio:', aspectRatio);
+      console.log('[Video] facecam:', facecamUploaded ? `${facecamPosition}, ${facecamSize}px` : 'NO');
 
       const res = await fetch(`${API_URL}/api/generate-video/${state.jobId}`, {
         method: "POST",
@@ -2417,7 +2474,108 @@ export default function Home() {
 
 
 
+                  {/* ===== Video Settings: Aspect Ratio & Face Cam ===== */}
+                  <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 mb-4">
+                    <h3 className="text-lg font-bold mb-4 text-zinc-200">🎥 動画設定</h3>
 
+                    {/* Aspect Ratio */}
+                    <div className="mb-4">
+                      <label className="text-sm text-zinc-400 block mb-2">アスペクト比</label>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setAspectRatio("landscape")}
+                          className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "landscape"
+                              ? "border-indigo-500 bg-indigo-500/20 text-white"
+                              : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                            }`}
+                        >
+                          <div className="text-2xl mb-1">🖥️</div>
+                          <div className="font-medium">16:9 横長</div>
+                          <div className="text-xs text-zinc-500">YouTube / 通常</div>
+                        </button>
+                        <button
+                          onClick={() => setAspectRatio("portrait")}
+                          className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "portrait"
+                              ? "border-indigo-500 bg-indigo-500/20 text-white"
+                              : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                            }`}
+                        >
+                          <div className="text-2xl mb-1">📱</div>
+                          <div className="font-medium">9:16 縦長</div>
+                          <div className="text-xs text-zinc-500">Shorts / Reels</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Face Cam */}
+                    <div>
+                      <label className="text-sm text-zinc-400 block mb-2">顔カメラワイプ（PiP）</label>
+                      {!facecamUploaded ? (
+                        <label className="flex items-center justify-center gap-2 py-3 px-4 border-2 border-dashed border-zinc-700 rounded-lg cursor-pointer hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all text-zinc-400">
+                          <span>📹</span>
+                          <span>顔カメラ動画を選択</span>
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleUploadFacecam(file);
+                            }}
+                          />
+                        </label>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3 text-sm bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
+                            <span>✅</span>
+                            <span className="text-green-400 flex-1">{facecamFile?.name}</span>
+                            <button onClick={handleRemoveFacecam} className="text-zinc-500 hover:text-red-400">✕</button>
+                          </div>
+
+                          {/* Position selector */}
+                          <div className="grid grid-cols-2 gap-2 mb-3">
+                            {[
+                              { pos: "top-left", label: "↖ 左上" },
+                              { pos: "top-right", label: "↗ 右上" },
+                              { pos: "bottom-left", label: "↙ 左下" },
+                              { pos: "bottom-right", label: "↘ 右下" },
+                            ].map(({ pos, label }) => (
+                              <button
+                                key={pos}
+                                onClick={() => setFacecamPosition(pos)}
+                                className={`py-2 rounded-lg border text-sm transition-all ${facecamPosition === pos
+                                    ? "border-indigo-500 bg-indigo-500/20 text-white"
+                                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                                  }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Size selector */}
+                          <div className="flex gap-2">
+                            {[
+                              { size: 150, label: "小" },
+                              { size: 200, label: "中" },
+                              { size: 280, label: "大" },
+                            ].map(({ size, label }) => (
+                              <button
+                                key={size}
+                                onClick={() => setFacecamSize(size)}
+                                className={`flex-1 py-2 rounded-lg border text-sm transition-all ${facecamSize === size
+                                    ? "border-indigo-500 bg-indigo-500/20 text-white"
+                                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                                  }`}
+                              >
+                                {label} ({size}px)
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                   <div className="flex gap-4 flex-wrap">
                     <button

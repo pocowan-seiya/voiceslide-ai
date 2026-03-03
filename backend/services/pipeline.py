@@ -13,7 +13,7 @@ from services.outline_generator import generate_outline, polish_outline
 from services.slide_analyzer import analyze_slides
 from services.slide_mapper import map_slides_to_audio
 from services.video_composer import compose_video
-from config import OUTPUT_DIR, UPLOAD_DIR
+from config import OUTPUT_DIR, UPLOAD_DIR, get_video_dimensions
 
 
 class HybridPipeline:
@@ -52,6 +52,14 @@ class HybridPipeline:
         self.video_path = None
         self.final_video = None  # Main generated video
         self.final_video_with_oped = None  # Video with OP/ED
+        
+        # Video settings
+        self.aspect_ratio = "landscape"  # "landscape" or "portrait"
+        
+        # Face cam (PiP) settings
+        self.facecam_video_path = None  # Path to uploaded face cam video
+        self.facecam_position = "bottom-right"  # top-left, top-right, bottom-left, bottom-right
+        self.facecam_size = 200  # Diameter in pixels (150=small, 200=medium, 280=large)
     
     def _sync_segments_with_transcript(self, edited_transcript: str) -> List[Dict[str, Any]]:
         """
@@ -261,12 +269,20 @@ class HybridPipeline:
         # Use audio_override if provided, otherwise use original audio_path
         audio_path = audio_override or self.audio_path
         
+        # Get video dimensions from aspect ratio
+        vid_width, vid_height = get_video_dimensions(self.aspect_ratio)
+        
         self.video_path = await compose_video(
             audio_path=audio_path,
             slide_images=self.slide_images,
             timing_map=timing,
             output_path=output_path,
-            user_edited=edited_timing is not None
+            user_edited=edited_timing is not None,
+            video_width=vid_width,
+            video_height=vid_height,
+            facecam_video_path=self.facecam_video_path,
+            facecam_position=self.facecam_position,
+            facecam_size=self.facecam_size
         )
         
         return {

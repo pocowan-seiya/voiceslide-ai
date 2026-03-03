@@ -24,10 +24,21 @@ PORT = int(os.getenv("BACKEND_PORT", os.getenv("PORT", 8001)))
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
 
-# Video settings
+# Video settings (defaults: landscape 16:9)
 VIDEO_WIDTH = 1920
 VIDEO_HEIGHT = 1080
 VIDEO_FPS = 30
+
+# Aspect ratio presets
+ASPECT_RATIO_PRESETS = {
+    "landscape": {"width": 1920, "height": 1080, "label": "16:9 (横長)"},
+    "portrait":  {"width": 1080, "height": 1920, "label": "9:16 (縦長)"},
+}
+
+def get_video_dimensions(aspect_ratio: str = "landscape") -> tuple:
+    """Get (width, height) for a given aspect ratio preset."""
+    preset = ASPECT_RATIO_PRESETS.get(aspect_ratio, ASPECT_RATIO_PRESETS["landscape"])
+    return preset["width"], preset["height"]
 
 # Debug mode
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
