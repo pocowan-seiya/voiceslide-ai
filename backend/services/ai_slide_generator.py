@@ -3117,10 +3117,12 @@ async def regenerate_slide_with_feedback(
     job_id: str,
     slide_number: int,
     feedback: str,
-    feedback_type: str = "general",  # copy, layout, visual, general, add_image
+    feedback_type: str = "general",
     gemini_key: Optional[str] = None,
     image_base64: Optional[str] = None,
-    image_filename: Optional[str] = None
+    image_filename: Optional[str] = None,
+    video_width: int = VIDEO_WIDTH,
+    video_height: int = VIDEO_HEIGHT
 ) -> Dict[str, Any]:
     """
     Regenerate a single slide based on user feedback (supports image uploads)
@@ -3231,7 +3233,9 @@ async def regenerate_slide_with_feedback(
             job_id=job_id,
             slide_number=slide_number,
             feedback=feedback,
-            gemini_key=gemini_key
+            gemini_key=gemini_key,
+            video_width=video_width,
+            video_height=video_height
         )
         
     # Configure Gemini for other modes
@@ -3289,7 +3293,7 @@ async def regenerate_slide_with_feedback(
             # Capture screenshot
             async with async_playwright() as p:
                 browser = await p.chromium.launch()
-                page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+                page = await browser.new_page(viewport={"width": video_width, "height": video_height})
                 await page.set_content(new_html)
                 # Wait for potential images
                 await page.wait_for_timeout(1000)
@@ -3411,8 +3415,8 @@ async def regenerate_slide_with_feedback(
             accent=colors.get("accent", "#06B6D4"),
             feedback=feedback + image_instruction + copy_change_instruction,
             feedback_type="レイアウトとコピーの修正（画像は保持）",
-            width=VIDEO_WIDTH,
-            height=VIDEO_HEIGHT
+            width=video_width,
+            height=video_height
         )
 
     
@@ -3491,7 +3495,7 @@ async def regenerate_slide_with_feedback(
         
         async with BROWSER_SEMAPHORE, async_playwright() as p:
             browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
-            page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+            page = await browser.new_page(viewport={"width": video_width, "height": video_height})
             await page.set_content(new_html)
             await page.wait_for_timeout(1500)
             
@@ -3622,7 +3626,9 @@ async def regenerate_slide_illustration(
     job_id: str,
     slide_number: int,
     feedback: str,
-    gemini_key: Optional[str] = None
+    gemini_key: Optional[str] = None,
+    video_width: int = VIDEO_WIDTH,
+    video_height: int = VIDEO_HEIGHT
 ) -> Dict[str, Any]:
     """
     Regenerate ONLY the illustration image for a specific slide based on feedback.
@@ -3710,7 +3716,7 @@ Please incorporate the feedback to improve the illustration."""
     
     async with async_playwright() as p:
         browser = await p.chromium.launch()
-        page = await browser.new_page(viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT})
+        page = await browser.new_page(viewport={"width": video_width, "height": video_height})
         await page.set_content(new_html)
         await page.wait_for_timeout(500)
         await page.screenshot(path=output_path)

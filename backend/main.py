@@ -1545,6 +1545,10 @@ async def slide_feedback_endpoint(
             })
             print(f"[History] Saved slide {slide_num} version {len(slide_history[job_id][slide_num])}")
         
+        # Get video dimensions from pipeline
+        pipeline = get_or_create_pipeline(job_id)
+        video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
+        
         result = await regenerate_slide_with_feedback(
             job_id=job_id,
             slide_number=request.slide_number,
@@ -1552,7 +1556,9 @@ async def slide_feedback_endpoint(
             feedback_type=request.feedback_type,
             gemini_key=x_gemini_key,
             image_base64=request.image_base64,
-            image_filename=request.image_filename
+            image_filename=request.image_filename,
+            video_width=video_w,
+            video_height=video_h
         )
         
         if not result["success"]:
@@ -1596,11 +1602,17 @@ async def regenerate_image_endpoint(
     try:
         from services.ai_slide_generator import regenerate_slide_illustration
         
+        # Get video dimensions from pipeline
+        pipeline = get_or_create_pipeline(job_id)
+        video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
+        
         result = await regenerate_slide_illustration(
             job_id=job_id,
             slide_number=request.slide_number,
             feedback=request.feedback,
-            gemini_key=x_gemini_key
+            gemini_key=x_gemini_key,
+            video_width=video_w,
+            video_height=video_h
         )
         
         if not result["success"]:
