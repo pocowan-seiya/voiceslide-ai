@@ -959,6 +959,63 @@ LAYOUT_TYPES = {
     }
 }
 
+# =============================================================================
+# Portrait (9:16) Layout Types - Vertical-first designs
+# =============================================================================
+
+PORTRAIT_LAYOUT_TYPES = {
+    "top_hero": {
+        "name": "Top Hero (Portrait)",
+        "description": "上部にタイトル大きく、下部にポイントを縦積み",
+        "css_hints": """
+            - 画面上部30%にタイトルを大きく配置（font-size: clamp(2rem, 5vh, 3.5rem)）
+            - 下部70%にポイントを**縦に積む**（flex-direction: column）
+            - カードやポイントは**横並び禁止**（1列のみ）
+            - パディング: 40px 40px
+            - 各カードは width: 100% で画面幅いっぱい
+            - 余白を大きく取る
+        """,
+        "best_for": ["title", "concept", "points"]
+    },
+    "stacked_cards": {
+        "name": "Stacked Cards (Portrait)",
+        "description": "カードを縦に積み上げるShort動画向けレイアウト",
+        "css_hints": """
+            - カードを**縦に積む**（flex-direction: column, gap: 16px）
+            - 横並び・2列配置禁止
+            - 各カードはglassmorphism（backdrop-filter: blur）
+            - カード幅は画面の90%
+            - タイトルは上部に20-30pxで配置
+            - ポイントは各カード内に1行ずつ
+        """,
+        "best_for": ["points", "concept", "comparison", "flow"]
+    },
+    "full_center": {
+        "name": "Full Center (Portrait)",
+        "description": "縦画面中央に1つのメッセージ、余白重視",
+        "css_hints": """
+            - 画面中央にタイトルを**1つだけ**大きく配置
+            - font-size: clamp(2.5rem, 6vh, 4rem)
+            - 余白を画面の60%以上取る
+            - サブテキストは1行のみ（15文字以内）
+            - 背景にsubtle装飾（radial-gradient光の粒子）
+            - 純粋なタイポグラフィで勝負
+        """,
+        "best_for": ["quote", "key_message", "closing", "transition"]
+    },
+    "top_bottom_split": {
+        "name": "Top-Bottom Split (Portrait)",
+        "description": "上下2分割、上にビジュアル/タイトル、下にコンテンツ",
+        "css_hints": """
+            - 上部40%にタイトル（大きめ、中央揃え）
+            - 下部60%にコンテンツ（ポイントを縦積み）
+            - 区切り: グラデーションの境界線
+            - 下部には背景をわずかに変えて対比
+            - ポイントは左寄せ、border-leftでアクセント
+        """,
+        "best_for": ["points", "concept", "introduction"]
+    }
+}
 
 
 # Track used layouts to avoid repetition
@@ -970,7 +1027,8 @@ def select_layout_for_slide(
     total_slides: int,
     content_type: str,
     num_points: int = 0,
-    is_illustration_mode: bool = False  # NEW: illustration mode flag
+    is_illustration_mode: bool = False,  # illustration mode flag
+    is_portrait: bool = False  # Portrait (9:16) mode flag
 ) -> Dict[str, Any]:
     """
     Select an appropriate layout for each slide, ensuring variety.
@@ -1012,6 +1070,26 @@ def select_layout_for_slide(
             # Cycle through layouts
             layout_key = available_for_cycle[(slide_number - 2) % len(available_for_cycle)] if available_for_cycle else "left_image"
     else:
+        # === Portrait Mode ===
+        if is_portrait:
+            available_layouts = list(PORTRAIT_LAYOUT_TYPES.keys())
+            
+            # Title/closing slides
+            if slide_number == 1 or slide_number == total_slides:
+                layout_key = "full_center"
+            else:
+                # Cycle through portrait layouts
+                portrait_cycle = ["top_hero", "stacked_cards", "top_bottom_split"]
+                if used:
+                    portrait_cycle = [l for l in portrait_cycle if l != used[-1]] or portrait_cycle
+                layout_key = portrait_cycle[(slide_number - 2) % len(portrait_cycle)]
+            
+            # Track and return from portrait types
+            used.append(layout_key)
+            _used_layouts_cache[job_id] = used[-10:]
+            return {"key": layout_key, **PORTRAIT_LAYOUT_TYPES[layout_key]}
+        
+        # === Standard (Landscape) Mode ===
         # Standard mode: filter for layouts that do NOT have "has_image"
         available_layouts = [key for key, layout in LAYOUT_TYPES.items() if not layout.get("has_image")]
         
@@ -1593,11 +1671,13 @@ async def generate_slide_html(
     slide_number: int,
     total_slides: int,
     strategy: Dict[str, Any],
-    job_id: str,  # Added for layout tracking
+    job_id: str,
     gemini_key: Optional[str] = None,
     image_info: Optional[Dict[str, str]] = None,
-    text_density: str = "standard",  # "simple" (title+headline) or "standard" (full)
-    is_illustration_mode: bool = False  # NEW: Use illustration layouts
+    text_density: str = "standard",
+    is_illustration_mode: bool = False,
+    video_width: int = VIDEO_WIDTH,
+    video_height: int = VIDEO_HEIGHT
 ) -> str:
     """
     Step 3: Generate individual slide HTML based on strategy.
@@ -1644,14 +1724,18 @@ async def generate_slide_html(
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
     
-    # Select layout for variety (uses image-specific layouts for illustration slides)
+    # Detect portrait mode
+    is_portrait = video_height > video_width
+    
+    # Select layout for variety
     layout = select_layout_for_slide(
         job_id=job_id,
         slide_number=slide_number,
         total_slides=total_slides,
         content_type=slide_type,
         num_points=len(raw_points),
-        is_illustration_mode=is_illustration_mode  # NEW: Pass illustration mode flag
+        is_illustration_mode=is_illustration_mode,
+        is_portrait=is_portrait
     )
     
     # Build layout instruction
@@ -1818,6 +1902,29 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
             # This slide doesn't get a user image
             user_images_instruction = ""
     
+    # Portrait mode instruction
+    portrait_instruction = ""
+    if is_portrait:
+        portrait_instruction = """
+# 📱 縦長モード（9:16）— 最重要ルール
+
+このスライドは**縦長画面（9:16、Shorts/Reels向け）**です。以下のルールを必ず守ってください。
+
+## ❗ 絶対禁止（横長レイアウトを使わない）
+❌ `display: flex` + `flex-direction: row` — 横並び禁止
+❌ カードやポイントを2列以上に並べる
+❌ 左右分割レイアウト（left_heavy, right_heavy, split_vertical等）
+❌ width: 60% / width: 40% の横分割
+
+## ✅ 必須ルール
+✅ すべての要素は `flex-direction: column` で**縦に積む**
+✅ bodyはpadding: 40px 40px（左右80pxは広すぎる）
+✅ タイトル: font-size: clamp(2rem, 5vh, 3.5rem)
+✅ カード/ポイント: width: 100% または width: 90%（画面幅いっぱい）
+✅ コンテンツは縦方向に流れるように配置
+✅ フォントは横長より小さめ（画面が狭いため）
+"""
+    
     # Generate prompt
     base_font_instruction = style.get("font_instruction", "")
     
@@ -1838,13 +1945,13 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
-        layout_instruction=layout_instruction + simple_mode_instruction + illustration_mode_instruction + user_images_instruction,
+        layout_instruction=layout_instruction + simple_mode_instruction + illustration_mode_instruction + user_images_instruction + portrait_instruction,
         image_section=image_section,
         personality_section=personality_section,
-        width=VIDEO_WIDTH,
-        height=VIDEO_HEIGHT,
+        width=video_width,
+        height=video_height,
         font_import=style.get("font_import", "Noto Sans JP:wght@400;700;900"),
-        font_instruction=base_font_instruction + text_style_instruction  # Inject text style CSS here
+        font_instruction=base_font_instruction + text_style_instruction
     )
     
     try:
@@ -2319,9 +2426,11 @@ Concept to illustrate: """
                     strategy=strategy,
                     job_id=job_id,
                     gemini_key=gemini_key,
-                    image_info=image_info,  # Pass image info for AI to include placeholder
+                    image_info=image_info,
                     text_density=text_density,
-                    is_illustration_mode=True  # NEW: Tell generate_slide_html this is illustration mode
+                    is_illustration_mode=True,
+                    video_width=vw,
+                    video_height=vh
                 )
                 
                 # Inject AI illustration into the generated HTML if image exists
@@ -2362,7 +2471,9 @@ Concept to illustrate: """
                     job_id=job_id,
                     gemini_key=gemini_key,
                     image_info=image_info,
-                    text_density=text_density
+                    text_density=text_density,
+                    video_width=vw,
+                    video_height=vh
                 )
                 
                 # Step 3b-2: Inject AI illustration if not present in HTML (fallback)
