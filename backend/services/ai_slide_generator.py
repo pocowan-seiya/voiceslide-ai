@@ -87,6 +87,29 @@ def update_html_text_content(html: str, new_copy: Dict[str, Any]) -> str:
         return html  # Fallback to original if parsing fails
 
 
+def fix_body_dimensions(html: str, target_width: int, target_height: int) -> str:
+    """
+    Post-process AI-generated HTML to fix body dimensions.
+    AI often generates body { width: 1920px; height: 1080px; } regardless of prompt,
+    causing content to shrink when viewport is different (e.g., portrait 1080x1920).
+    """
+    import re
+    
+    # Only fix if dimensions don't match the standard landscape (no-op for landscape)
+    if target_width == 1920 and target_height == 1080:
+        return html
+    
+    # Replace ALL 1920/1080 dimension references inside <style> blocks
+    def fix_style_block(match):
+        style_content = match.group(1)
+        style_content = re.sub(r'width\s*:\s*1920\s*px', f'width: {target_width}px', style_content)
+        style_content = re.sub(r'height\s*:\s*1080\s*px', f'height: {target_height}px', style_content)
+        return f'<style>{style_content}</style>'
+    
+    html = re.sub(r'<style>(.*?)</style>', fix_style_block, html, flags=re.DOTALL)
+    
+    return html
+
 
 # =============================================================================
 # STEP 1 & 2: Design Strategy Generation
@@ -2531,6 +2554,7 @@ Concept to illustrate: """
                         browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
                         page = await browser.new_page(viewport={"width": vw, "height": vh})
                     
+                    html = fix_body_dimensions(html, vw, vh)
                     await page.set_content(html)
                     await page.wait_for_timeout(800)
                     
@@ -2746,6 +2770,7 @@ async def validate_and_regenerate_slide(
             
             # Re-render
             page = await browser.new_page(viewport={"width": vw, "height": vh})
+            html = fix_body_dimensions(html, vw, vh)
             await page.set_content(html)
             await page.wait_for_timeout(1000)
             await page.screenshot(path=path, type="png")
@@ -3294,6 +3319,7 @@ async def regenerate_slide_with_feedback(
             async with async_playwright() as p:
                 browser = await p.chromium.launch()
                 page = await browser.new_page(viewport={"width": video_width, "height": video_height})
+                new_html = fix_body_dimensions(new_html, video_width, video_height)
                 await page.set_content(new_html)
                 # Wait for potential images
                 await page.wait_for_timeout(1000)
@@ -3496,6 +3522,7 @@ async def regenerate_slide_with_feedback(
         async with BROWSER_SEMAPHORE, async_playwright() as p:
             browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
             page = await browser.new_page(viewport={"width": video_width, "height": video_height})
+            new_html = fix_body_dimensions(new_html, video_width, video_height)
             await page.set_content(new_html)
             await page.wait_for_timeout(1500)
             
@@ -3717,6 +3744,7 @@ Please incorporate the feedback to improve the illustration."""
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         page = await browser.new_page(viewport={"width": video_width, "height": video_height})
+        new_html = fix_body_dimensions(new_html, video_width, video_height)
         await page.set_content(new_html)
         await page.wait_for_timeout(500)
         await page.screenshot(path=output_path)
