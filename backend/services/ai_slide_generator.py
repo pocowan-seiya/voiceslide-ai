@@ -1552,7 +1552,8 @@ async def generate_design_strategy(
     outline: Dict[str, Any],
     gemini_key: Optional[str] = None,
     color_theme: Optional[str] = None,  # 'cosmic', 'warm', 'elegant', 'nature', 'ocean', 'mono', or None for AI
-    design_preference: Optional[str] = None  # User design requirements (e.g., "white background")
+    design_preference: Optional[str] = None,  # User design requirements (e.g., "white background")
+    copy_style_request: Optional[str] = None  # User copy/writing style request
 ) -> Dict[str, Any]:
     """
     Step 1 & 2: Analyze content and define design strategy
@@ -1605,11 +1606,22 @@ async def generate_design_strategy(
 
 この要望を最優先で取り入れたデザインを生成してください。
 """
+
+    # Build copy style instruction
+    copy_style_instruction = ""
+    if copy_style_request:
+        copy_style_instruction = f"""
+# ユーザーからのコピー（文章表現）要望
+以下のライティングスタイルの要望を**全スライドに適用**してください：
+「{copy_style_request}」
+
+スライドのタイトル、サブタイトル、ポイント、キーメッセージなど、すべてのテキスト要素にこのスタイルを反映してください。
+"""
     
     prompt = DESIGN_STRATEGY_PROMPT.format(
         presentation_title=outline.get("presentation_title", "プレゼンテーション"),
         slides_content=slides_content,
-        color_theme_instruction=color_theme_instruction + design_preference_instruction
+        color_theme_instruction=color_theme_instruction + design_preference_instruction + copy_style_instruction
     )
     
     try:
@@ -2152,6 +2164,7 @@ async def generate_all_custom_slides(
     font_style: Optional[str] = None,   # User-selected font style: gothic, mincho, pop, handwritten
     user_images: Optional[List[str]] = None,  # User-uploaded image paths
     design_preference: Optional[str] = None,  # User design requirements (e.g., "white background")
+    copy_style_request: Optional[str] = None,  # User copy/writing style request
     text_density: str = "standard",  # "simple" (title+headline) or "standard" (full)
     progress_callback: Optional[callable] = None,  # Progress callback(current, total, message)
     start_slide: int = 1,  # Batch: start from this slide (1-indexed)
@@ -2200,7 +2213,7 @@ async def generate_all_custom_slides(
         if progress_callback:
             progress_callback(0, end_slide - start_slide + 2, "デザイン戦略を生成中...")
         
-        strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference)
+        strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference, copy_style_request)
         
         # Apply user-selected font style to strategy
         if font_style and font_style in FONT_STYLES:

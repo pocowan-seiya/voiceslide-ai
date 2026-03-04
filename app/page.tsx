@@ -148,9 +148,7 @@ export default function Home() {
 
   // Direct text editing
   const [isTextEditing, setIsTextEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editSubtitle, setEditSubtitle] = useState("");
-  const [editPoints, setEditPoints] = useState<string[]>([]);
+  const [editTexts, setEditTexts] = useState<{ original: string; current: string; type: string }[]>([]);
   const [isSavingText, setIsSavingText] = useState(false);
   const [isLoadingText, setIsLoadingText] = useState(false);
 
@@ -201,6 +199,8 @@ export default function Home() {
 
   // Design preference (free-form text)
   const [designPreference, setDesignPreference] = useState<string>("");
+  const [copyStyleRequest, setCopyStyleRequest] = useState<string>("");
+  const isPreviewMode = useRef(false);
 
   // Text density setting: simple (title+headline) or standard (title+headline+points)
   const [textDensity, setTextDensity] = useState<"simple" | "standard">("standard");
@@ -568,7 +568,7 @@ export default function Home() {
 
   // Step 5 (Full AI): Generate Slides in batches (5 at a time) to avoid timeout
   // Auto-continues to next batch until all slides are complete
-  const handleGenerateSlides = async (startSlide: number = 1) => {
+  const handleGenerateSlides = async (startSlide: number = 1, batchSize: number = 5) => {
     if (!hasAPIKeys()) {
       setShowSettings(true);
       updateState({ error: "APIキーを設定してください" });
@@ -577,6 +577,7 @@ export default function Home() {
 
     // Sync aspect ratio settings before generating
     await syncVideoSettings();
+    if (batchSize <= 2) isPreviewMode.current = true;
 
     updateState({ isProcessing: true });
     setProgress({ percent: 0, message: startSlide === 1 ? "デザイン戦略を生成中..." : `スライド ${startSlide} から生成中...` });
@@ -648,8 +649,9 @@ export default function Home() {
         headers,
         body: JSON.stringify({
           start_slide: startSlide,
-          batch_size: 5,
+          batch_size: batchSize,
           design_preference: designPreference || "",
+          copy_style_request: copyStyleRequest || "",
           text_density: textDensity,
           add_illustrations: addIllustrations,
           illustration_percentage: illustrationPercentage,
@@ -729,7 +731,7 @@ export default function Home() {
             setSlideFeedback("");
 
             // Auto-continue to next batch if not complete
-            if (!statusData.is_complete && statusData.next_start) {
+            if (!statusData.is_complete && statusData.next_start && !isPreviewMode.current) {
               console.log(`[AutoBatch] Continuing to batch starting at slide ${statusData.next_start}`);
               setTimeout(() => {
                 handleGenerateSlides(statusData.next_start);
@@ -761,9 +763,18 @@ export default function Home() {
       });
       if (res.ok) {
         const data = await res.json();
-        setEditTitle(data.title || "");
-        setEditSubtitle(data.subtitle || "");
-        setEditPoints(data.points || []);
+        // Build editTexts array from all text fields
+        const texts: { original: string; current: string; type: string }[] = [];
+        if (data.title) texts.push({ original: data.title, current: data.title, type: "タイトル" });
+        if (data.subtitle) texts.push({ original: data.subtitle, current: data.subtitle, type: "サブタイトル" });
+        if (data.key_message) texts.push({ original: data.key_message, current: data.key_message, type: "キーメッセージ" });
+        for (const p of (data.points || [])) {
+          texts.push({ original: p, current: p, type: "ポイント" });
+        }
+        for (const t of (data.other_texts || [])) {
+          texts.push({ original: t, current: t, type: "テキスト" });
+        }
+        setEditTexts(texts);
         setIsTextEditing(true);
       }
     } catch (err) {
@@ -778,17 +789,24 @@ export default function Home() {
     if (!state.jobId || !selectedSlide) return;
     setIsSavingText(true);
     try {
+      // Only send changed items
+      const text_changes = editTexts
+        .filter(t => t.original !== t.current)
+        .map(t => ({ original: t.original, edited: t.current }));
+
+      if (text_changes.length === 0) {
+        setIsTextEditing(false);
+        setIsSavingText(false);
+        return;
+      }
+
       const res = await fetch(`${API_URL}/api/slides/${state.jobId}/text/${selectedSlide}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           ...getAPIHeaders()
         },
-        body: JSON.stringify({
-          title: editTitle,
-          subtitle: editSubtitle,
-          points: editPoints.filter(p => p.trim() !== "")
-        })
+        body: JSON.stringify({ text_changes })
       });
       if (res.ok) {
         const data = await res.json();
@@ -1789,7 +1807,6 @@ export default function Home() {
                     <span className="text-5xl mb-4">{isDragging ? '📎' : '🎙️'}</span>
                     <p className="text-lg">{isDragging ? 'ここにドロップ！' : '音声 or 動画ファイルをドラッグ&ドロップ'}</p>
                     <p className="text-sm text-zinc-500">MP3, WAV, M4A, MP4, MOV, WebM対応</p>
-                    <p className="text-xs text-zinc-600 mt-1">💡 動画の場合は音声を自動抽出し、映像をワイプに使用します</p>
                     <input
                       type="file"
                       accept=".mp3,.wav,.m4a,.mp4,.mov,.webm"
@@ -2438,52 +2455,32 @@ export default function Home() {
 
                                   {/* Direct Text Editing Mode */}
                                   {isTextEditing ? (
-                                    <div className="space-y-3">
-                                      <div>
-                                        <label className="text-xs text-zinc-400 mb-1 block">タイトル</label>
-                                        <input
-                                          type="text"
-                                          value={editTitle}
-                                          onChange={(e) => setEditTitle(e.target.value)}
-                                          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none"
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-xs text-zinc-400 mb-1 block">サブタイトル</label>
-                                        <input
-                                          type="text"
-                                          value={editSubtitle}
-                                          onChange={(e) => setEditSubtitle(e.target.value)}
-                                          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:border-amber-500 focus:outline-none"
-                                        />
-                                      </div>
-                                      {editPoints.length > 0 && (
-                                        <div>
-                                          <label className="text-xs text-zinc-400 mb-1 block">ポイント</label>
-                                          {editPoints.map((point, idx) => (
-                                            <div key={idx} className="flex gap-2 mb-1.5">
-                                              <input
-                                                type="text"
-                                                value={point}
-                                                onChange={(e) => {
-                                                  const newPoints = [...editPoints];
-                                                  newPoints[idx] = e.target.value;
-                                                  setEditPoints(newPoints);
-                                                }}
-                                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-amber-500 focus:outline-none"
-                                              />
-                                              <button
-                                                onClick={() => setEditPoints(editPoints.filter((_, i) => i !== idx))}
-                                                className="text-red-400 hover:text-red-300 text-sm px-2"
-                                                title="削除"
-                                              >✕</button>
-                                            </div>
-                                          ))}
-                                          <button
-                                            onClick={() => setEditPoints([...editPoints, ""])}
-                                            className="text-xs text-cyan-400 hover:text-cyan-300 mt-1"
-                                          >＋ ポイント追加</button>
+                                    <div className="space-y-2">
+                                      {editTexts.map((item, idx) => (
+                                        <div key={idx}>
+                                          <label className="text-xs text-zinc-400 mb-0.5 block flex items-center gap-1">
+                                            {item.type}
+                                            {item.original !== item.current && (
+                                              <span className="text-cyan-400 text-[10px]">● 変更あり</span>
+                                            )}
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={item.current}
+                                            onChange={(e) => {
+                                              const updated = [...editTexts];
+                                              updated[idx] = { ...updated[idx], current: e.target.value };
+                                              setEditTexts(updated);
+                                            }}
+                                            className={`w-full bg-zinc-900 border rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none ${item.original !== item.current
+                                              ? 'border-cyan-500/50 focus:border-cyan-400'
+                                              : 'border-zinc-700 focus:border-amber-500'
+                                              }`}
+                                          />
                                         </div>
+                                      ))}
+                                      {editTexts.length === 0 && (
+                                        <p className="text-xs text-zinc-500">テキストが見つかりませんでした</p>
                                       )}
                                       <div className="flex gap-2 pt-2">
                                         <button
@@ -2668,75 +2665,6 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
-
-                    {/* Face Cam */}
-                    <div>
-                      <label className="text-sm text-zinc-400 block mb-2">顔カメラワイプ（PiP）</label>
-                      {!facecamUploaded ? (
-                        <label className="flex items-center justify-center gap-2 py-3 px-4 border-2 border-dashed border-zinc-700 rounded-lg cursor-pointer hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all text-zinc-400">
-                          <span>📹</span>
-                          <span>顔カメラ動画を選択</span>
-                          <input
-                            type="file"
-                            accept="video/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleUploadFacecam(file);
-                            }}
-                          />
-                        </label>
-                      ) : (
-                        <div>
-                          <div className="flex items-center gap-2 mb-3 text-sm bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
-                            <span>✅</span>
-                            <span className="text-green-400 flex-1">{facecamFile?.name}</span>
-                            <button onClick={handleRemoveFacecam} className="text-zinc-500 hover:text-red-400">✕</button>
-                          </div>
-
-                          {/* Position selector */}
-                          <div className="grid grid-cols-2 gap-2 mb-3">
-                            {[
-                              { pos: "top-left", label: "↖ 左上" },
-                              { pos: "top-right", label: "↗ 右上" },
-                              { pos: "bottom-left", label: "↙ 左下" },
-                              { pos: "bottom-right", label: "↘ 右下" },
-                            ].map(({ pos, label }) => (
-                              <button
-                                key={pos}
-                                onClick={() => setFacecamPosition(pos)}
-                                className={`py-2 rounded-lg border text-sm transition-all ${facecamPosition === pos
-                                  ? "border-indigo-500 bg-indigo-500/20 text-white"
-                                  : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
-                                  }`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-
-                          {/* Size selector */}
-                          <div className="flex gap-2">
-                            {[
-                              { size: 150, label: "小" },
-                              { size: 200, label: "中" },
-                              { size: 280, label: "大" },
-                            ].map(({ size, label }) => (
-                              <button
-                                key={size}
-                                onClick={() => setFacecamSize(size)}
-                                className={`flex-1 py-2 rounded-lg border text-sm transition-all ${facecamSize === size
-                                  ? "border-indigo-500 bg-indigo-500/20 text-white"
-                                  : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
-                                  }`}
-                              >
-                                {label} ({size}px)
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
 
                   <div className="flex gap-4 flex-wrap">
@@ -2904,6 +2832,36 @@ export default function Home() {
                       className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white resize-none"
                       rows={2}
                     />
+                  </div>
+
+                  {/* Copy Style Request Input */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      ✍️ コピー（文章表現）要望（任意）
+                    </label>
+                    <textarea
+                      value={copyStyleRequest}
+                      onChange={(e) => setCopyStyleRequest(e.target.value)}
+                      placeholder="例: 話し言葉の表現をできるだけそのまま使ってください"
+                      className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white resize-none"
+                      rows={2}
+                    />
+                    <div className="flex flex-wrap gap-1 mt-2 max-w-md mx-auto">
+                      {[
+                        { label: '🗣️ 話し言葉', text: '話し言葉の表現をできるだけそのまま使ってください' },
+                        { label: '💼 フォーマル', text: 'プレゼン資料に適したフォーマルな表現にしてください' },
+                        { label: '😊 親しみやすく', text: '親しみやすくポップな表現にしてください' },
+                        { label: '📐 簡潔に', text: 'できるだけ簡潔で短い表現にしてください' },
+                      ].map(({ label, text }) => (
+                        <button
+                          key={label}
+                          onClick={() => setCopyStyleRequest(text)}
+                          className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Text Density Selector */}
@@ -3084,13 +3042,27 @@ export default function Home() {
                 </div>
               </div>
 
-              <button
-                onClick={() => handleGenerateSlides(1)}
-                disabled={state.isProcessing}
-                className="btn-primary"
-              >
-                {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成（5枚ずつ）"}
-              </button>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => {
+                    isPreviewMode.current = false;
+                    handleGenerateSlides(1);
+                  }}
+                  disabled={state.isProcessing}
+                  className="btn-primary"
+                >
+                  {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成（5枚ずつ）"}
+                </button>
+                <button
+                  onClick={() => {
+                    handleGenerateSlides(1, 2);
+                  }}
+                  disabled={state.isProcessing}
+                  className="px-6 py-3 bg-zinc-800 border border-amber-500/50 text-amber-400 rounded-xl hover:bg-amber-500/10 font-medium transition-all disabled:opacity-40"
+                >
+                  {state.isProcessing ? "生成中..." : "🔍 まず2枚だけ確認"}
+                </button>
+              </div>
 
               {/* Batch progress indicator and continue button */}
               {!batchState.isComplete && batchState.nextStart && (
@@ -3192,7 +3164,10 @@ export default function Home() {
 
                   {/* Continue to next batch button */}
                   <button
-                    onClick={() => handleGenerateSlides(batchState.nextStart!)}
+                    onClick={() => {
+                      isPreviewMode.current = false;
+                      handleGenerateSlides(batchState.nextStart!);
+                    }}
                     disabled={state.isProcessing}
                     className="btn-primary w-full"
                   >

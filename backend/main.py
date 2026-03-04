@@ -1329,6 +1329,7 @@ class BatchGenerateRequest(BaseModel):
     start_slide: int = 1  # 1-indexed
     batch_size: int = 5   # Increased with upgraded Railway memory
     design_preference: Optional[str] = None  # User design requirements
+    copy_style_request: Optional[str] = None  # User copy/writing style (e.g., "話し言葉をそのまま使って")
     text_density: str = "standard"  # "simple" (title+headline) or "standard" (full)
     add_illustrations: bool = False  # Whether to add AI-generated illustrations
     illustration_percentage: int = 50  # Percentage of slides to add illustrations (10-100)
@@ -1399,6 +1400,7 @@ async def generate_slides_batch_endpoint(
                 font_style=x_font_style,
                 user_images=getattr(pipeline, 'user_images', None),
                 design_preference=request.design_preference,
+                copy_style_request=request.copy_style_request,
                 text_density=request.text_density,
                 progress_callback=update_progress,
                 start_slide=start,
@@ -1500,12 +1502,12 @@ async def get_queue_status(job_id: str):
 
 @app.get("/api/slides/{job_id}/text/{slide_number}")
 async def get_slide_text(job_id: str, slide_number: int):
-    """Extract current text content from a slide's HTML"""
+    """Extract ALL visible text content from a slide's HTML"""
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
     
     from services.ai_slide_generator import get_html_content
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup, NavigableString
     
     html = get_html_content(job_id, slide_number)
     if not html:
@@ -1514,44 +1516,123 @@ async def get_slide_text(job_id: str, slide_number: int):
     try:
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Extract title
-        title_el = soup.find('h1') or soup.select_one('.title') or soup.find('div', class_='title')
-        title = title_el.get_text(strip=True) if title_el else ""
+        # Remove script, style, and meta elements
+        for tag in soup.find_all(['script', 'style', 'meta', 'link']):
+            tag.decompose()
         
-        # Extract subtitle
-        subtitle_el = soup.find('h2') or soup.find('h3') or soup.select_one('.subtitle') or soup.find('div', class_='subtitle')
-        subtitle = subtitle_el.get_text(strip=True) if subtitle_el else ""
+        # Find all text-containing elements in body
+        body = soup.find('body') or soup
         
-        # Extract points
+        # Collect all leaf text elements (elements that directly contain text)
+        text_items = []
+        seen_texts = set()
+        
+        def extract_text_elements(element, depth=0):
+            """Recursively find all elements with direct text content"""
+            if isinstance(element, NavigableString):
+                return
+            
+            # Skip invisible/structural elements
+            style = element.get('style', '')
+            if 'display: none' in style or 'visibility: hidden' in style:
+                return
+            if element.name in ['script', 'style', 'meta', 'link', 'img', 'svg', 'path', 'br', 'hr']:
+                return
+            
+            # Get direct text of this element (not nested children)
+            direct_text = element.get_text(strip=True)
+            
+            # Skip empty or very short elements
+            if not direct_text or len(direct_text) <= 1:
+                return
+            
+            # Check if this is a "leaf" text element (no child elements with significant text)
+            child_texts = []
+            for child in element.children:
+                if hasattr(child, 'get_text'):
+                    ct = child.get_text(strip=True)
+                    if ct and len(ct) > 1:
+                        child_texts.append(ct)
+            
+            if not child_texts or (len(child_texts) == 1 and child_texts[0] == direct_text):
+                # This is a leaf element — add it
+                if direct_text not in seen_texts:
+                    seen_texts.add(direct_text)
+                    
+                    # Determine type based on tag/class
+                    el_type = "text"
+                    tag = element.name
+                    classes = element.get('class', [])
+                    class_str = ' '.join(classes) if classes else ''
+                    
+                    if tag == 'h1' or 'title' in class_str.lower() or 'main-title' in class_str.lower():
+                        el_type = "title"
+                    elif tag in ['h2', 'h3'] or 'subtitle' in class_str.lower() or 'sub-title' in class_str.lower():
+                        el_type = "subtitle"
+                    elif tag == 'li' or 'point' in class_str.lower():
+                        el_type = "point"
+                    elif 'key' in class_str.lower() and 'message' in class_str.lower():
+                        el_type = "key_message"
+                    elif 'highlight' in class_str.lower() or 'message' in class_str.lower() or 'quote' in class_str.lower():
+                        el_type = "key_message"
+                    elif 'card' in class_str.lower():
+                        el_type = "point"
+                    
+                    text_items.append({
+                        "text": direct_text,
+                        "type": el_type,
+                        "tag": tag,
+                        "selector": f"{tag}.{class_str}" if class_str else tag
+                    })
+            else:
+                # Has children — recurse
+                for child in element.children:
+                    extract_text_elements(child, depth + 1)
+        
+        extract_text_elements(body)
+        
+        # Organize by type
+        title = ""
+        subtitle = ""
+        key_message = ""
         points = []
-        # Try UL/OL first
-        ul_el = soup.find('ul') or soup.find('ol')
-        if ul_el:
-            for li in ul_el.find_all('li'):
-                points.append(li.get_text(strip=True))
-        else:
-            # Try .points or .point elements
-            point_els = soup.select('.point') or soup.select('.card')
-            for el in point_els:
-                text = el.get_text(strip=True)
-                # Skip very short texts (likely just icons)
-                if len(text) > 1:
-                    points.append(text)
+        other_texts = []
+        
+        for item in text_items:
+            if item["type"] == "title" and not title:
+                title = item["text"]
+            elif item["type"] == "subtitle" and not subtitle:
+                subtitle = item["text"]
+            elif item["type"] == "key_message" and not key_message:
+                key_message = item["text"]
+            elif item["type"] == "point":
+                points.append(item["text"])
+            else:
+                other_texts.append(item["text"])
+        
+        # If no points found, promote other_texts to points
+        if not points and other_texts:
+            points = other_texts
+            other_texts = []
         
         return {
             "slide_number": slide_number,
             "title": title,
             "subtitle": subtitle,
-            "points": points
+            "key_message": key_message,
+            "points": points,
+            "other_texts": other_texts
         }
     except Exception as e:
         raise HTTPException(500, f"Failed to extract text: {str(e)}")
 
 
+class TextChange(BaseModel):
+    original: str
+    edited: str
+
 class SlideTextUpdateRequest(BaseModel):
-    title: Optional[str] = None
-    subtitle: Optional[str] = None
-    points: Optional[List[str]] = None
+    text_changes: List[TextChange]
 
 
 @app.put("/api/slides/{job_id}/text/{slide_number}")
@@ -1594,17 +1675,23 @@ async def update_slide_text(
             "timestamp": datetime.now().isoformat()
         })
         
-        # Build update dict (only include provided fields)
-        new_copy = {}
-        if request.title is not None:
-            new_copy["title"] = request.title
-        if request.subtitle is not None:
-            new_copy["subtitle"] = request.subtitle
-        if request.points is not None:
-            new_copy["points"] = request.points
-        
         # Apply text changes via BeautifulSoup (preserves layout)
-        new_html = update_html_text_content(html, new_copy)
+        from bs4 import BeautifulSoup, NavigableString
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        for change in request.text_changes:
+            if change.original == change.edited:
+                continue  # No change
+            
+            # Walk all text nodes in the HTML and replace matching text
+            for text_node in soup.find_all(string=True):
+                if isinstance(text_node, NavigableString) and change.original in text_node.strip():
+                    # Replace the text while preserving surrounding whitespace
+                    new_text = str(text_node).replace(change.original, change.edited)
+                    text_node.replace_with(NavigableString(new_text))
+                    break  # Only replace first occurrence
+        
+        new_html = str(soup)
         
         # Fix body dimensions for portrait mode
         pipeline = get_or_create_pipeline(job_id)
