@@ -1852,7 +1852,7 @@ export default function Home() {
               {state.workflowMode && (
                 <>
                   <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold gradient-text">音声 / 動画ファイルをアップロード</h2>
+                    <h2 className="text-2xl font-bold gradient-text">音声ファイルをアップロード</h2>
                     <button
                       onClick={() => updateState({ workflowMode: null })}
                       className="text-sm text-zinc-500 hover:text-zinc-300"
@@ -1879,20 +1879,20 @@ export default function Home() {
                       const files = e.dataTransfer.files;
                       if (files?.[0]) {
                         const ext = files[0].name.split('.').pop()?.toLowerCase();
-                        if (['mp3', 'wav', 'm4a', 'mp4', 'mov', 'webm'].includes(ext || '')) {
+                        if (['mp3', 'wav', 'm4a'].includes(ext || '')) {
                           handleUploadAudio(files[0]);
                         } else {
-                          updateState({ error: '対応形式: MP3, WAV, M4A, MP4, MOV, WebM' });
+                          updateState({ error: '対応形式: MP3, WAV, M4A' });
                         }
                       }
                     }}
                   >
                     <span className="text-5xl mb-4">{isDragging ? '📎' : '🎙️'}</span>
-                    <p className="text-lg">{isDragging ? 'ここにドロップ！' : '音声 or 動画ファイルをドラッグ&ドロップ'}</p>
-                    <p className="text-sm text-zinc-500">MP3, WAV, M4A, MP4, MOV, WebM対応</p>
+                    <p className="text-lg">{isDragging ? 'ここにドロップ！' : '音声ファイルをドラッグ&ドロップ'}</p>
+                    <p className="text-sm text-zinc-500">MP3, WAV, M4A対応</p>
                     <input
                       type="file"
-                      accept=".mp3,.wav,.m4a,.mp4,.mov,.webm"
+                      accept=".mp3,.wav,.m4a"
                       className="hidden"
                       onChange={(e) => e.target.files?.[0] && handleUploadAudio(e.target.files[0])}
                       disabled={state.isProcessing}
