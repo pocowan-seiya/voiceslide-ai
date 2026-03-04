@@ -146,9 +146,11 @@ export default function Home() {
   const [slideImage, setSlideImage] = useState<{ file: File | null; preview: string | null }>({ file: null, preview: null });
   const [isRegenerating, setIsRegenerating] = useState(false);
 
-  // Direct text editing
+  // Direct slide HTML editing (iframe contenteditable)
   const [isTextEditing, setIsTextEditing] = useState(false);
-  const [editTexts, setEditTexts] = useState<{ original: string; current: string; type: string }[]>([]);
+  const [editSlideHtml, setEditSlideHtml] = useState("");
+  const [editSlideDimensions, setEditSlideDimensions] = useState({ width: 1920, height: 1080 });
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isSavingText, setIsSavingText] = useState(false);
   const [isLoadingText, setIsLoadingText] = useState(false);
 
@@ -753,64 +755,128 @@ export default function Home() {
     }
   };
 
-  // Direct text editing: Load slide text
+  // Direct slide editing: Load slide HTML for iframe editing
   const handleLoadSlideText = async (slideNum: number) => {
     if (!state.jobId) return;
     setIsLoadingText(true);
     try {
-      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/text/${slideNum}`, {
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/html/${slideNum}`, {
         headers: { ...getAPIHeaders() }
       });
       if (res.ok) {
         const data = await res.json();
-        // Build editTexts array from all text fields
-        const texts: { original: string; current: string; type: string }[] = [];
-        if (data.title) texts.push({ original: data.title, current: data.title, type: "タイトル" });
-        if (data.subtitle) texts.push({ original: data.subtitle, current: data.subtitle, type: "サブタイトル" });
-        if (data.key_message) texts.push({ original: data.key_message, current: data.key_message, type: "キーメッセージ" });
-        for (const p of (data.points || [])) {
-          texts.push({ original: p, current: p, type: "ポイント" });
-        }
-        for (const t of (data.other_texts || [])) {
-          texts.push({ original: t, current: t, type: "テキスト" });
-        }
-        setEditTexts(texts);
+        setEditSlideDimensions({ width: data.width, height: data.height });
+
+        // Inject contenteditable script into the HTML
+        const editableScript = `
+<style>
+  [contenteditable="true"] { outline: none; cursor: text; }
+  [contenteditable="true"]:hover { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); border-radius: 4px; }
+  [contenteditable="true"]:focus { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.8); border-radius: 4px; }
+  .slide-number, .footer, .watermark, .branding { pointer-events: none; opacity: 0.5; }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const SKIP = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME'];
+    const SKIP_CLASSES = ['slide-number','footer','page-number','watermark','branding','slide-count'];
+    
+    function shouldSkip(el) {
+      if (SKIP.includes(el.tagName)) return true;
+      var cls = (el.className || '').toString().toLowerCase();
+      for (var i = 0; i < SKIP_CLASSES.length; i++) {
+        if (cls.indexOf(SKIP_CLASSES[i]) >= 0) return true;
+      }
+      return false;
+    }
+    
+    function isLeafText(el) {
+      if (shouldSkip(el)) return false;
+      var text = (el.textContent || '').trim();
+      if (!text || text.length <= 1) return false;
+      var childEls = Array.from(el.children).filter(function(c) {
+        return !SKIP.includes(c.tagName) && (c.textContent || '').trim().length > 1;
+      });
+      return childEls.length === 0;
+    }
+    
+    function makeEditable(el) {
+      if (shouldSkip(el)) return;
+      if (isLeafText(el)) {
+        el.contentEditable = 'true';
+      } else {
+        Array.from(el.children).forEach(makeEditable);
+      }
+    }
+    
+    makeEditable(document.body);
+    
+    window.addEventListener('message', function(e) {
+      if (e.data === 'GET_HTML') {
+        // Remove our injected script before sending
+        var scripts = document.querySelectorAll('script');
+        scripts.forEach(function(s) { if (s.textContent.indexOf('GET_HTML') > -1) s.remove(); });
+        var styles = document.querySelectorAll('style');
+        styles.forEach(function(s) { if (s.textContent.indexOf('contenteditable') > -1) s.remove(); });
+        // Remove contenteditable attributes
+        document.querySelectorAll('[contenteditable]').forEach(function(el) {
+          el.removeAttribute('contenteditable');
+        });
+        window.parent.postMessage({ type: 'SLIDE_HTML', html: document.documentElement.outerHTML }, '*');
+      }
+    });
+  });
+</script>`;
+
+        // Inject before </body>
+        const htmlWithEditor = data.html.replace('</body>', editableScript + '</body>');
+        setEditSlideHtml(htmlWithEditor);
         setIsTextEditing(true);
       }
     } catch (err) {
-      console.error("Failed to load slide text:", err);
+      console.error("Failed to load slide HTML:", err);
     } finally {
       setIsLoadingText(false);
     }
   };
 
-  // Direct text editing: Save slide text
+  // Direct slide editing: Save modified HTML
   const handleSaveSlideText = async () => {
     if (!state.jobId || !selectedSlide) return;
     setIsSavingText(true);
     try {
-      // Only send changed items
-      const text_changes = editTexts
-        .filter(t => t.original !== t.current)
-        .map(t => ({ original: t.original, edited: t.current }));
-
-      if (text_changes.length === 0) {
-        setIsTextEditing(false);
+      // Request HTML from iframe via postMessage
+      const iframe = iframeRef.current;
+      if (!iframe || !iframe.contentWindow) {
         setIsSavingText(false);
         return;
       }
 
-      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/text/${selectedSlide}`, {
+      // Set up listener for response
+      const htmlPromise = new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Timeout")), 5000);
+        const handler = (e: MessageEvent) => {
+          if (e.data?.type === 'SLIDE_HTML') {
+            clearTimeout(timeout);
+            window.removeEventListener('message', handler);
+            resolve(e.data.html);
+          }
+        };
+        window.addEventListener('message', handler);
+      });
+
+      iframe.contentWindow.postMessage('GET_HTML', '*');
+      const modifiedHtml = await htmlPromise;
+
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/html/${selectedSlide}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           ...getAPIHeaders()
         },
-        body: JSON.stringify({ text_changes })
+        body: JSON.stringify({ html: modifiedHtml })
       });
       if (res.ok) {
         const data = await res.json();
-        // Update slide preview
         const newPreviews = [...(state.slidePreviews || [])];
         newPreviews[selectedSlide - 1] = `${API_URL}${data.preview_url}`;
         updateState({ slidePreviews: newPreviews });
@@ -818,7 +884,7 @@ export default function Home() {
         setIsTextEditing(false);
       }
     } catch (err) {
-      console.error("Failed to save slide text:", err);
+      console.error("Failed to save slide HTML:", err);
     } finally {
       setIsSavingText(false);
     }
@@ -2453,36 +2519,31 @@ export default function Home() {
                                     </button>
                                   </div>
 
-                                  {/* Direct Text Editing Mode */}
+                                  {/* Direct Slide Editor (iframe contenteditable) */}
                                   {isTextEditing ? (
-                                    <div className="space-y-2">
-                                      {editTexts.map((item, idx) => (
-                                        <div key={idx}>
-                                          <label className="text-xs text-zinc-400 mb-0.5 block flex items-center gap-1">
-                                            {item.type}
-                                            {item.original !== item.current && (
-                                              <span className="text-cyan-400 text-[10px]">● 変更あり</span>
-                                            )}
-                                          </label>
-                                          <input
-                                            type="text"
-                                            value={item.current}
-                                            onChange={(e) => {
-                                              const updated = [...editTexts];
-                                              updated[idx] = { ...updated[idx], current: e.target.value };
-                                              setEditTexts(updated);
-                                            }}
-                                            className={`w-full bg-zinc-900 border rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none ${item.original !== item.current
-                                              ? 'border-cyan-500/50 focus:border-cyan-400'
-                                              : 'border-zinc-700 focus:border-amber-500'
-                                              }`}
-                                          />
-                                        </div>
-                                      ))}
-                                      {editTexts.length === 0 && (
-                                        <p className="text-xs text-zinc-500">テキストが見つかりませんでした</p>
-                                      )}
-                                      <div className="flex gap-2 pt-2">
+                                    <div>
+                                      <p className="text-xs text-zinc-400 mb-2">
+                                        💡 スライド内のテキストをクリックして直接編集できます
+                                      </p>
+                                      <div
+                                        className="relative rounded-lg overflow-hidden border border-zinc-600 bg-black"
+                                        style={{
+                                          width: '100%',
+                                          paddingBottom: `${(editSlideDimensions.height / editSlideDimensions.width) * 100}%`,
+                                        }}
+                                      >
+                                        <iframe
+                                          ref={iframeRef}
+                                          srcDoc={editSlideHtml}
+                                          className="absolute inset-0 w-full h-full"
+                                          style={{
+                                            border: 'none',
+                                            transformOrigin: 'top left',
+                                          }}
+                                          sandbox="allow-scripts allow-same-origin"
+                                        />
+                                      </div>
+                                      <div className="flex gap-2 pt-3">
                                         <button
                                           onClick={handleSaveSlideText}
                                           disabled={isSavingText}
@@ -2493,7 +2554,7 @@ export default function Home() {
                                               <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                               保存中...
                                             </span>
-                                          ) : '💾 テキストを保存'}
+                                          ) : '💾 変更を保存'}
                                         </button>
                                       </div>
                                     </div>

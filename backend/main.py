@@ -1782,7 +1782,107 @@ async def update_slide_text(
         raise HTTPException(500, f"Failed to update text: {str(e)}")
 
 
-# ========== Slide Feedback & Editing ==========
+# ========== Direct Slide HTML Editor ==========
+
+@app.get("/api/slides/{job_id}/html/{slide_number}")
+async def get_slide_html(job_id: str, slide_number: int):
+    """Get raw HTML content of a slide for direct editing"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    from services.ai_slide_generator import get_html_content
+    
+    html = get_html_content(job_id, slide_number)
+    if not html:
+        raise HTTPException(404, f"Slide {slide_number} not found")
+    
+    # Get dimensions for the iframe
+    pipeline = get_or_create_pipeline(job_id)
+    video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
+    
+    return {
+        "html": html,
+        "width": video_w,
+        "height": video_h
+    }
+
+
+class SlideHtmlUpdateRequest(BaseModel):
+    html: str
+
+
+@app.put("/api/slides/{job_id}/html/{slide_number}")
+async def update_slide_html(
+    job_id: str,
+    slide_number: int,
+    request: SlideHtmlUpdateRequest,
+    x_gemini_key: Optional[str] = Header(None)
+):
+    """Update slide with directly edited HTML and re-render screenshot"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    from services.ai_slide_generator import (
+        get_html_content, update_html_content, fix_body_dimensions
+    )
+    from playwright.async_api import async_playwright
+    
+    old_html = get_html_content(job_id, slide_number)
+    if not old_html:
+        raise HTTPException(404, f"Slide {slide_number} not found")
+    
+    try:
+        # Save to history before editing
+        if job_id not in slide_history:
+            slide_history[job_id] = {}
+        if slide_number not in slide_history[job_id]:
+            slide_history[job_id][slide_number] = []
+        
+        slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        current_image_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
+        backup_image_path = os.path.join(slides_dir, f"slide_{slide_number:03d}_v{len(slide_history[job_id][slide_number])}.png")
+        if os.path.exists(current_image_path):
+            shutil.copy(current_image_path, backup_image_path)
+        
+        slide_history[job_id][slide_number].append({
+            "html": old_html,
+            "image_path": backup_image_path,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Fix body dimensions
+        pipeline = get_or_create_pipeline(job_id)
+        video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
+        new_html = fix_body_dimensions(request.html, video_w, video_h)
+        
+        # Save updated HTML
+        update_html_content(job_id, slide_number, new_html)
+        
+        # Re-render screenshot
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
+            page = await browser.new_page(viewport={"width": video_w, "height": video_h})
+            await page.set_content(new_html)
+            await page.wait_for_timeout(800)
+            
+            new_image_path = os.path.join(slides_dir, f"slide_{slide_number:03d}.png")
+            await page.screenshot(path=new_image_path, type="png")
+            await page.close()
+            await browser.close()
+        
+        import time
+        return {
+            "success": True,
+            "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}",
+            "can_undo": True,
+            "history_count": len(slide_history[job_id][slide_number])
+        }
+        
+    except Exception as e:
+        print(f"[HTML Edit] Error: {e}")
+        raise HTTPException(500, f"Failed to update HTML: {str(e)}")
+
+
 
 class SlideFeedbackRequest(BaseModel):
     slide_number: int
