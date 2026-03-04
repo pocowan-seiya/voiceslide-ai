@@ -724,8 +724,8 @@ export default function Home() {
             updateState({
               slideCount: statusData.batch_end,
               slidePreviews: statusData.slide_previews.map((p: string) => `${API_URL}${p}`),
-              step: statusData.is_complete ? 6 as Step : 5 as Step,
-              isProcessing: !statusData.is_complete,
+              step: (statusData.is_complete || isPreviewMode.current) ? 6 as Step : 5 as Step,
+              isProcessing: isPreviewMode.current ? false : !statusData.is_complete,
             });
             setSelectedSlide(null);
             setSlideFeedback("");

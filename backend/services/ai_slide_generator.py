@@ -1753,9 +1753,25 @@ async def generate_slide_html(
     analysis = strategy.get("content_analysis", {})
     colors = style.get("color_palette", {})
     
-    # NOTE: Using standard slide text styling (same as non-illustration mode)
-    # No custom text_style_instruction - let AI use the same styling as standard slides
-    text_style_instruction = ""
+    # Copy style instruction from user request (injected at per-slide level for strong influence)
+    copy_style_from_strategy = strategy.get('_copy_style_request', '')
+    copy_style_per_slide = ""
+    if copy_style_from_strategy:
+        copy_style_per_slide = f"""
+# ❗❗ コピーライティングの最優先ルール ❗❗
+
+ユーザーからのライティング要望: 「{copy_style_from_strategy}」
+
+この要望に従って、以下のテキストを**必ず書き換え**てください：
+- タイトル: 「{title}」 → 要望に沿った表現に書き換え
+- サブタイトル: 「{subtitle}」 → 要望に沿った表現に書き換え
+- ポイント: 全ての箇条書きを要望に沿った表現に書き換え
+- キーメッセージ: 要望に沿った表現に書き換え
+
+※ 元のテキストをそのまま使わず、必ず要望のスタイルに変換してください。
+※ 意味は保持しつつ、表現だけを変更してください。
+"""
+    text_style_instruction = copy_style_per_slide
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
     
@@ -2214,6 +2230,10 @@ async def generate_all_custom_slides(
             progress_callback(0, end_slide - start_slide + 2, "デザイン戦略を生成中...")
         
         strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference, copy_style_request)
+        
+        # Store copy_style_request in strategy for per-slide prompt injection
+        if copy_style_request:
+            strategy['_copy_style_request'] = copy_style_request
         
         # Apply user-selected font style to strategy
         if font_style and font_style in FONT_STYLES:
