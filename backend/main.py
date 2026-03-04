@@ -1527,6 +1527,58 @@ async def get_slide_text(job_id: str, slide_number: int):
         text_items = []
         seen_texts = set()
         
+        # Classes that indicate decorative/non-editable content
+        SKIP_CLASSES = {'slide-number', 'footer', 'page-number', 'slide-count', 'watermark', 'branding'}
+        # Classes that identify a semantic text element (should be captured as whole unit)
+        SEMANTIC_CLASSES = {
+            'title': 'title', 'main-title': 'title', 'heading': 'title',
+            'subtitle': 'subtitle', 'sub-title': 'subtitle', 'subheading': 'subtitle',
+            'key-message': 'key_message', 'key_message': 'key_message',
+            'highlight': 'key_message', 'message': 'key_message', 'quote': 'key_message',
+            'point': 'point', 'card': 'point', 'card-title': 'point', 'card-text': 'point',
+            'bullet': 'point', 'feature': 'point', 'item': 'point',
+        }
+        
+        import re
+        slide_number_pattern = re.compile(r'^\d{1,2}\s*/\s*\d{1,2}$')
+        
+        def get_element_type(element):
+            """Check if element has a semantic class and return its type."""
+            tag = element.name
+            classes = element.get('class', [])
+            class_str = ' '.join(classes).lower() if classes else ''
+            
+            # Check tag first
+            if tag == 'h1':
+                return 'title'
+            elif tag in ['h2', 'h3']:
+                return 'subtitle'
+            elif tag == 'li':
+                return 'point'
+            
+            # Check classes
+            for cls in classes:
+                cls_lower = cls.lower()
+                if cls_lower in SEMANTIC_CLASSES:
+                    return SEMANTIC_CLASSES[cls_lower]
+                # Partial match for compound classes like "main-title-text"
+                for key, val in SEMANTIC_CLASSES.items():
+                    if key in cls_lower:
+                        return val
+            
+            return None
+        
+        def should_skip(element):
+            """Check if element is decorative and should be skipped."""
+            classes = element.get('class', [])
+            for cls in classes:
+                if cls.lower() in SKIP_CLASSES:
+                    return True
+                for skip in SKIP_CLASSES:
+                    if skip in cls.lower():
+                        return True
+            return False
+        
         def extract_text_elements(element, depth=0):
             """Recursively find all elements with direct text content"""
             if isinstance(element, NavigableString):
@@ -1539,14 +1591,36 @@ async def get_slide_text(job_id: str, slide_number: int):
             if element.name in ['script', 'style', 'meta', 'link', 'img', 'svg', 'path', 'br', 'hr']:
                 return
             
-            # Get direct text of this element (not nested children)
-            direct_text = element.get_text(strip=True)
-            
-            # Skip empty or very short elements
-            if not direct_text or len(direct_text) <= 1:
+            # Skip decorative elements
+            if should_skip(element):
                 return
             
-            # Check if this is a "leaf" text element (no child elements with significant text)
+            # Get full text of this element
+            full_text = element.get_text(strip=True)
+            
+            # Skip empty or very short elements
+            if not full_text or len(full_text) <= 1:
+                return
+            
+            # Skip slide number patterns
+            if slide_number_pattern.match(full_text):
+                return
+            
+            # Check if this element has a semantic type
+            el_type = get_element_type(element)
+            
+            if el_type:
+                # This element has a semantic class — capture its FULL text as a single unit
+                if full_text not in seen_texts:
+                    seen_texts.add(full_text)
+                    text_items.append({
+                        "text": full_text,
+                        "type": el_type,
+                        "tag": element.name,
+                    })
+                return  # Don't recurse into semantic elements
+            
+            # No semantic class — check if this is a leaf element
             child_texts = []
             for child in element.children:
                 if hasattr(child, 'get_text'):
@@ -1554,35 +1628,14 @@ async def get_slide_text(job_id: str, slide_number: int):
                     if ct and len(ct) > 1:
                         child_texts.append(ct)
             
-            if not child_texts or (len(child_texts) == 1 and child_texts[0] == direct_text):
-                # This is a leaf element — add it
-                if direct_text not in seen_texts:
-                    seen_texts.add(direct_text)
-                    
-                    # Determine type based on tag/class
-                    el_type = "text"
-                    tag = element.name
-                    classes = element.get('class', [])
-                    class_str = ' '.join(classes) if classes else ''
-                    
-                    if tag == 'h1' or 'title' in class_str.lower() or 'main-title' in class_str.lower():
-                        el_type = "title"
-                    elif tag in ['h2', 'h3'] or 'subtitle' in class_str.lower() or 'sub-title' in class_str.lower():
-                        el_type = "subtitle"
-                    elif tag == 'li' or 'point' in class_str.lower():
-                        el_type = "point"
-                    elif 'key' in class_str.lower() and 'message' in class_str.lower():
-                        el_type = "key_message"
-                    elif 'highlight' in class_str.lower() or 'message' in class_str.lower() or 'quote' in class_str.lower():
-                        el_type = "key_message"
-                    elif 'card' in class_str.lower():
-                        el_type = "point"
-                    
+            if not child_texts or (len(child_texts) == 1 and child_texts[0] == full_text):
+                # Leaf element — add as generic text
+                if full_text not in seen_texts:
+                    seen_texts.add(full_text)
                     text_items.append({
-                        "text": direct_text,
-                        "type": el_type,
-                        "tag": tag,
-                        "selector": f"{tag}.{class_str}" if class_str else tag
+                        "text": full_text,
+                        "type": "text",
+                        "tag": element.name,
                     })
             else:
                 # Has children — recurse
@@ -1608,7 +1661,10 @@ async def get_slide_text(job_id: str, slide_number: int):
             elif item["type"] == "point":
                 points.append(item["text"])
             else:
-                other_texts.append(item["text"])
+                # Filter out remaining slide-number-like text and very short text
+                t = item["text"]
+                if not slide_number_pattern.match(t) and len(t) > 2:
+                    other_texts.append(t)
         
         # If no points found, promote other_texts to points
         if not points and other_texts:
