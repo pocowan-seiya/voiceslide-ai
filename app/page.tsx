@@ -150,7 +150,9 @@ export default function Home() {
   const [isTextEditing, setIsTextEditing] = useState(false);
   const [editSlideHtml, setEditSlideHtml] = useState("");
   const [editSlideDimensions, setEditSlideDimensions] = useState({ width: 1920, height: 1080 });
+  const [iframeScale, setIframeScale] = useState(1);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
   const [isSavingText, setIsSavingText] = useState(false);
   const [isLoadingText, setIsLoadingText] = useState(false);
 
@@ -315,6 +317,21 @@ export default function Home() {
     });
     updateState({ error: `[${timestamp}] ${message}`, isProcessing });
   };
+
+  // Calculate iframe scale when editing mode opens
+  useEffect(() => {
+    if (!isTextEditing || !editorContainerRef.current || editSlideDimensions.width <= 0) return;
+    const computeScale = () => {
+      if (editorContainerRef.current) {
+        const containerWidth = editorContainerRef.current.offsetWidth;
+        setIframeScale(containerWidth / editSlideDimensions.width);
+      }
+    };
+    computeScale();
+    const observer = new ResizeObserver(computeScale);
+    observer.observe(editorContainerRef.current);
+    return () => observer.disconnect();
+  }, [isTextEditing, editSlideDimensions]);
 
   // Step 1: Upload Audio (or Video → auto-extract audio + face cam)
   const handleUploadAudio = async (file: File) => {
@@ -2526,19 +2543,22 @@ export default function Home() {
                                         💡 スライド内のテキストをクリックして直接編集できます
                                       </p>
                                       <div
+                                        ref={editorContainerRef}
                                         className="relative rounded-lg overflow-hidden border border-zinc-600 bg-black"
                                         style={{
                                           width: '100%',
-                                          paddingBottom: `${(editSlideDimensions.height / editSlideDimensions.width) * 100}%`,
+                                          height: `${editSlideDimensions.height * iframeScale}px`,
                                         }}
                                       >
                                         <iframe
                                           ref={iframeRef}
                                           srcDoc={editSlideHtml}
-                                          className="absolute inset-0 w-full h-full"
                                           style={{
                                             border: 'none',
+                                            width: `${editSlideDimensions.width}px`,
+                                            height: `${editSlideDimensions.height}px`,
                                             transformOrigin: 'top left',
+                                            transform: `scale(${iframeScale})`,
                                           }}
                                           sandbox="allow-scripts allow-same-origin"
                                         />
