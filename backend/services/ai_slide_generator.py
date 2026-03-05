@@ -1551,9 +1551,11 @@ def determine_slide_type(slide: Dict, slide_number: int, total_slides: int) -> s
 async def generate_design_strategy(
     outline: Dict[str, Any],
     gemini_key: Optional[str] = None,
-    color_theme: Optional[str] = None,  # 'cosmic', 'warm', 'elegant', 'nature', 'ocean', 'mono', or None for AI
-    design_preference: Optional[str] = None,  # User design requirements (e.g., "white background")
-    copy_style_request: Optional[str] = None  # User copy/writing style request
+    color_theme: Optional[str] = None,
+    design_preference: Optional[str] = None,
+    copy_style_request: Optional[str] = None,
+    facecam_position: Optional[str] = None,
+    facecam_size: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Step 1 & 2: Analyze content and define design strategy
@@ -1618,10 +1620,27 @@ async def generate_design_strategy(
 スライドのタイトル、サブタイトル、ポイント、キーメッセージなど、すべてのテキスト要素にこのスタイルを反映してください。
 """
     
+    # Build PiP avoidance instruction
+    pip_avoidance_instruction = ""
+    if facecam_position:
+        pos_labels = {
+            "top-left": "左上",
+            "top-right": "右上",
+            "bottom-left": "左下",
+            "bottom-right": "右下"
+        }
+        pos_label = pos_labels.get(facecam_position, facecam_position)
+        pip_avoidance_instruction = f"""
+# 顔出しワイプ（PiP）回避エリア
+動画の{pos_label}に顔出しワイプ（円形オーバーレイ）が配置されます。
+**全スライドで{pos_label}のエリア（約スライド幅25%×高さ25%）には重要なテキストや要素を配置しないでください。**
+タイトル、ポイント、キーメッセージなどのテキストはワイプと被らない位置にレイアウトしてください。
+"""
+
     prompt = DESIGN_STRATEGY_PROMPT.format(
         presentation_title=outline.get("presentation_title", "プレゼンテーション"),
         slides_content=slides_content,
-        color_theme_instruction=color_theme_instruction + design_preference_instruction + copy_style_instruction
+        color_theme_instruction=color_theme_instruction + design_preference_instruction + copy_style_instruction + pip_avoidance_instruction
     )
     
     try:
@@ -2190,7 +2209,9 @@ async def generate_all_custom_slides(
     add_illustrations: bool = False,  # Whether to add AI-generated illustrations to slides
     illustration_percentage: int = 50,  # Percentage of slides to add illustrations (10-100)
     video_width: int = VIDEO_WIDTH,  # Dynamic video width (for portrait support)
-    video_height: int = VIDEO_HEIGHT  # Dynamic video height (for portrait support)
+    video_height: int = VIDEO_HEIGHT,  # Dynamic video height (for portrait support)
+    facecam_position: Optional[str] = None,  # PiP position for text avoidance
+    facecam_size: Optional[int] = None  # PiP size
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -2229,7 +2250,7 @@ async def generate_all_custom_slides(
         if progress_callback:
             progress_callback(0, end_slide - start_slide + 2, "デザイン戦略を生成中...")
         
-        strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference, copy_style_request)
+        strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference, copy_style_request, facecam_position, facecam_size)
         
         # Store copy_style_request in strategy for per-slide prompt injection
         if copy_style_request:

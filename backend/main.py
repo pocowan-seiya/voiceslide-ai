@@ -1333,6 +1333,8 @@ class BatchGenerateRequest(BaseModel):
     text_density: str = "standard"  # "simple" (title+headline) or "standard" (full)
     add_illustrations: bool = False  # Whether to add AI-generated illustrations
     illustration_percentage: int = 50  # Percentage of slides to add illustrations (10-100)
+    facecam_position: Optional[str] = None  # PiP overlay position: top-left, top-right, bottom-left, bottom-right
+    facecam_size: Optional[int] = None  # PiP overlay size in px
 
 
 @app.post("/api/generate-slides-batch/{job_id}")
@@ -1410,7 +1412,9 @@ async def generate_slides_batch_endpoint(
                 add_illustrations=request.add_illustrations,
                 illustration_percentage=request.illustration_percentage,
                 video_width=video_w,
-                video_height=video_h
+                video_height=video_h,
+                facecam_position=request.facecam_position,
+                facecam_size=request.facecam_size
             )
             
             # パイプラインに保存

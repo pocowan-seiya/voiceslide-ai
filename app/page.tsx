@@ -342,6 +342,13 @@ export default function Home() {
     return () => observer.disconnect();
   }, [isTextEditing, editSlideDimensions]);
 
+  // Bind webcam stream to video element (fixes black preview)
+  useEffect(() => {
+    if (webcamStream && webcamVideoRef.current) {
+      webcamVideoRef.current.srcObject = webcamStream;
+    }
+  }, [webcamStream]);
+
   // Step 1: Upload Audio (or Video → auto-extract audio + face cam)
   const handleUploadAudio = async (file: File) => {
     updateState({ isProcessing: true, error: null });
@@ -683,6 +690,8 @@ export default function Home() {
           text_density: textDensity,
           add_illustrations: addIllustrations,
           illustration_percentage: illustrationPercentage,
+          facecam_position: facecamUploaded ? facecamPosition : null,
+          facecam_size: facecamUploaded ? facecamSize : null,
         })
       });
 
@@ -2947,60 +2956,6 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
-
-                    {/* Face Cam PiP Settings — show when facecam uploaded */}
-                    {facecamUploaded && (
-                      <div className="mt-4 pt-4 border-t border-zinc-700">
-                        <label className="text-sm text-zinc-400 block mb-2">📹 顔出しワイプ設定</label>
-
-                        {/* Position */}
-                        <div className="mb-3">
-                          <span className="text-xs text-zinc-500 block mb-1">位置</span>
-                          <div className="grid grid-cols-4 gap-2">
-                            {[
-                              { value: "top-left", label: "↖ 左上" },
-                              { value: "top-right", label: "↗ 右上" },
-                              { value: "bottom-left", label: "↙ 左下" },
-                              { value: "bottom-right", label: "↘ 右下" },
-                            ].map(({ value, label }) => (
-                              <button
-                                key={value}
-                                onClick={() => setFacecamPosition(value)}
-                                className={`py-1.5 rounded-lg text-xs transition-all ${facecamPosition === value
-                                    ? "bg-rose-500/20 border border-rose-500/50 text-rose-400"
-                                    : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
-                                  }`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Size */}
-                        <div>
-                          <span className="text-xs text-zinc-500 block mb-1">サイズ</span>
-                          <div className="flex gap-2">
-                            {[
-                              { value: 150, label: "小" },
-                              { value: 200, label: "中" },
-                              { value: 280, label: "大" },
-                            ].map(({ value, label }) => (
-                              <button
-                                key={value}
-                                onClick={() => setFacecamSize(value)}
-                                className={`flex-1 py-1.5 rounded-lg text-xs transition-all ${facecamSize === value
-                                    ? "bg-rose-500/20 border border-rose-500/50 text-rose-400"
-                                    : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
-                                  }`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex gap-4 flex-wrap">
@@ -3216,6 +3171,111 @@ export default function Home() {
                       ))}
                     </div>
                   </div>
+
+                  {/* PiP (Face Cam) Settings — show when facecam uploaded */}
+                  {facecamUploaded && (
+                    <div className="mb-6 bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 max-w-md mx-auto">
+                      <label className="block text-sm font-medium text-zinc-400 mb-3">
+                        📹 顔出しワイプ設定
+                      </label>
+
+                      {/* Position */}
+                      <div className="mb-3">
+                        <span className="text-xs text-zinc-500 block mb-1">位置</span>
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { value: "top-left", label: "↖ 左上" },
+                            { value: "top-right", label: "↗ 右上" },
+                            { value: "bottom-left", label: "↙ 左下" },
+                            { value: "bottom-right", label: "↘ 右下" },
+                          ].map(({ value, label }) => (
+                            <button
+                              key={value}
+                              onClick={() => setFacecamPosition(value)}
+                              className={`py-1.5 rounded-lg text-xs transition-all ${facecamPosition === value
+                                ? "bg-rose-500/20 border border-rose-500/50 text-rose-400"
+                                : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                                }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Size */}
+                      <div className="mb-4">
+                        <span className="text-xs text-zinc-500 block mb-1">サイズ</span>
+                        <div className="flex gap-2">
+                          {[
+                            { value: 150, label: "小" },
+                            { value: 200, label: "中" },
+                            { value: 280, label: "大" },
+                          ].map(({ value, label }) => (
+                            <button
+                              key={value}
+                              onClick={() => setFacecamSize(value)}
+                              className={`flex-1 py-1.5 rounded-lg text-xs transition-all ${facecamSize === value
+                                ? "bg-rose-500/20 border border-rose-500/50 text-rose-400"
+                                : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                                }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Visual Simulator */}
+                      <div className="relative bg-zinc-800 rounded-lg overflow-hidden"
+                        style={{
+                          aspectRatio: aspectRatio === "landscape" ? "16/9" : "9/16",
+                          maxHeight: "200px",
+                        }}
+                      >
+                        {/* Mock slide content */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-3">
+                          <div className="w-2/3 h-2 bg-zinc-600 rounded mb-2" />
+                          <div className="w-1/2 h-1.5 bg-zinc-700 rounded mb-4" />
+                          <div className="space-y-1.5 w-3/4">
+                            <div className="w-full h-1 bg-zinc-700 rounded" />
+                            <div className="w-full h-1 bg-zinc-700 rounded" />
+                            <div className="w-2/3 h-1 bg-zinc-700 rounded" />
+                          </div>
+                        </div>
+
+                        {/* PiP Circle */}
+                        {(() => {
+                          const circleSize = facecamSize === 150 ? 20 : facecamSize === 200 ? 28 : 36;
+                          const margin = 6;
+                          const posStyle: React.CSSProperties = {
+                            position: "absolute",
+                            width: `${circleSize}%`,
+                            aspectRatio: "1",
+                            borderRadius: "50%",
+                            background: "linear-gradient(135deg, rgba(236,72,153,0.4), rgba(248,113,113,0.4))",
+                            border: "2px solid rgba(244,63,94,0.7)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          };
+                          if (facecamPosition.includes("top")) posStyle.top = `${margin}%`;
+                          else posStyle.bottom = `${margin}%`;
+                          if (facecamPosition.includes("left")) posStyle.left = `${margin}%`;
+                          else posStyle.right = `${margin}%`;
+                          return (
+                            <div style={posStyle}>
+                              <span style={{ fontSize: '10px' }}>👤</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <p className="text-xs text-zinc-500 mt-2 text-center">
+                        💡 AIがワイプ位置を避けてテキストを自動配置します
+                      </p>
+                    </div>
+                  )}
 
                   {/* Text Density Selector */}
                   <div className="mb-6">
