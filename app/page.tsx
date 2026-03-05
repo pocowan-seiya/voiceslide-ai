@@ -3242,8 +3242,10 @@ export default function Home() {
 
                         {/* PiP Circle */}
                         {(() => {
-                          const circleSize = facecamSize <= 350 ? 18 : facecamSize <= 450 ? 24 : facecamSize <= 600 ? 32 : 40;
-                          const margin = 6;
+                          // Calculate circle size as actual ratio of facecam to video width
+                          const videoWidth = aspectRatio === "portrait" ? 1080 : 1920;
+                          const circleSize = Math.round(facecamSize / videoWidth * 100);
+                          const margin = 3;
                           const posStyle: React.CSSProperties = {
                             position: "absolute",
                             width: `${circleSize}%`,
