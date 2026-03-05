@@ -246,7 +246,7 @@ export default function Home() {
   const [facecamFile, setFacecamFile] = useState<File | null>(null);
   const [facecamUploaded, setFacecamUploaded] = useState(false);
   const [facecamPosition, setFacecamPosition] = useState<string>("bottom-right");
-  const [facecamSize, setFacecamSize] = useState<number>(200);
+  const [facecamSize, setFacecamSize] = useState<number>(350);
 
   // Webcam recording
   const [uploadMode, setUploadMode] = useState<"file" | "camera">("file");
@@ -3208,9 +3208,9 @@ export default function Home() {
                         <span className="text-xs text-zinc-500 block mb-1">サイズ</span>
                         <div className="flex gap-2">
                           {[
-                            { value: 150, label: "小" },
-                            { value: 200, label: "中" },
-                            { value: 280, label: "大" },
+                            { value: 250, label: "小" },
+                            { value: 350, label: "中" },
+                            { value: 450, label: "大" },
                           ].map(({ value, label }) => (
                             <button
                               key={value}
@@ -3246,7 +3246,7 @@ export default function Home() {
 
                         {/* PiP Circle */}
                         {(() => {
-                          const circleSize = facecamSize === 150 ? 20 : facecamSize === 200 ? 28 : 36;
+                          const circleSize = facecamSize === 250 ? 13 : facecamSize === 350 ? 18 : 24;
                           const margin = 6;
                           const posStyle: React.CSSProperties = {
                             position: "absolute",

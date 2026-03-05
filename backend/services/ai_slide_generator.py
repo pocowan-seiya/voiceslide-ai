@@ -1631,10 +1631,18 @@ async def generate_design_strategy(
         }
         pos_label = pos_labels.get(facecam_position, facecam_position)
         pip_avoidance_instruction = f"""
-# 顔出しワイプ（PiP）回避エリア
-動画の{pos_label}に顔出しワイプ（円形オーバーレイ）が配置されます。
-**全スライドで{pos_label}のエリア（約スライド幅25%×高さ25%）には重要なテキストや要素を配置しないでください。**
-タイトル、ポイント、キーメッセージなどのテキストはワイプと被らない位置にレイアウトしてください。
+# 顔出しワイプ（PiP）回避エリア — 重要
+動画の{pos_label}に顔出しワイプ（円形オーバーレイ、約{facecam_size or 350}px）が配置されます。
+
+## 必須ルール
+1. **全スライドで{pos_label}のエリア（スライド幅の約{round((facecam_size or 350) / 1920 * 100)}%×高さの約{round((facecam_size or 350) / 1080 * 100)}%）にはテキストや重要な要素を配置しないでください。**
+2. **テキストが画面外にはみ出す（見切れる）ことは絶対に避けてください。**
+3. ワイプを避けるためにテキストが長くなりすぎる場合は、以下の対策を取ってください：
+   - フォントサイズを小さくする（特にタイトルは max-width を設定して折り返す）
+   - テキストを短く簡潔にする
+   - 適切に改行する（word-break や改行タグを使用）
+   - padding や margin で余白を確保する
+4. **全てのテキストがスライド内に完全に収まるようにしてください。はみ出しは絶対NGです。**
 """
 
     prompt = DESIGN_STRATEGY_PROMPT.format(
