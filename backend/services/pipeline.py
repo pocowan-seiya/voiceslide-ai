@@ -60,6 +60,11 @@ class HybridPipeline:
         self.facecam_video_path = None  # Path to uploaded face cam video
         self.facecam_position = "bottom-right"  # top-left, top-right, bottom-left, bottom-right
         self.facecam_size = 200  # Diameter in pixels (150=small, 200=medium, 280=large)
+        
+        # Audio cut regions (for facecam sync)
+        self.audio_keep_regions = None  # From cleanup_audio
+        self.audio_trim_start = 0.0  # From trim_silence_from_audio
+        self.audio_trim_end = 0.0  # From trim_silence_from_audio
     
     def _sync_segments_with_transcript(self, edited_transcript: str) -> List[Dict[str, Any]]:
         """
@@ -282,7 +287,10 @@ class HybridPipeline:
             video_height=vid_height,
             facecam_video_path=self.facecam_video_path,
             facecam_position=self.facecam_position,
-            facecam_size=self.facecam_size
+            facecam_size=self.facecam_size,
+            audio_keep_regions=self.audio_keep_regions,
+            audio_trim_start=self.audio_trim_start,
+            audio_trim_end=self.audio_trim_end
         )
         
         return {

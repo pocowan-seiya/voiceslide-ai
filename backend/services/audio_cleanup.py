@@ -103,6 +103,8 @@ async def cleanup_audio(
         "removed_silences": len(silences),
         "removed_fillers": len(filler_segments),
         "total_removed_seconds": sum((r[1] - r[0]) for r in cut_regions),
+        "cut_regions": cut_regions,  # Save for facecam video sync
+        "keep_regions": keep_regions,  # Save for facecam video sync
         "new_segments": new_segments
     }
 

@@ -63,6 +63,83 @@ def _build_facecam_filter(cam_size: int, position: str, video_width: int, video_
     return filter_str
 
 
+def trim_facecam_video(
+    facecam_path: str,
+    keep_regions: List[tuple],
+    output_path: str,
+    trim_start: float = 0.0,
+    trim_end: float = 0.0
+) -> str:
+    """
+    Apply same cuts to facecam video as were applied to audio.
+    Uses keep_regions (same format as audio_cleanup) to extract matching segments.
+    Also handles simple start/end trimming from trim_silence_from_audio.
+    """
+    import tempfile
+    
+    if not keep_regions and trim_start <= 0 and trim_end <= 0:
+        return facecam_path
+    
+    # Simple start/end trim only (from trim_silence_from_audio)
+    if not keep_regions and (trim_start > 0 or trim_end > 0):
+        duration = trim_end - trim_start if trim_end > 0 else None
+        cmd = ["ffmpeg", "-y", "-i", facecam_path, "-ss", str(trim_start)]
+        if duration:
+            cmd.extend(["-t", str(duration)])
+        cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23", "-an", output_path])
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"[FacecamTrim] Simple trim: start={trim_start:.1f}s, end={trim_end:.1f}s")
+            return output_path
+        print(f"[FacecamTrim] Simple trim failed, using original")
+        return facecam_path
+    
+    # Full region-based cutting (from cleanup_audio)
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            parts = []
+            for i, (start, end) in enumerate(keep_regions):
+                part_path = os.path.join(temp_dir, f"part_{i:03d}.mp4")
+                cmd = [
+                    "ffmpeg", "-y", "-i", facecam_path,
+                    "-ss", str(start), "-to", str(end),
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                    "-an",  # No audio needed for facecam overlay
+                    part_path
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if result.returncode == 0 and os.path.exists(part_path):
+                    parts.append(part_path)
+            
+            if not parts:
+                print(f"[FacecamTrim] No parts extracted, using original")
+                return facecam_path
+            
+            # Concat all parts
+            list_file = os.path.join(temp_dir, "concat.txt")
+            with open(list_file, "w") as f:
+                for part in parts:
+                    f.write(f"file '{part}'\n")
+            
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", list_file, "-c", "copy", output_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            
+            if result.returncode != 0:
+                print(f"[FacecamTrim] Concat failed: {result.stderr[:200]}")
+                return facecam_path
+        
+        total_kept = sum(end - start for start, end in keep_regions)
+        print(f"[FacecamTrim] Trimmed: {len(keep_regions)} regions, {total_kept:.1f}s kept")
+        return output_path
+    
+    except Exception as e:
+        print(f"[FacecamTrim] Error: {e}, using original")
+        return facecam_path
+
+
 async def compose_video(
     audio_path: str,
     slide_images: List[str],
@@ -73,7 +150,10 @@ async def compose_video(
     video_height: int = VIDEO_HEIGHT,
     facecam_video_path: Optional[str] = None,
     facecam_position: str = "bottom-right",
-    facecam_size: int = 200
+    facecam_size: int = 200,
+    audio_keep_regions: Optional[List[tuple]] = None,
+    audio_trim_start: float = 0.0,
+    audio_trim_end: float = 0.0
 ) -> str:
     """
     全スライドを使用して動画を生成
@@ -212,6 +292,18 @@ async def compose_video(
     # Step 1.5: Face cam overlay (if provided)
     video_for_audio = temp_video
     if facecam_video_path and os.path.exists(facecam_video_path):
+        # Trim facecam to match audio cuts (sync lip movement)
+        actual_facecam_path = facecam_video_path
+        if audio_keep_regions or audio_trim_start > 0 or audio_trim_end > 0:
+            trimmed_facecam_path = output_path.replace(".mp4", "_facecam_trimmed.mp4")
+            actual_facecam_path = trim_facecam_video(
+                facecam_path=facecam_video_path,
+                keep_regions=audio_keep_regions or [],
+                output_path=trimmed_facecam_path,
+                trim_start=audio_trim_start,
+                trim_end=audio_trim_end
+            )
+        
         print(f"[FFmpeg] Applying face cam overlay: {facecam_position}, {facecam_size}px")
         temp_with_facecam = output_path.replace(".mp4", "_temp_facecam.mp4")
         
@@ -225,7 +317,7 @@ async def compose_video(
         cmd_facecam = [
             "ffmpeg", "-y",
             "-i", temp_video,            # Input 0: slide video
-            "-i", facecam_video_path,    # Input 1: face cam video
+            "-i", actual_facecam_path,    # Input 1: face cam video (trimmed if cuts applied)
             "-filter_complex", facecam_filter,
             "-t", str(audio_duration),
             "-c:v", "libx264",
@@ -265,7 +357,7 @@ async def compose_video(
         raise Exception(f"音声合成エラー: {result.stderr[:200]}")
     
     # 一時ファイルをクリーンアップ
-    for tmp_file in [temp_video, output_path.replace(".mp4", "_temp_facecam.mp4"), concat_file]:
+    for tmp_file in [temp_video, output_path.replace(".mp4", "_temp_facecam.mp4"), output_path.replace(".mp4", "_facecam_trimmed.mp4"), concat_file]:
         if os.path.exists(tmp_file):
             os.remove(tmp_file)
     

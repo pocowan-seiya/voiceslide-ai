@@ -768,6 +768,10 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                             jobs[job_id]["audio_path"] = cleanup_result["cleaned_audio_path"]
                             jobs[job_id]["original_audio_path"] = audio_path
                             pipeline.audio_path = cleanup_result["cleaned_audio_path"]
+                            # Save keep_regions for facecam video sync
+                            if cleanup_result.get("keep_regions"):
+                                pipeline.audio_keep_regions = cleanup_result["keep_regions"]
+                                print(f"[Cleanup] Saved {len(cleanup_result['keep_regions'])} keep_regions for facecam sync")
                             print(f"[Cleanup] Duration: {cleanup_result.get('original_duration', 0):.1f}s → {cleanup_result.get('new_duration', 0):.1f}s")
                             if cleanup_result.get("new_segments"):
                                 result["segments"] = cleanup_result["new_segments"]
