@@ -1740,7 +1740,8 @@ async def generate_slide_html(
     is_illustration_mode: bool = False,
     video_width: int = VIDEO_WIDTH,
     video_height: int = VIDEO_HEIGHT,
-    facecam_position: Optional[str] = None
+    facecam_position: Optional[str] = None,
+    facecam_size: Optional[int] = None
 ) -> str:
     """
     Step 3: Generate individual slide HTML based on strategy.
@@ -2586,7 +2587,8 @@ Concept to illustrate: """
                     is_illustration_mode=True,
                     video_width=vw,
                     video_height=vh,
-                    facecam_position=facecam_position
+                    facecam_position=facecam_position,
+                    facecam_size=facecam_size
                 )
                 
                 # Inject AI illustration into the generated HTML if image exists
@@ -2630,7 +2632,8 @@ Concept to illustrate: """
                     text_density=text_density,
                     video_width=vw,
                     video_height=vh,
-                    facecam_position=facecam_position
+                    facecam_position=facecam_position,
+                    facecam_size=facecam_size
                 )
                 
                 # Step 3b-2: Inject AI illustration if not present in HTML (fallback)
