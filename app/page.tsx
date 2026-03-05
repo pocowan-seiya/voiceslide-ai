@@ -3208,9 +3208,9 @@ export default function Home() {
                         <span className="text-xs text-zinc-500 block mb-1">サイズ</span>
                         <div className="flex gap-2">
                           {[
-                            { value: 250, label: "小" },
-                            { value: 350, label: "中" },
-                            { value: 450, label: "大" },
+                            { value: 350, label: "小" },
+                            { value: 450, label: "中" },
+                            { value: 600, label: "大" },
                           ].map(({ value, label }) => (
                             <button
                               key={value}
@@ -3246,7 +3246,7 @@ export default function Home() {
 
                         {/* PiP Circle */}
                         {(() => {
-                          const circleSize = facecamSize === 250 ? 13 : facecamSize === 350 ? 18 : 24;
+                          const circleSize = facecamSize === 350 ? 18 : facecamSize === 450 ? 24 : 32;
                           const margin = 6;
                           const posStyle: React.CSSProperties = {
                             position: "absolute",
