@@ -3199,11 +3199,15 @@ export default function Home() {
                       <div className="mb-4">
                         <span className="text-xs text-zinc-500 block mb-1">サイズ</span>
                         <div className="flex gap-2">
-                          {[
+                          {(aspectRatio === "portrait" ? [
+                            { value: 450, label: "小" },
+                            { value: 600, label: "中" },
+                            { value: 800, label: "大" },
+                          ] : [
                             { value: 350, label: "小" },
                             { value: 450, label: "中" },
                             { value: 600, label: "大" },
-                          ].map(({ value, label }) => (
+                          ]).map(({ value, label }) => (
                             <button
                               key={value}
                               onClick={() => setFacecamSize(value)}
@@ -3238,7 +3242,7 @@ export default function Home() {
 
                         {/* PiP Circle */}
                         {(() => {
-                          const circleSize = facecamSize === 350 ? 18 : facecamSize === 450 ? 24 : 32;
+                          const circleSize = facecamSize <= 350 ? 18 : facecamSize <= 450 ? 24 : facecamSize <= 600 ? 32 : 40;
                           const margin = 6;
                           const posStyle: React.CSSProperties = {
                             position: "absolute",
