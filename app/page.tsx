@@ -2913,6 +2913,23 @@ export default function Home() {
                       className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white resize-none"
                       rows={2}
                     />
+                    <div className="flex flex-wrap gap-1 mt-2 max-w-md mx-auto">
+                      {[
+                        { label: '🤍 背景が白', text: '背景は白で、クリーンなデザインにしてください' },
+                        { label: '✨ 上品に', text: '上品で洗練されたデザインにしてください' },
+                        { label: '🔥 かっこよく', text: 'クールでかっこいいデザインにしてください' },
+                        { label: '🎀 可愛く', text: '可愛らしいポップなデザインにしてください' },
+                        { label: '💙 青ベースで', text: '青をベースカラーにしたデザインにしてください' },
+                      ].map(({ label, text }) => (
+                        <button
+                          key={label}
+                          onClick={() => setDesignPreference(text)}
+                          className="text-[10px] bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 px-2 py-1 rounded-md transition-colors"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Copy Style Request Input */}
