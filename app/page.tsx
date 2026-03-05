@@ -949,6 +949,7 @@ export default function Home() {
           feedback_type: slideImage.file ? "add_image" : type,
           image_base64: imageBase64,
           image_filename: slideImage.file?.name || null,
+          facecam_position: facecamUploaded ? facecamPosition : null,
         })
       });
       const data = await res.json();

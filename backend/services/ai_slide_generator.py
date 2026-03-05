@@ -3226,7 +3226,8 @@ async def regenerate_slide_with_feedback(
     image_base64: Optional[str] = None,
     image_filename: Optional[str] = None,
     video_width: int = VIDEO_WIDTH,
-    video_height: int = VIDEO_HEIGHT
+    video_height: int = VIDEO_HEIGHT,
+    facecam_position: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Regenerate a single slide based on user feedback (supports image uploads)
@@ -3443,6 +3444,21 @@ async def regenerate_slide_with_feedback(
         print(f"[Feedback] HTML size: {original_size:,} → {reduced_size:,} chars (reduced by {original_size - reduced_size:,})")
 
         
+    # Build PiP avoidance instruction for feedback prompts
+    pip_feedback_instruction = ""
+    if facecam_position:
+        pos_labels = {"top-left": "左上", "top-right": "右上", "bottom-left": "左下", "bottom-right": "右下"}
+        pos_label = pos_labels.get(facecam_position, facecam_position)
+        pip_feedback_instruction = f"""
+
+# ⚠️ 顔出しワイプ回避（必須）
+{pos_label}に円形ワイプが配置されます。以下を必ず守ってください：
+1. {pos_label}の約25%×25%エリアにテキストや装飾要素を配置しない
+2. テキストが画面外にはみ出すのは絶対禁止。overflow: hiddenを使うこと
+3. フォントサイズを小さくするか改行して全テキストを収める
+4. bodyに十分なpaddingを設定して安全余白を確保
+"""
+
     # 3. Layout Only Mode
     if feedback_type == "layout" or feedback_type == "fix_layout":
         print(f"[Feedback] Mode: Layout Only - Changing layout for slide {slide_number}")
@@ -3476,6 +3492,7 @@ async def regenerate_slide_with_feedback(
 
 # 出力
 修正後の完全なHTMLのみを出力してください。
+{pip_feedback_instruction}
 """
 
     # 4. General Mode (Layout & Copy)
@@ -3518,7 +3535,7 @@ async def regenerate_slide_with_feedback(
             primary=colors.get("primary", "#F59E0B"),
             secondary=colors.get("secondary", "#8B5CF6"),
             accent=colors.get("accent", "#06B6D4"),
-            feedback=feedback + image_instruction + copy_change_instruction,
+            feedback=feedback + image_instruction + copy_change_instruction + pip_feedback_instruction,
             feedback_type="レイアウトとコピーの修正（画像は保持）",
             width=video_width,
             height=video_height

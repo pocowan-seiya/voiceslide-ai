@@ -1894,6 +1894,7 @@ class SlideFeedbackRequest(BaseModel):
     feedback_type: str = "general"  # copy, layout, visual, general, add_image
     image_base64: Optional[str] = None  # Base64 encoded image data
     image_filename: Optional[str] = None  # Original filename
+    facecam_position: Optional[str] = None  # PiP position for text avoidance
 
 
 @app.post("/api/slides/{job_id}/feedback")
@@ -1948,7 +1949,8 @@ async def slide_feedback_endpoint(
             image_base64=request.image_base64,
             image_filename=request.image_filename,
             video_width=video_w,
-            video_height=video_h
+            video_height=video_h,
+            facecam_position=request.facecam_position
         )
         
         if not result["success"]:
