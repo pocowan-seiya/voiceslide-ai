@@ -2013,13 +2013,24 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     if facecam_position:
         pos_labels = {"top-left": "左上", "top-right": "右上", "bottom-left": "左下", "bottom-right": "右下"}
         pos_label = pos_labels.get(facecam_position, facecam_position)
+        # Calculate actual content width for AI
+        pip_sz = facecam_size or 350
+        reserved_px = round(pip_sz * 0.7)
+        content_w = video_width - reserved_px
+        if "right" in facecam_position:
+            content_side = "左側"
+        else:
+            content_side = "右側"
         pip_per_slide = f"""
 # ⚠️ 顔出しワイプ回避（必須）
-{pos_label}に円形ワイプが配置されます。以下を必ず守ってください：
-1. {pos_label}の約25%×25%エリアにテキストや装飾要素を配置しない
-2. テキストが画面外にはみ出すのは絶対禁止。overflow: hidden を使うこと
-3. フォントサイズを小さくするか改行して全テキストを収める
-4. bodyに十分なpaddingを設定して安全余白を確保
+{pos_label}に円形ワイプ（直径{pip_sz}px）が配置されます。
+**コンテンツ配置可能エリア: 幅{content_w}px（{content_side}に寄せる）**
+
+以下を必ず守ってください：
+1. すべてのテキスト・カード・装飾は幅{content_w}px以内に収める
+2. {pos_label}の約{reserved_px}pxエリアには何も配置しない
+3. テキストが見切れないよう、フォントサイズを調整するか改行して収める
+4. position: absoluteを使う場合も{content_side}に配置すること
 """
 
     prompt = SLIDE_DESIGN_PROMPT.format(
@@ -2123,13 +2134,13 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     else:
         align_side = "right"  # Content goes to right side
     
-    # Wrapper div style
+    # Wrapper div style - no overflow:hidden so text reflows naturally
     wrapper_style = (
         f"position: relative; "
         f"width: {content_width_pct}%; "
         f"min-height: 100vh; "
         f"float: {align_side}; "
-        f"overflow: hidden;"
+        f"box-sizing: border-box;"
     )
     
     wrapper_open = f'<div class="pip-content-zone" style="{wrapper_style}">'
