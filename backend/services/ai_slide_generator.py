@@ -2112,8 +2112,9 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     if not facecam_position or not facecam_size:
         return html
     
-    # Calculate content width percentage (with 2% extra margin)
-    reserved_pct = round(facecam_size / video_width * 100 + 2)
+    # Calculate content width percentage
+    # PiP is circular, so actual overlap is ~70% of full diameter strip
+    reserved_pct = round(facecam_size / video_width * 100 * 0.7)
     content_width_pct = 100 - reserved_pct
     
     # Determine alignment based on PiP position
