@@ -247,7 +247,16 @@ export default function Home() {
   const [facecamUploaded, setFacecamUploaded] = useState(false);
   const [facecamPosition, setFacecamPosition] = useState<string>("bottom-right");
   const [facecamSize, setFacecamSize] = useState<number>(200);
-  // Check for API keys on mount
+
+  // Webcam recording
+  const [uploadMode, setUploadMode] = useState<"file" | "camera">("file");
+  const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const webcamVideoRef = useRef<HTMLVideoElement>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+
   useEffect(() => {
     setHasKeys(hasAPIKeys());
   }, [showSettings]);
@@ -1129,6 +1138,79 @@ export default function Home() {
     }
   };
 
+  // Webcam: Start camera preview
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+        audio: true
+      });
+      setWebcamStream(stream);
+      if (webcamVideoRef.current) {
+        webcamVideoRef.current.srcObject = stream;
+      }
+    } catch (err: any) {
+      console.error('[Webcam] Camera access error:', err);
+      updateState({ error: 'カメラのアクセスが拒否されました。ブラウザの設定でカメラを許可してください。' });
+    }
+  };
+
+  // Webcam: Stop camera
+  const stopCamera = () => {
+    if (webcamStream) {
+      webcamStream.getTracks().forEach(t => t.stop());
+      setWebcamStream(null);
+    }
+    if (webcamVideoRef.current) {
+      webcamVideoRef.current.srcObject = null;
+    }
+  };
+
+  // Webcam: Start recording
+  const startRecording = () => {
+    if (!webcamStream) return;
+    recordedChunksRef.current = [];
+
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+      ? 'video/webm;codecs=vp8,opus'
+      : 'video/webm';
+
+    const recorder = new MediaRecorder(webcamStream, {
+      mimeType,
+      videoBitsPerSecond: 1_000_000, // 1Mbps
+    });
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+      setRecordedBlob(blob);
+      console.log(`[Webcam] Recorded: ${(blob.size / 1024 / 1024).toFixed(1)}MB`);
+    };
+
+    recorder.start(1000); // collect data every 1s
+    mediaRecorderRef.current = recorder;
+    setIsRecording(true);
+  };
+
+  // Webcam: Stop recording
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  // Webcam: Upload recorded video
+  const uploadRecordedVideo = async () => {
+    if (!recordedBlob) return;
+    stopCamera();
+    const file = new File([recordedBlob], 'webcam_recording.webm', { type: 'video/webm' });
+    await handleUploadAudio(file); // Backend auto-extracts audio + sets facecam
+  };
+
   // Sync video settings (aspect ratio, facecam position/size) to backend
   const syncVideoSettings = async () => {
     if (!state.jobId) return;
@@ -1852,7 +1934,7 @@ export default function Home() {
               {state.workflowMode && (
                 <>
                   <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold gradient-text">音声ファイルをアップロード</h2>
+                    <h2 className="text-2xl font-bold gradient-text">音声・映像を入力</h2>
                     <button
                       onClick={() => updateState({ workflowMode: null })}
                       className="text-sm text-zinc-500 hover:text-zinc-300"
@@ -1868,36 +1950,155 @@ export default function Home() {
                         : "フルAIモード：スライドもAIが自動生成"}
                     </span>
                   </div>
-                  <label
-                    className={`upload-zone flex flex-col items-center justify-center w-full h-48 rounded-xl cursor-pointer transition-all ${isDragging ? 'border-cyan-500 bg-cyan-500/10 scale-[1.02]' : ''}`}
-                    onDragEnter={handleDragEnter}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setIsDragging(false);
-                      const files = e.dataTransfer.files;
-                      if (files?.[0]) {
-                        const ext = files[0].name.split('.').pop()?.toLowerCase();
-                        if (['mp3', 'wav', 'm4a'].includes(ext || '')) {
-                          handleUploadAudio(files[0]);
-                        } else {
-                          updateState({ error: '対応形式: MP3, WAV, M4A' });
+
+                  {/* Mode Switch Tabs */}
+                  <div className="flex gap-2 mb-4 max-w-md mx-auto">
+                    <button
+                      onClick={() => { setUploadMode("file"); stopCamera(); }}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${uploadMode === "file"
+                        ? "bg-cyan-500/20 border border-cyan-500/50 text-cyan-400"
+                        : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-300"
+                        }`}
+                    >
+                      🎙️ 音声ファイル
+                    </button>
+                    <button
+                      onClick={() => setUploadMode("camera")}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${uploadMode === "camera"
+                        ? "bg-rose-500/20 border border-rose-500/50 text-rose-400"
+                        : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-300"
+                        }`}
+                    >
+                      📹 カメラ録画
+                    </button>
+                  </div>
+
+                  {uploadMode === "file" ? (
+                    /* Audio File Upload */
+                    <label
+                      className={`upload-zone flex flex-col items-center justify-center w-full h-48 rounded-xl cursor-pointer transition-all ${isDragging ? 'border-cyan-500 bg-cyan-500/10 scale-[1.02]' : ''}`}
+                      onDragEnter={handleDragEnter}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        const files = e.dataTransfer.files;
+                        if (files?.[0]) {
+                          const ext = files[0].name.split('.').pop()?.toLowerCase();
+                          if (['mp3', 'wav', 'm4a'].includes(ext || '')) {
+                            handleUploadAudio(files[0]);
+                          } else {
+                            updateState({ error: '対応形式: MP3, WAV, M4A' });
+                          }
                         }
-                      }
-                    }}
-                  >
-                    <span className="text-5xl mb-4">{isDragging ? '📎' : '🎙️'}</span>
-                    <p className="text-lg">{isDragging ? 'ここにドロップ！' : '音声ファイルをドラッグ&ドロップ'}</p>
-                    <p className="text-sm text-zinc-500">MP3, WAV, M4A対応</p>
-                    <input
-                      type="file"
-                      accept=".mp3,.wav,.m4a"
-                      className="hidden"
-                      onChange={(e) => e.target.files?.[0] && handleUploadAudio(e.target.files[0])}
-                      disabled={state.isProcessing}
-                    />
-                  </label>
+                      }}
+                    >
+                      <span className="text-5xl mb-4">{isDragging ? '📎' : '🎙️'}</span>
+                      <p className="text-lg">{isDragging ? 'ここにドロップ！' : '音声ファイルをドラッグ&ドロップ'}</p>
+                      <p className="text-sm text-zinc-500">MP3, WAV, M4A対応</p>
+                      <input
+                        type="file"
+                        accept=".mp3,.wav,.m4a"
+                        className="hidden"
+                        onChange={(e) => e.target.files?.[0] && handleUploadAudio(e.target.files[0])}
+                        disabled={state.isProcessing}
+                      />
+                    </label>
+                  ) : (
+                    /* Camera Recording */
+                    <div className="max-w-md mx-auto">
+                      {!webcamStream && !recordedBlob && (
+                        <div className="upload-zone flex flex-col items-center justify-center w-full h-48 rounded-xl">
+                          <span className="text-5xl mb-4">📹</span>
+                          <p className="text-sm text-zinc-400 mb-4">カメラで録画して顔出しワイプ付き動画を作成</p>
+                          <button
+                            onClick={startCamera}
+                            className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-400 hover:to-pink-500 text-white font-medium py-2.5 px-6 rounded-xl transition-all"
+                          >
+                            📹 カメラをONにする
+                          </button>
+                        </div>
+                      )}
+
+                      {webcamStream && !recordedBlob && (
+                        <div>
+                          {/* Camera Preview */}
+                          <div className="relative rounded-xl overflow-hidden border border-zinc-600 mb-3">
+                            <video
+                              ref={webcamVideoRef}
+                              autoPlay
+                              muted
+                              playsInline
+                              className="w-full"
+                              style={{ transform: 'scaleX(-1)' }}
+                            />
+                            {isRecording && (
+                              <div className="absolute top-3 left-3 flex items-center gap-2 bg-red-600/80 backdrop-blur-sm px-3 py-1 rounded-full">
+                                <span className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />
+                                <span className="text-white text-xs font-medium">REC</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Recording Controls */}
+                          <div className="flex gap-2">
+                            {!isRecording ? (
+                              <button
+                                onClick={startRecording}
+                                className="flex-1 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-400 hover:to-rose-500 text-white font-medium py-2.5 rounded-xl transition-all flex items-center justify-center gap-2"
+                              >
+                                ⏺️ 録画開始
+                              </button>
+                            ) : (
+                              <button
+                                onClick={stopRecording}
+                                className="flex-1 bg-gradient-to-r from-zinc-600 to-zinc-700 hover:from-zinc-500 hover:to-zinc-600 text-white font-medium py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 animate-pulse"
+                              >
+                                ⏹️ 録画停止
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { stopCamera(); setRecordedBlob(null); }}
+                              className="bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white px-4 py-2.5 rounded-xl transition-all"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {recordedBlob && (
+                        <div>
+                          <div className="upload-zone flex flex-col items-center justify-center w-full py-6 rounded-xl">
+                            <span className="text-4xl mb-2">✅</span>
+                            <p className="text-lg text-white font-medium">録画完了</p>
+                            <p className="text-sm text-zinc-400">
+                              {(recordedBlob.size / 1024 / 1024).toFixed(1)}MB
+                            </p>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={uploadRecordedVideo}
+                              disabled={state.isProcessing}
+                              className="flex-1 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-white font-medium py-2.5 rounded-xl transition-all disabled:opacity-40"
+                            >
+                              {state.isProcessing ? '処理中...' : '🚀 この録画を使用する'}
+                            </button>
+                            <button
+                              onClick={() => { setRecordedBlob(null); startCamera(); }}
+                              className="bg-zinc-800 border border-zinc-600 text-zinc-400 hover:text-white px-4 py-2.5 rounded-xl transition-all"
+                            >
+                              🔄 再録画
+                            </button>
+                          </div>
+                          <p className="text-xs text-zinc-500 mt-2 text-center">
+                            💡 録画映像から音声を自動抽出し、顔出しワイプとして使用します
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -2746,6 +2947,60 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
+
+                    {/* Face Cam PiP Settings — show when facecam uploaded */}
+                    {facecamUploaded && (
+                      <div className="mt-4 pt-4 border-t border-zinc-700">
+                        <label className="text-sm text-zinc-400 block mb-2">📹 顔出しワイプ設定</label>
+
+                        {/* Position */}
+                        <div className="mb-3">
+                          <span className="text-xs text-zinc-500 block mb-1">位置</span>
+                          <div className="grid grid-cols-4 gap-2">
+                            {[
+                              { value: "top-left", label: "↖ 左上" },
+                              { value: "top-right", label: "↗ 右上" },
+                              { value: "bottom-left", label: "↙ 左下" },
+                              { value: "bottom-right", label: "↘ 右下" },
+                            ].map(({ value, label }) => (
+                              <button
+                                key={value}
+                                onClick={() => setFacecamPosition(value)}
+                                className={`py-1.5 rounded-lg text-xs transition-all ${facecamPosition === value
+                                    ? "bg-rose-500/20 border border-rose-500/50 text-rose-400"
+                                    : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                                  }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Size */}
+                        <div>
+                          <span className="text-xs text-zinc-500 block mb-1">サイズ</span>
+                          <div className="flex gap-2">
+                            {[
+                              { value: 150, label: "小" },
+                              { value: 200, label: "中" },
+                              { value: 280, label: "大" },
+                            ].map(({ value, label }) => (
+                              <button
+                                key={value}
+                                onClick={() => setFacecamSize(value)}
+                                className={`flex-1 py-1.5 rounded-lg text-xs transition-all ${facecamSize === value
+                                    ? "bg-rose-500/20 border border-rose-500/50 text-rose-400"
+                                    : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                                  }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-4 flex-wrap">
