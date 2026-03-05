@@ -808,34 +808,24 @@ export default function Home() {
   [contenteditable="true"] { outline: none; cursor: text; }
   [contenteditable="true"]:hover { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); border-radius: 4px; }
   [contenteditable="true"]:focus { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.8); border-radius: 4px; }
-  .slide-number, .footer, .watermark, .branding { pointer-events: none; opacity: 0.5; }
 </style>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    const SKIP = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME'];
-    const SKIP_CLASSES = ['slide-number','footer','page-number','watermark','branding','slide-count'];
-    
-    function shouldSkip(el) {
-      if (SKIP.includes(el.tagName)) return true;
-      var cls = (el.className || '').toString().toLowerCase();
-      for (var i = 0; i < SKIP_CLASSES.length; i++) {
-        if (cls.indexOf(SKIP_CLASSES[i]) >= 0) return true;
-      }
-      return false;
-    }
+    var SKIP_TAGS = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME'];
     
     function isLeafText(el) {
-      if (shouldSkip(el)) return false;
+      if (SKIP_TAGS.includes(el.tagName)) return false;
       var text = (el.textContent || '').trim();
-      if (!text || text.length <= 1) return false;
+      if (!text) return false;
+      // Check if this element has child elements with significant text
       var childEls = Array.from(el.children).filter(function(c) {
-        return !SKIP.includes(c.tagName) && (c.textContent || '').trim().length > 1;
+        return !SKIP_TAGS.includes(c.tagName) && (c.textContent || '').trim().length > 0;
       });
       return childEls.length === 0;
     }
     
     function makeEditable(el) {
-      if (shouldSkip(el)) return;
+      if (SKIP_TAGS.includes(el.tagName)) return;
       if (isLeafText(el)) {
         el.contentEditable = 'true';
       } else {

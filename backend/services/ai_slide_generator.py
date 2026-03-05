@@ -1739,7 +1739,8 @@ async def generate_slide_html(
     text_density: str = "standard",
     is_illustration_mode: bool = False,
     video_width: int = VIDEO_WIDTH,
-    video_height: int = VIDEO_HEIGHT
+    video_height: int = VIDEO_HEIGHT,
+    facecam_position: Optional[str] = None
 ) -> str:
     """
     Step 3: Generate individual slide HTML based on strategy.
@@ -2006,6 +2007,20 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     # Generate prompt
     base_font_instruction = style.get("font_instruction", "")
     
+    # PiP avoidance per-slide instruction
+    pip_per_slide = ""
+    if facecam_position:
+        pos_labels = {"top-left": "左上", "top-right": "右上", "bottom-left": "左下", "bottom-right": "右下"}
+        pos_label = pos_labels.get(facecam_position, facecam_position)
+        pip_per_slide = f"""
+# ⚠️ 顔出しワイプ回避（必須）
+{pos_label}に円形ワイプが配置されます。以下を必ず守ってください：
+1. {pos_label}の約25%×25%エリアにテキストや装飾要素を配置しない
+2. テキストが画面外にはみ出すのは絶対禁止。overflow: hidden を使うこと
+3. フォントサイズを小さくするか改行して全テキストを収める
+4. bodyに十分なpaddingを設定して安全余白を確保
+"""
+
     prompt = SLIDE_DESIGN_PROMPT.format(
         concept_name=style.get("concept_name", "Modern Professional"),
         concept_description=style.get("concept_description", ""),
@@ -2023,7 +2038,7 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
         subtitle=subtitle,
         points=points_str,
         key_message=key_message,
-        layout_instruction=layout_instruction + simple_mode_instruction + illustration_mode_instruction + user_images_instruction + portrait_instruction,
+        layout_instruction=layout_instruction + simple_mode_instruction + illustration_mode_instruction + user_images_instruction + portrait_instruction + pip_per_slide,
         image_section=image_section,
         personality_section=personality_section,
         width=video_width,
@@ -2515,7 +2530,8 @@ Concept to illustrate: """
                     text_density=text_density,
                     is_illustration_mode=True,
                     video_width=vw,
-                    video_height=vh
+                    video_height=vh,
+                    facecam_position=facecam_position
                 )
                 
                 # Inject AI illustration into the generated HTML if image exists
@@ -2558,7 +2574,8 @@ Concept to illustrate: """
                     image_info=image_info,
                     text_density=text_density,
                     video_width=vw,
-                    video_height=vh
+                    video_height=vh,
+                    facecam_position=facecam_position
                 )
                 
                 # Step 3b-2: Inject AI illustration if not present in HTML (fallback)
