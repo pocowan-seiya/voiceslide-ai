@@ -1895,6 +1895,7 @@ class SlideFeedbackRequest(BaseModel):
     image_base64: Optional[str] = None  # Base64 encoded image data
     image_filename: Optional[str] = None  # Original filename
     facecam_position: Optional[str] = None  # PiP position for text avoidance
+    facecam_size: Optional[int] = None  # PiP size in pixels
 
 
 @app.post("/api/slides/{job_id}/feedback")
@@ -1950,7 +1951,8 @@ async def slide_feedback_endpoint(
             image_filename=request.image_filename,
             video_width=video_w,
             video_height=video_h,
-            facecam_position=request.facecam_position
+            facecam_position=request.facecam_position,
+            facecam_size=request.facecam_size
         )
         
         if not result["success"]:

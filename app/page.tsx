@@ -950,6 +950,7 @@ export default function Home() {
           image_base64: imageBase64,
           image_filename: slideImage.file?.name || null,
           facecam_position: facecamUploaded ? facecamPosition : null,
+          facecam_size: facecamUploaded ? facecamSize : null,
         })
       });
       const data = await res.json();

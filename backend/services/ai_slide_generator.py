@@ -2092,11 +2092,52 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
             print(f"[Design Architect] Injected user image {img_index + 1}/{len(user_images_list)} into slide {slide_number} (lowercase)")
         
         print(f"[Design Architect] Generated slide {slide_number}: {slide_type}")
+        # Apply deterministic PiP safe zone CSS padding
+        html = inject_pip_safe_zone(html, facecam_position, facecam_size, video_width, video_height)
         return html
         
     except Exception as e:
         print(f"[Design Architect] Slide {slide_number} error: {e}")
         return generate_fallback_html(slide, slide_number, total_slides, strategy)
+
+
+def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_size: Optional[int], 
+                          video_width: int = 1920, video_height: int = 1080) -> str:
+    """
+    Deterministic PiP safe zone: Inject CSS padding into generated HTML to physically
+    reserve space for the PiP overlay. 100% reliable unlike AI prompt instructions.
+    """
+    if not facecam_position or not facecam_size:
+        return html
+    
+    # Calculate padding as percentage with extra margin
+    pad_x = round(facecam_size / video_width * 100 + 3)  # +3% extra margin
+    pad_y = round(facecam_size / video_height * 100 + 3)
+    
+    # Build CSS padding rules based on position
+    padding_rules = []
+    if "bottom" in facecam_position:
+        padding_rules.append(f"padding-bottom: {pad_y}% !important;")
+    else:
+        padding_rules.append(f"padding-top: {pad_y}% !important;")
+    if "right" in facecam_position:
+        padding_rules.append(f"padding-right: {pad_x}% !important;")
+    else:
+        padding_rules.append(f"padding-left: {pad_x}% !important;")
+    
+    safe_zone_css = f"""<style data-pip-safe-zone>
+  body {{ {' '.join(padding_rules)} overflow: hidden !important; box-sizing: border-box !important; }}
+</style>"""
+    
+    if "</head>" in html:
+        html = html.replace("</head>", safe_zone_css + "\n</head>", 1)
+    elif "</body>" in html:
+        html = html.replace("</body>", safe_zone_css + "\n</body>", 1)
+    else:
+        html += safe_zone_css
+    
+    print(f"[PiP SafeZone] Injected CSS padding: {facecam_position}, size={facecam_size}px, pad_x={pad_x}%, pad_y={pad_y}%")
+    return html
 
 
 def generate_fallback_html(
@@ -3227,7 +3268,8 @@ async def regenerate_slide_with_feedback(
     image_filename: Optional[str] = None,
     video_width: int = VIDEO_WIDTH,
     video_height: int = VIDEO_HEIGHT,
-    facecam_position: Optional[str] = None
+    facecam_position: Optional[str] = None,
+    facecam_size: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Regenerate a single slide based on user feedback (supports image uploads)
@@ -3393,6 +3435,7 @@ async def regenerate_slide_with_feedback(
             # Common post-processing (screenshot, etc) handled below? 
             # No, structural limitation of this function. Will handle screenshot here and return.
             
+            new_html = inject_pip_safe_zone(new_html, facecam_position, facecam_size, video_width=video_width, video_height=video_height)
             update_html_content(job_id, slide_number, new_html)
             
             # Capture screenshot
@@ -3629,6 +3672,8 @@ async def regenerate_slide_with_feedback(
             await page.close()
             await browser.close()
         
+        # Apply deterministic PiP safe zone CSS padding
+        new_html = inject_pip_safe_zone(new_html, facecam_position, facecam_size, video_width=video_width, video_height=video_height)
         # Update stored HTML
         update_html_content(job_id, slide_number, new_html)
         
