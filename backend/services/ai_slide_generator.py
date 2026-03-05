@@ -2010,18 +2010,39 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     
     # PiP avoidance per-slide instruction
     pip_per_slide = ""
+    is_portrait = video_height > video_width
     if facecam_position:
         pos_labels = {"top-left": "左上", "top-right": "右上", "bottom-left": "左下", "bottom-right": "右下"}
         pos_label = pos_labels.get(facecam_position, facecam_position)
-        # Calculate actual content width for AI
         pip_sz = facecam_size or 350
         reserved_px = round(pip_sz * 0.7)
-        content_w = video_width - reserved_px
-        if "right" in facecam_position:
-            content_side = "左側"
+        
+        if is_portrait:
+            # Portrait: height-based avoidance (full width available)
+            content_h = video_height - reserved_px
+            if "top" in facecam_position:
+                content_direction = "下側"
+            else:
+                content_direction = "上側"
+            pip_per_slide = f"""
+# ⚠️ 顔出しワイプ回避（必須・縦長モード）
+{pos_label}に円形ワイプ（直径{pip_sz}px）が配置されます。
+**コンテンツ配置可能エリア: 幅{video_width}px × 高さ{content_h}px（{content_direction}に寄せる）**
+
+以下を必ず守ってください：
+1. 幅は{video_width}pxフルに使ってOK。高さは{content_h}px以内に収める
+2. {pos_label}の約{reserved_px}pxエリアには何も配置しない
+3. テキストが見切れないよう、フォントサイズを調整するか改行して収める
+4. コンテンツは縦方向に積むレイアウトで配置する
+"""
         else:
-            content_side = "右側"
-        pip_per_slide = f"""
+            # Landscape: width-based avoidance (current behavior)
+            content_w = video_width - reserved_px
+            if "right" in facecam_position:
+                content_side = "左側"
+            else:
+                content_side = "右側"
+            pip_per_slide = f"""
 # ⚠️ 顔出しワイプ回避（必須）
 {pos_label}に円形ワイプ（直径{pip_sz}px）が配置されます。
 **コンテンツ配置可能エリア: 幅{content_w}px（{content_side}に寄せる）**
@@ -2123,30 +2144,56 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     if not facecam_position or not facecam_size:
         return html
     
-    # Calculate content width percentage
-    # PiP is circular, so actual overlap is ~70% of full diameter strip
-    reserved_pct = round(facecam_size / video_width * 100 * 0.7)
-    content_width_pct = 100 - reserved_pct
+    is_portrait = video_height > video_width
     
-    # Determine alignment based on PiP position
-    if "right" in facecam_position:
-        align_side = "left"  # Content goes to left side
+    if is_portrait:
+        # Portrait mode: height-based avoidance (full width, constrained height)
+        reserved_pct = round(facecam_size / video_height * 100 * 0.7)
+        content_height_pct = 100 - reserved_pct
+        
+        if "top" in facecam_position:
+            # PiP at top → content pushed down
+            wrapper_style = (
+                f"position: relative; "
+                f"width: 100%; "
+                f"height: {content_height_pct}vh; "
+                f"margin-top: {reserved_pct}vh; "
+                f"box-sizing: border-box;"
+            )
+        else:
+            # PiP at bottom → content stays at top
+            wrapper_style = (
+                f"position: relative; "
+                f"width: 100%; "
+                f"height: {content_height_pct}vh; "
+                f"box-sizing: border-box;"
+            )
+        
+        print(f"[PiP SafeZone] Portrait mode: height={content_height_pct}%, reserved={reserved_pct}%, position={'top→down' if 'top' in facecam_position else 'bottom→up'}")
     else:
-        align_side = "right"  # Content goes to right side
+        # Landscape mode: width-based avoidance (current behavior)
+        reserved_pct = round(facecam_size / video_width * 100 * 0.7)
+        content_width_pct = 100 - reserved_pct
+        
+        if "right" in facecam_position:
+            align_side = "left"
+        else:
+            align_side = "right"
+        
+        wrapper_style = (
+            f"position: relative; "
+            f"width: {content_width_pct}%; "
+            f"min-height: 100vh; "
+            f"float: {align_side}; "
+            f"box-sizing: border-box;"
+        )
+        
+        print(f"[PiP SafeZone] Landscape mode: width={content_width_pct}%, float={align_side}, reserved={reserved_pct}%")
     
-    # Wrapper div style - no overflow:hidden so text reflows naturally
-    wrapper_style = (
-        f"position: relative; "
-        f"width: {content_width_pct}%; "
-        f"min-height: 100vh; "
-        f"float: {align_side}; "
-        f"box-sizing: border-box;"
-    )
-    
+    # Shared wrapper injection for both portrait and landscape
     wrapper_open = f'<div class="pip-content-zone" style="{wrapper_style}">'
     wrapper_close = '</div>'
     
-    # Inject wrapper: open after <body...>, close before </body>
     import re
     body_open_match = re.search(r'<body[^>]*>', html)
     if body_open_match and '</body>' in html:
@@ -2163,7 +2210,6 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
         body_tag_end = body_open_match.end()
         html = html[:body_tag_end] + '\n' + wrapper_open + '\n' + html[body_tag_end:] + '\n' + wrapper_close
     
-    print(f"[PiP SafeZone] Wrapper div: width={content_width_pct}%, float={align_side}, reserved={reserved_pct}%")
     return html
 
 
