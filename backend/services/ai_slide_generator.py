@@ -2104,29 +2104,34 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
 def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_size: Optional[int], 
                           video_width: int = 1920, video_height: int = 1080) -> str:
     """
-    Deterministic PiP safe zone: Inject CSS padding into generated HTML to physically
-    reserve space for the PiP overlay. 100% reliable unlike AI prompt instructions.
+    Deterministic PiP safe zone: Constrain content width and align to opposite side.
+    Background stays full-size, but all content is restricted to (100% - facecam_size).
+    Right PiP → content left-aligned, Left PiP → content right-aligned.
     """
     if not facecam_position or not facecam_size:
         return html
     
-    # Calculate padding as percentage with extra margin
-    pad_x = round(facecam_size / video_width * 100 + 3)  # +3% extra margin
-    pad_y = round(facecam_size / video_height * 100 + 3)
+    # Calculate content width percentage (with 2% extra margin)
+    reserved_pct = round(facecam_size / video_width * 100 + 2)
+    content_width_pct = 100 - reserved_pct
     
-    # Build CSS padding rules based on position
-    padding_rules = []
-    if "bottom" in facecam_position:
-        padding_rules.append(f"padding-bottom: {pad_y}% !important;")
-    else:
-        padding_rules.append(f"padding-top: {pad_y}% !important;")
+    # Determine alignment based on PiP position
     if "right" in facecam_position:
-        padding_rules.append(f"padding-right: {pad_x}% !important;")
+        # PiP on right → content aligns left
+        align_rules = "margin-left: 0 !important; margin-right: auto !important;"
     else:
-        padding_rules.append(f"padding-left: {pad_x}% !important;")
+        # PiP on left → content aligns right
+        align_rules = "margin-left: auto !important; margin-right: 0 !important;"
     
     safe_zone_css = f"""<style data-pip-safe-zone>
-  body {{ {' '.join(padding_rules)} overflow: hidden !important; box-sizing: border-box !important; }}
+  /* PiP Safe Zone: content width constrained to {content_width_pct}% */
+  body {{
+    overflow: hidden !important;
+  }}
+  body > * {{
+    max-width: {content_width_pct}% !important;
+    {align_rules}
+  }}
 </style>"""
     
     if "</head>" in html:
@@ -2136,7 +2141,7 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     else:
         html += safe_zone_css
     
-    print(f"[PiP SafeZone] Injected CSS padding: {facecam_position}, size={facecam_size}px, pad_x={pad_x}%, pad_y={pad_y}%")
+    print(f"[PiP SafeZone] Content width: {content_width_pct}%, align: {'left' if 'right' in facecam_position else 'right'}, reserved: {reserved_pct}%")
     return html
 
 
