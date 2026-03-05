@@ -2104,9 +2104,9 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
 def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_size: Optional[int], 
                           video_width: int = 1920, video_height: int = 1080) -> str:
     """
-    Deterministic PiP safe zone: Constrain content width and align to opposite side.
-    Background stays full-size, but all content is restricted to (100% - facecam_size).
-    Right PiP → content left-aligned, Left PiP → content right-aligned.
+    Deterministic PiP safe zone: Wrap all body content in a constrained container div.
+    Background stays full-size, content physically restricted to (100% - facecam_size).
+    Uses a wrapper div as new positioning context for absolute-positioned elements.
     """
     if not facecam_position or not facecam_size:
         return html
@@ -2117,31 +2117,40 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     
     # Determine alignment based on PiP position
     if "right" in facecam_position:
-        # PiP on right → content aligns left
-        align_rules = "margin-left: 0 !important; margin-right: auto !important;"
+        align_side = "left"  # Content goes to left side
     else:
-        # PiP on left → content aligns right
-        align_rules = "margin-left: auto !important; margin-right: 0 !important;"
+        align_side = "right"  # Content goes to right side
     
-    safe_zone_css = f"""<style data-pip-safe-zone>
-  /* PiP Safe Zone: content width constrained to {content_width_pct}% */
-  body {{
-    overflow: hidden !important;
-  }}
-  body > * {{
-    max-width: {content_width_pct}% !important;
-    {align_rules}
-  }}
-</style>"""
+    # Wrapper div style
+    wrapper_style = (
+        f"position: relative; "
+        f"width: {content_width_pct}%; "
+        f"min-height: 100vh; "
+        f"float: {align_side}; "
+        f"overflow: hidden;"
+    )
     
-    if "</head>" in html:
-        html = html.replace("</head>", safe_zone_css + "\n</head>", 1)
-    elif "</body>" in html:
-        html = html.replace("</body>", safe_zone_css + "\n</body>", 1)
-    else:
-        html += safe_zone_css
+    wrapper_open = f'<div class="pip-content-zone" style="{wrapper_style}">'
+    wrapper_close = '</div>'
     
-    print(f"[PiP SafeZone] Content width: {content_width_pct}%, align: {'left' if 'right' in facecam_position else 'right'}, reserved: {reserved_pct}%")
+    # Inject wrapper: open after <body...>, close before </body>
+    import re
+    body_open_match = re.search(r'<body[^>]*>', html)
+    if body_open_match and '</body>' in html:
+        body_tag_end = body_open_match.end()
+        body_close_pos = html.rfind('</body>')
+        html = (
+            html[:body_tag_end] + 
+            '\n' + wrapper_open + '\n' + 
+            html[body_tag_end:body_close_pos] + 
+            '\n' + wrapper_close + '\n' + 
+            html[body_close_pos:]
+        )
+    elif body_open_match:
+        body_tag_end = body_open_match.end()
+        html = html[:body_tag_end] + '\n' + wrapper_open + '\n' + html[body_tag_end:] + '\n' + wrapper_close
+    
+    print(f"[PiP SafeZone] Wrapper div: width={content_width_pct}%, float={align_side}, reserved={reserved_pct}%")
     return html
 
 
