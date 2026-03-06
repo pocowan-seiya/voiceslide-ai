@@ -2148,33 +2148,31 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     is_portrait = video_height > video_width
     
     if is_portrait:
-        # Portrait mode: height-based avoidance (full width, constrained height)
+        # Portrait mode: padding-based avoidance (full width, padding pushes content away from PiP)
         # PiP is positioned with 30px margin from edge, so total reserved = cam_size + 2*margin
         pip_margin = 30  # FFmpeg margin (matches _calculate_facecam_position)
         reserved_pct = round((facecam_size + 2 * pip_margin) / video_height * 100)
-        content_height_pct = 100 - reserved_pct
         
         if "top" in facecam_position:
-            # PiP at top → content pushed down
+            # PiP at top → pad content down from top
             wrapper_style = (
                 f"position: relative; "
                 f"width: 100%; "
-                f"height: {content_height_pct}vh; "
-                f"margin-top: {reserved_pct}vh; "
-                f"overflow: hidden; "
+                f"min-height: 100vh; "
+                f"padding-top: {reserved_pct}vh; "
                 f"box-sizing: border-box;"
             )
         else:
-            # PiP at bottom → content stays at top
+            # PiP at bottom → pad content up from bottom
             wrapper_style = (
                 f"position: relative; "
                 f"width: 100%; "
-                f"height: {content_height_pct}vh; "
-                f"overflow: hidden; "
+                f"min-height: 100vh; "
+                f"padding-bottom: {reserved_pct}vh; "
                 f"box-sizing: border-box;"
             )
         
-        print(f"[PiP SafeZone] Portrait mode: height={content_height_pct}%, reserved={reserved_pct}%, position={'top→down' if 'top' in facecam_position else 'bottom→up'}")
+        print(f"[PiP SafeZone] Portrait mode: reserved={reserved_pct}%, position={'top→pad-top' if 'top' in facecam_position else 'bottom→pad-bottom'}")
     else:
         # Landscape mode: width-based avoidance (current behavior)
         reserved_pct = round(facecam_size / video_width * 100 * 0.7)
