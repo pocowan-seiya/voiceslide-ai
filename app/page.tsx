@@ -2133,7 +2133,7 @@ export default function Home() {
                             </button>
                           </div>
                           <p className="text-xs text-zinc-500 mt-2 text-center">
-                            💡 録画映像から音声を自動抽出し、顔出しワイプとして使用します（10分以内推奨）
+                            💡 録画映像から音声を自動抽出し、顔出しワイプとして使用します
                           </p>
                         </div>
                       )}
