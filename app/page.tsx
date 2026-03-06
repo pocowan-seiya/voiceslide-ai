@@ -805,13 +805,22 @@ export default function Home() {
         // Inject contenteditable script into the HTML
         const editableScript = `
 <style>
-  [contenteditable="true"] { outline: none; cursor: text; }
+  [contenteditable="true"] { outline: none; cursor: text; position: relative; z-index: 10; }
   [contenteditable="true"]:hover { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); border-radius: 4px; }
   [contenteditable="true"]:focus { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.8); border-radius: 4px; }
+  /* Make decorative overlays pass-through in edit mode */
+  svg, svg *, canvas, [class*="decoration"], [class*="circle"], [class*="shape"], [class*="bg-"], [class*="overlay"] {
+    pointer-events: none !important;
+  }
+  /* Ensure all text containers are clickable */
+  h1, h2, h3, h4, h5, h6, p, span, li, td, th, label, a, strong, em, b, i, u,
+  div[contenteditable="true"], span[contenteditable="true"] {
+    pointer-events: auto !important;
+  }
 </style>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    var SKIP_TAGS = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME'];
+    var SKIP_TAGS = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME','CIRCLE','ELLIPSE','RECT','LINE','POLYGON','POLYLINE'];
     
     function isLeafText(el) {
       if (SKIP_TAGS.includes(el.tagName)) return false;
@@ -833,7 +842,29 @@ export default function Home() {
       }
     }
     
+    // Make non-text elements pass-through for clicks
+    function makeDecorativePassthrough(el) {
+      if (SKIP_TAGS.includes(el.tagName)) return;
+      var text = (el.textContent || '').trim();
+      var style = window.getComputedStyle(el);
+      var isPositioned = style.position === 'absolute' || style.position === 'fixed';
+      // If element has no text and is positioned, it's likely decorative
+      if (!text && isPositioned) {
+        el.style.pointerEvents = 'none';
+      }
+      // Also handle ::before/::after pseudo-elements by checking for empty containers
+      // overlapping text areas
+      if (isPositioned && el.contentEditable !== 'true') {
+        var hasEditableChild = el.querySelector('[contenteditable="true"]');
+        if (!hasEditableChild && !text) {
+          el.style.pointerEvents = 'none';
+        }
+      }
+      Array.from(el.children).forEach(makeDecorativePassthrough);
+    }
+    
     makeEditable(document.body);
+    makeDecorativePassthrough(document.body);
     
     window.addEventListener('message', function(e) {
       if (e.data === 'GET_HTML') {
@@ -845,6 +876,13 @@ export default function Home() {
         // Remove contenteditable attributes
         document.querySelectorAll('[contenteditable]').forEach(function(el) {
           el.removeAttribute('contenteditable');
+        });
+        // Remove injected pointer-events styles
+        document.querySelectorAll('[style]').forEach(function(el) {
+          el.style.removeProperty('pointer-events');
+          if (!el.getAttribute('style') || !el.getAttribute('style').trim()) {
+            el.removeAttribute('style');
+          }
         });
         window.parent.postMessage({ type: 'SLIDE_HTML', html: document.documentElement.outerHTML }, '*');
       }
