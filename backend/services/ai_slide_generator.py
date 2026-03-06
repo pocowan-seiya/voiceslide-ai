@@ -2019,7 +2019,8 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
         
         if is_portrait:
             # Portrait: height-based avoidance (full width available)
-            content_h = video_height - reserved_px
+            reserved_h = pip_sz + 60  # diameter + margin (matches FFmpeg positioning)
+            content_h = video_height - reserved_h
             if "top" in facecam_position:
                 content_direction = "下側"
             else:
@@ -2148,7 +2149,9 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     
     if is_portrait:
         # Portrait mode: height-based avoidance (full width, constrained height)
-        reserved_pct = round(facecam_size / video_height * 100 * 0.7)
+        # PiP is positioned with 30px margin from edge, so total reserved = cam_size + 2*margin
+        pip_margin = 30  # FFmpeg margin (matches _calculate_facecam_position)
+        reserved_pct = round((facecam_size + 2 * pip_margin) / video_height * 100)
         content_height_pct = 100 - reserved_pct
         
         if "top" in facecam_position:
@@ -2158,6 +2161,7 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
                 f"width: 100%; "
                 f"height: {content_height_pct}vh; "
                 f"margin-top: {reserved_pct}vh; "
+                f"overflow: hidden; "
                 f"box-sizing: border-box;"
             )
         else:
@@ -2166,6 +2170,7 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
                 f"position: relative; "
                 f"width: 100%; "
                 f"height: {content_height_pct}vh; "
+                f"overflow: hidden; "
                 f"box-sizing: border-box;"
             )
         
