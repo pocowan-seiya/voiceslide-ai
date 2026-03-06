@@ -2916,39 +2916,6 @@ export default function Home() {
 
 
 
-                  {/* ===== Video Settings: Aspect Ratio & Face Cam ===== */}
-                  <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 mb-4">
-                    <h3 className="text-lg font-bold mb-4 text-zinc-200">🎥 動画設定</h3>
-
-                    {/* Aspect Ratio */}
-                    <div className="mb-4">
-                      <label className="text-sm text-zinc-400 block mb-2">アスペクト比</label>
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => setAspectRatio("landscape")}
-                          className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "landscape"
-                            ? "border-indigo-500 bg-indigo-500/20 text-white"
-                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
-                            }`}
-                        >
-                          <div className="text-2xl mb-1">🖥️</div>
-                          <div className="font-medium">16:9 横長</div>
-                          <div className="text-xs text-zinc-500">YouTube / 通常</div>
-                        </button>
-                        <button
-                          onClick={() => setAspectRatio("portrait")}
-                          className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "portrait"
-                            ? "border-indigo-500 bg-indigo-500/20 text-white"
-                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
-                            }`}
-                        >
-                          <div className="text-2xl mb-1">📱</div>
-                          <div className="font-medium">9:16 縦長</div>
-                          <div className="text-xs text-zinc-500">Shorts / Reels</div>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
 
                   <div className="flex gap-4 flex-wrap">
                     <button
