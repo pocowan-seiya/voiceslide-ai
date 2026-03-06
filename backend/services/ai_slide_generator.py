@@ -2174,8 +2174,9 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
         
         print(f"[PiP SafeZone] Portrait mode: reserved={reserved_pct}%, position={'top→pad-top' if 'top' in facecam_position else 'bottom→pad-bottom'}")
     else:
-        # Landscape mode: width-based avoidance (current behavior)
-        reserved_pct = round(facecam_size / video_width * 100 * 0.7)
+        # Landscape mode: width-based avoidance
+        pip_margin = 30  # FFmpeg margin (matches _calculate_facecam_position)
+        reserved_pct = round((facecam_size + 2 * pip_margin) / video_width * 100)
         content_width_pct = 100 - reserved_pct
         
         if "right" in facecam_position:
