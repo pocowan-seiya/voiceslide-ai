@@ -2050,7 +2050,8 @@ export default function Home() {
                       {!webcamStream && !recordedBlob && (
                         <div className="upload-zone flex flex-col items-center justify-center w-full h-48 rounded-xl">
                           <span className="text-5xl mb-4">📹</span>
-                          <p className="text-sm text-zinc-400 mb-4">カメラで録画して顔出しワイプ付き動画を作成</p>
+                          <p className="text-sm text-zinc-400 mb-2">カメラで録画して顔出しワイプ付き動画を作成</p>
+                          <p className="text-xs text-amber-400/80 mb-4">⏱ 10分以内を推奨しています</p>
                           <button
                             onClick={startCamera}
                             className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-400 hover:to-pink-500 text-white font-medium py-2.5 px-6 rounded-xl transition-all"
@@ -2132,7 +2133,7 @@ export default function Home() {
                             </button>
                           </div>
                           <p className="text-xs text-zinc-500 mt-2 text-center">
-                            💡 録画映像から音声を自動抽出し、顔出しワイプとして使用します
+                            💡 録画映像から音声を自動抽出し、顔出しワイプとして使用します（10分以内推奨）
                           </p>
                         </div>
                       )}
