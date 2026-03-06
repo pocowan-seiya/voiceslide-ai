@@ -3747,7 +3747,7 @@ export default function Home() {
                 <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
               </div>
 
-              <video key={state.videoUrl} src={state.videoUrl} controls className="w-full rounded-xl mb-6" />
+              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-6 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} />
 
               <div className="flex flex-wrap justify-center gap-3 mb-8">
                 <button
