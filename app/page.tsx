@@ -2727,16 +2727,45 @@ export default function Home() {
                                         : 'border-zinc-700 hover:border-zinc-500'
                                         }`}
                                     >
-                                      <img
-                                        src={preview}
-                                        alt={`Slide ${slideNum}`}
-                                        className="w-full h-auto"
-                                        onError={(e) => {
-                                          console.error(`[Image Error] Failed to load: ${preview}`);
-                                          e.currentTarget.style.border = "2px solid red";
-                                          // e.currentTarget.src = "fallback_image_url"; // Optional
-                                        }}
-                                      />
+                                      <div className="relative">
+                                        <img
+                                          src={preview}
+                                          alt={`Slide ${slideNum}`}
+                                          className="w-full h-auto"
+                                          onError={(e) => {
+                                            console.error(`[Image Error] Failed to load: ${preview}`);
+                                            e.currentTarget.style.border = "2px solid red";
+                                          }}
+                                        />
+                                        {/* PiP Overlay Simulation */}
+                                        {facecamUploaded && facecamPosition && facecamSize && (() => {
+                                          const videoW = aspectRatio === "portrait" ? 1080 : 1920;
+                                          const videoH = aspectRatio === "portrait" ? 1920 : 1080;
+                                          const circlePercent = Math.round(facecamSize / videoW * 100);
+                                          const marginPercent = Math.round(30 / videoW * 100);
+                                          const posStyle: React.CSSProperties = {
+                                            position: "absolute",
+                                            width: `${circlePercent}%`,
+                                            aspectRatio: "1",
+                                            borderRadius: "50%",
+                                            background: "linear-gradient(135deg, rgba(236,72,153,0.3), rgba(248,113,113,0.3))",
+                                            border: "2px solid rgba(244,63,94,0.6)",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            pointerEvents: "none",
+                                          };
+                                          if (facecamPosition.includes("top")) posStyle.top = `${marginPercent}%`;
+                                          else posStyle.bottom = `${marginPercent}%`;
+                                          if (facecamPosition.includes("left")) posStyle.left = `${marginPercent}%`;
+                                          else posStyle.right = `${marginPercent}%`;
+                                          return (
+                                            <div style={posStyle}>
+                                              <span className="text-[8px] text-rose-300/80">👤</span>
+                                            </div>
+                                          );
+                                        })()}
+                                      </div>
                                       <div className="bg-zinc-800 text-center text-xs py-1">
                                         スライド {slideNum}
                                       </div>
