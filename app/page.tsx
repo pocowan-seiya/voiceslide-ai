@@ -2985,25 +2985,8 @@ export default function Home() {
               <div className="border-t border-zinc-700 pt-6">
                 {/* ===== SLIDE OPTIONS ===== */}
                 <>
-                  {/* Color Theme Selector */}
-                  <div className="mb-6">
-                    <label className="block text-sm font-medium text-zinc-400 mb-2">
-                      🎨 カラーテーマ
-                    </label>
-                    <select
-                      value={selectedColorTheme}
-                      onChange={(e) => setSelectedColorTheme(e.target.value)}
-                      className="w-full max-w-md mx-auto bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white"
-                    >
-                      <option value="">AIにおまかせ（コンテンツに最適な配色）</option>
-                      <option value="cosmic">🌌 Cosmic Dark - 宇宙的な深みと神秘感</option>
-                      <option value="warm">🌅 Warm Sunset - 温かみのあるオレンジ・ゴールド</option>
-                      <option value="elegant">💜 Elegant Purple - エレガントな紫・ピンク</option>
-                      <option value="nature">🌿 Nature Green - 自然とリラックス</option>
-                      <option value="ocean">🌊 Ocean Blue - 海のような開放感</option>
-                      <option value="mono">⚫ Monochrome - シンプルでクリーン</option>
-                    </select>
-                  </div>
+
+
 
                   {/* Font Style Selector */}
                   <div className="mb-6">
@@ -3131,6 +3114,70 @@ export default function Home() {
                     </div>
                   </div>
 
+                  {/* Text Density Selector */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      📋 テキスト量
+                    </label>
+                    <div className="flex justify-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setTextDensity("simple")}
+                        className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "simple"
+                          ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                          : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                          }`}
+                      >
+                        📌 シンプル
+                        <span className="block text-xs mt-1 opacity-70">タイトル + 見出し</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTextDensity("standard")}
+                        className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "standard"
+                          ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
+                          : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                          }`}
+                      >
+                        📝 標準
+                        <span className="block text-xs mt-1 opacity-70">タイトル + 見出し + ポイント</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Aspect Ratio Selector */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      📰 アスペクト比
+                    </label>
+                    <div className="flex justify-center gap-4 max-w-sm mx-auto">
+                      <button
+                        type="button"
+                        onClick={() => setAspectRatio("landscape")}
+                        className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "landscape"
+                          ? "border-cyan-500 bg-cyan-500/20 text-white"
+                          : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                          }`}
+                      >
+                        <div className="text-xl">🖥️</div>
+                        <div className="text-sm font-medium">16:9 横長</div>
+                        <div className="text-xs text-zinc-500">YouTube / 通常</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAspectRatio("portrait")}
+                        className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "portrait"
+                          ? "border-cyan-500 bg-cyan-500/20 text-white"
+                          : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
+                          }`}
+                      >
+                        <div className="text-xl">📱</div>
+                        <div className="text-sm font-medium">9:16 縦長</div>
+                        <div className="text-xs text-zinc-500">Shorts / Reels</div>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* PiP (Face Cam) Settings — show when facecam uploaded */}
                   {facecamUploaded && (
                     <div className="mb-6 bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 max-w-md mx-auto">
@@ -3242,36 +3289,6 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Text Density Selector */}
-                  <div className="mb-6">
-                    <label className="block text-sm font-medium text-zinc-400 mb-2">
-                      📋 テキスト量
-                    </label>
-                    <div className="flex justify-center gap-4">
-                      <button
-                        type="button"
-                        onClick={() => setTextDensity("simple")}
-                        className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "simple"
-                          ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                          : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                          }`}
-                      >
-                        📌 シンプル
-                        <span className="block text-xs mt-1 opacity-70">タイトル + 見出し</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTextDensity("standard")}
-                        className={`px-4 py-2 rounded-lg border transition-all ${textDensity === "standard"
-                          ? "border-cyan-500 bg-cyan-500/20 text-cyan-400"
-                          : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                          }`}
-                      >
-                        📝 標準
-                        <span className="block text-xs mt-1 opacity-70">タイトル + 見出し + ポイント</span>
-                      </button>
-                    </div>
-                  </div>
 
                   {/* ===== ILLUSTRATION TOGGLE & OPTIONS ===== */}
                   <div className="mb-6 border-t border-zinc-700 pt-6">
@@ -3387,38 +3404,6 @@ export default function Home() {
                 </>
               </div>
 
-              {/* Aspect Ratio Selector */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  📰 アスペクト比
-                </label>
-                <div className="flex justify-center gap-4 max-w-sm mx-auto">
-                  <button
-                    type="button"
-                    onClick={() => setAspectRatio("landscape")}
-                    className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "landscape"
-                      ? "border-cyan-500 bg-cyan-500/20 text-white"
-                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                      }`}
-                  >
-                    <div className="text-xl">🖥️</div>
-                    <div className="text-sm font-medium">16:9 横長</div>
-                    <div className="text-xs text-zinc-500">YouTube / 通常</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAspectRatio("portrait")}
-                    className={`flex-1 py-3 rounded-lg border transition-all text-center ${aspectRatio === "portrait"
-                      ? "border-cyan-500 bg-cyan-500/20 text-white"
-                      : "border-zinc-600 text-zinc-400 hover:border-zinc-500"
-                      }`}
-                  >
-                    <div className="text-xl">📱</div>
-                    <div className="text-sm font-medium">9:16 縦長</div>
-                    <div className="text-xs text-zinc-500">Shorts / Reels</div>
-                  </button>
-                </div>
-              </div>
 
               <div className="flex gap-3 justify-center">
                 <button
@@ -3429,7 +3414,7 @@ export default function Home() {
                   disabled={state.isProcessing}
                   className="btn-primary"
                 >
-                  {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成（5枚ずつ）"}
+                  {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成"}
                 </button>
                 <button
                   onClick={() => {
