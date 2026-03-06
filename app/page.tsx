@@ -3257,20 +3257,23 @@ export default function Home() {
                         <span className="text-xs text-zinc-500 block mb-1">位置</span>
                         <div className="grid grid-cols-4 gap-2">
                           {[
-                            { value: "top-left", label: "↖ 左上" },
-                            { value: "top-right", label: "↗ 右上" },
-                            { value: "bottom-left", label: "↙ 左下" },
-                            { value: "bottom-right", label: "↘ 右下" },
-                          ].map(({ value, label }) => (
+                            { value: "top-left", label: "↖ 左上", recommended: false },
+                            { value: "top-right", label: "↗ 右上", recommended: true },
+                            { value: "bottom-left", label: "↙ 左下", recommended: false },
+                            { value: "bottom-right", label: "↘ 右下", recommended: true },
+                          ].map(({ value, label, recommended }) => (
                             <button
                               key={value}
                               onClick={() => setFacecamPosition(value)}
-                              className={`py-1.5 rounded-lg text-xs transition-all ${facecamPosition === value
+                              className={`py-1.5 rounded-lg text-xs transition-all relative ${facecamPosition === value
                                 ? "bg-rose-500/20 border border-rose-500/50 text-rose-400"
                                 : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
                                 }`}
                             >
                               {label}
+                              {recommended && (
+                                <span className="absolute -top-1.5 -right-1 text-[8px] bg-emerald-500/80 text-white px-1 rounded-full leading-tight">推奨</span>
+                              )}
                             </button>
                           ))}
                         </div>
