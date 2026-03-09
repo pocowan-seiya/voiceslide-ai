@@ -2580,44 +2580,7 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Download Button */}
-                  <button
-                    onClick={async (e) => {
-                      const btn = e.currentTarget;
-                      btn.textContent = '⏳ ダウンロード中...';
-                      btn.disabled = true;
-                      try {
-                        const endpoint = bgmMixed ? 'mixed' : 'trimmed';
-                        const res = await fetch(
-                          `${API_URL}/api/audio/${state.jobId}/${endpoint}`
-                        );
-                        if (!res.ok) throw new Error('Download failed');
-                        const blob = await res.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `audio_${state.jobId}${bgmMixed ? '_mixed' : ''}.mp3`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        window.URL.revokeObjectURL(url);
-                        btn.innerHTML = '✅ ダウンロード完了！';
-                        setTimeout(() => {
-                          btn.innerHTML = `<span>⬇️</span><span>${bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>`;
-                          btn.disabled = false;
-                        }, 2000);
-                      } catch (err) {
-                        console.error('Download error:', err);
-                        alert('ダウンロードに失敗しました');
-                        btn.innerHTML = `<span>⬇️</span><span>${bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>`;
-                        btn.disabled = false;
-                      }
-                    }}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-[0.98] disabled:opacity-50 text-white font-medium rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
-                  >
-                    <span>⬇️</span>
-                    <span>{bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>
-                  </button>
+                  {/* Download button removed - already in speed controls section above */}
                 </div>
               )}
 
