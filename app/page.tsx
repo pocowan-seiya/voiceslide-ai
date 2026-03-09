@@ -2471,50 +2471,60 @@ export default function Home() {
                   </audio>
 
                   {/* Speed Processing Controls */}
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs text-zinc-500">⚡ 倍速:</span>
-                    {[1, 1.2, 1.5, 2].map((rate) => (
-                      <button
-                        key={rate}
-                        disabled={isLoadingText}
-                        onClick={async () => {
-                          setAudioSettings(prev => ({ ...prev, speedFactor: rate }));
-                          try {
-                            const res = await fetch(`${API_URL}/api/audio/${state.jobId}/apply-speed?speed_factor=${rate}`, {
-                              method: "POST",
-                              headers: getAPIHeaders(),
-                            });
-                            if (res.ok) {
-                              // Force audio player to reload
-                              const audioEl = document.querySelector('audio') as HTMLAudioElement;
-                              if (audioEl) {
-                                audioEl.src = bgmMixed
-                                  ? `${API_URL}/api/audio/${state.jobId}/mixed?t=${Date.now()}`
-                                  : `${API_URL}/api/audio/${state.jobId}/trimmed?t=${Date.now()}`;
-                                audioEl.load();
-                              }
+                  <div className="bg-zinc-900/50 rounded-lg p-3 mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-zinc-400">⚡ 倍速設定</span>
+                      <span className="text-xs text-zinc-500">{audioSettings.speedFactor === 1 ? '通常速度' : `${audioSettings.speedFactor}x`}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mb-2">
+                      {[1, 1.2, 1.5, 2].map((rate) => (
+                        <button
+                          key={rate}
+                          onClick={() => setAudioSettings(prev => ({ ...prev, speedFactor: rate }))}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${audioSettings.speedFactor === rate
+                            ? "bg-amber-500/20 border border-amber-500/50 text-amber-400"
+                            : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                            }`}
+                        >
+                          {rate === 1 ? '通常' : `${rate}x`}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setIsLoadingText(true);
+                        try {
+                          const res = await fetch(`${API_URL}/api/audio/${state.jobId}/apply-speed?speed_factor=${audioSettings.speedFactor}`, {
+                            method: "POST",
+                            headers: getAPIHeaders(),
+                          });
+                          if (res.ok) {
+                            const audioEl = document.querySelector('audio') as HTMLAudioElement;
+                            if (audioEl) {
+                              audioEl.src = bgmMixed
+                                ? `${API_URL}/api/audio/${state.jobId}/mixed?t=${Date.now()}`
+                                : `${API_URL}/api/audio/${state.jobId}/trimmed?t=${Date.now()}`;
+                              audioEl.load();
                             }
-                          } catch (e) { console.error("Speed apply failed:", e); }
-                        }}
-                        className={`px-2 py-0.5 rounded text-xs transition-all ${audioSettings.speedFactor === rate
-                          ? "bg-amber-500/20 border border-amber-500/50 text-amber-400"
-                          : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
-                          }`}
-                      >
-                        {rate === 1 ? '通常' : `${rate}x`}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Audio Download */}
-                  <div className="mb-3">
-                    <a
-                      href={`${API_URL}/api/audio/${state.jobId}/trimmed`}
-                      download
-                      className="text-xs text-cyan-400 hover:text-cyan-300 underline"
+                          }
+                        } catch (e) { console.error("Speed apply failed:", e); }
+                        setIsLoadingText(false);
+                      }}
+                      disabled={isLoadingText}
+                      className="w-full py-2 rounded-lg text-xs font-medium bg-amber-500/20 border border-amber-500/40 text-amber-400 hover:bg-amber-500/30 transition-all disabled:opacity-50"
                     >
-                      📥 音声をダウンロード{audioSettings.speedFactor !== 1 ? ` (${audioSettings.speedFactor}x)` : ''}
-                    </a>
+                      {isLoadingText ? '処理中...' : '🔄 音声を更新'}
+                    </button>
                   </div>
+
+                  {/* Audio Download */}
+                  <a
+                    href={`${API_URL}/api/audio/${state.jobId}/trimmed`}
+                    download
+                    className="flex items-center justify-center gap-2 w-full py-2.5 mb-3 rounded-lg text-sm font-medium bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 transition-all"
+                  >
+                    📥 カット後の音声ダウンロード{audioSettings.speedFactor !== 1 ? ` (${audioSettings.speedFactor}x)` : ''}
+                  </a>
 
                   {/* BGM Adjustment Controls (only if BGM mixed) */}
                   {bgmMixed && (
