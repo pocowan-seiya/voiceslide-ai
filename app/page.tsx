@@ -2470,26 +2470,50 @@ export default function Home() {
                     お使いのブラウザは音声再生に対応していません
                   </audio>
 
-                  {/* Playback Speed */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-xs text-zinc-500">速度:</span>
+                  {/* Speed Processing Controls */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-zinc-500">⚡ 倍速:</span>
                     {[1, 1.2, 1.5, 2].map((rate) => (
                       <button
                         key={rate}
-                        onClick={() => {
-                          setPlaybackRate(rate);
-                          document.querySelectorAll('audio, video').forEach((el) => {
-                            (el as HTMLMediaElement).playbackRate = rate;
-                          });
+                        disabled={isLoadingText}
+                        onClick={async () => {
+                          setAudioSettings(prev => ({ ...prev, speedFactor: rate }));
+                          try {
+                            const res = await fetch(`${API_URL}/api/audio/${state.jobId}/apply-speed?speed_factor=${rate}`, {
+                              method: "POST",
+                              headers: getAPIHeaders(),
+                            });
+                            if (res.ok) {
+                              // Force audio player to reload
+                              const audioEl = document.querySelector('audio') as HTMLAudioElement;
+                              if (audioEl) {
+                                audioEl.src = bgmMixed
+                                  ? `${API_URL}/api/audio/${state.jobId}/mixed?t=${Date.now()}`
+                                  : `${API_URL}/api/audio/${state.jobId}/trimmed?t=${Date.now()}`;
+                                audioEl.load();
+                              }
+                            }
+                          } catch (e) { console.error("Speed apply failed:", e); }
                         }}
-                        className={`px-2 py-0.5 rounded text-xs transition-all ${playbackRate === rate
-                          ? "bg-cyan-500/20 border border-cyan-500/50 text-cyan-400"
+                        className={`px-2 py-0.5 rounded text-xs transition-all ${audioSettings.speedFactor === rate
+                          ? "bg-amber-500/20 border border-amber-500/50 text-amber-400"
                           : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
                           }`}
                       >
-                        {rate}x
+                        {rate === 1 ? '通常' : `${rate}x`}
                       </button>
                     ))}
+                  </div>
+                  {/* Audio Download */}
+                  <div className="mb-3">
+                    <a
+                      href={`${API_URL}/api/audio/${state.jobId}/trimmed`}
+                      download
+                      className="text-xs text-cyan-400 hover:text-cyan-300 underline"
+                    >
+                      📥 音声をダウンロード{audioSettings.speedFactor !== 1 ? ` (${audioSettings.speedFactor}x)` : ''}
+                    </a>
                   </div>
 
                   {/* BGM Adjustment Controls (only if BGM mixed) */}
