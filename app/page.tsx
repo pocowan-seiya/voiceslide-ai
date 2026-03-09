@@ -232,6 +232,7 @@ export default function Home() {
   const [bgmMixing, setBgmMixing] = useState(false);
   const [bgmFeedback, setBgmFeedback] = useState("");
   const [bgmVolume, setBgmVolume] = useState(-27);
+  const [playbackRate, setPlaybackRate] = useState(1);
   // BGM playback settings
   const [bgmPlayMode, setBgmPlayMode] = useState<'loop' | 'single' | 'minute'>('loop');
   const [bgmFadeIn, setBgmFadeIn] = useState(true);
@@ -2432,14 +2433,37 @@ export default function Home() {
                   <audio
                     key={bgmMixed ? `mixed-${Date.now()}` : 'trimmed'}
                     controls
-                    className="w-full mb-3"
+                    className="w-full mb-2"
                     src={bgmMixed
                       ? `${API_URL}/api/audio/${state.jobId}/mixed?t=${Date.now()}`
                       : `${API_URL}/api/audio/${state.jobId}/trimmed`
                     }
+                    onPlay={(e) => { (e.target as HTMLAudioElement).playbackRate = playbackRate; }}
                   >
                     お使いのブラウザは音声再生に対応していません
                   </audio>
+
+                  {/* Playback Speed */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xs text-zinc-500">速度:</span>
+                    {[1, 1.2, 1.5, 2].map((rate) => (
+                      <button
+                        key={rate}
+                        onClick={() => {
+                          setPlaybackRate(rate);
+                          document.querySelectorAll('audio, video').forEach((el) => {
+                            (el as HTMLMediaElement).playbackRate = rate;
+                          });
+                        }}
+                        className={`px-2 py-0.5 rounded text-xs transition-all ${playbackRate === rate
+                          ? "bg-cyan-500/20 border border-cyan-500/50 text-cyan-400"
+                          : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                          }`}
+                      >
+                        {rate}x
+                      </button>
+                    ))}
+                  </div>
 
                   {/* BGM Adjustment Controls (only if BGM mixed) */}
                   {bgmMixed && (
@@ -3823,7 +3847,29 @@ export default function Home() {
                 <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
               </div>
 
-              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-6 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} />
+              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-2 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} onPlay={(e) => { (e.target as HTMLVideoElement).playbackRate = playbackRate; }} />
+
+              {/* Playback Speed */}
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <span className="text-xs text-zinc-500">速度:</span>
+                {[1, 1.2, 1.5, 2].map((rate) => (
+                  <button
+                    key={rate}
+                    onClick={() => {
+                      setPlaybackRate(rate);
+                      document.querySelectorAll('audio, video').forEach((el) => {
+                        (el as HTMLMediaElement).playbackRate = rate;
+                      });
+                    }}
+                    className={`px-2 py-0.5 rounded text-xs transition-all ${playbackRate === rate
+                      ? "bg-cyan-500/20 border border-cyan-500/50 text-cyan-400"
+                      : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                      }`}
+                  >
+                    {rate}x
+                  </button>
+                ))}
+              </div>
 
               <div className="flex flex-wrap justify-center gap-3 mb-8">
                 <button
