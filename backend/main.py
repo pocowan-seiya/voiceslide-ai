@@ -808,7 +808,8 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                 import subprocess
                 current_audio = jobs[job_id].get("audio_path")
                 if current_audio:
-                    speed_output = current_audio.replace(".wav", f"_speed{speed_factor}x.wav").replace(".mp3", f"_speed{speed_factor}x.mp3")
+                    base, ext = os.path.splitext(current_audio)
+                    speed_output = f"{base}_speed{speed_factor}x{ext}"
                     # FFmpeg atempo filter (supports 0.5-2.0; chain for >2.0)
                     atempo_filters = []
                     remaining = speed_factor
@@ -823,7 +824,10 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                         "-filter:a", filter_str,
                         speed_output
                     ]
-                    subprocess.run(cmd, check=True, capture_output=True)
+                    proc = subprocess.run(cmd, capture_output=True, text=True)
+                    if proc.returncode != 0:
+                        print(f"[Speed] FFmpeg error: {proc.stderr}")
+                        raise Exception(f"FFmpeg failed: {proc.stderr[:200]}")
                     jobs[job_id]["audio_path"] = speed_output
                     pipeline.audio_path = speed_output
                     
@@ -946,8 +950,14 @@ async def apply_speed(job_id: str, speed_factor: float = 1.0):
         raise HTTPException(404, "Job not found")
     
     job = jobs[job_id]
-    # Use the cleanup result audio (before speed) or original
-    base_audio = job.get("pre_speed_audio_path") or job.get("audio_path")
+    
+    # Save pre-speed state on first use
+    if not job.get("pre_speed_audio_path"):
+        job["pre_speed_audio_path"] = job.get("audio_path")
+        if pipelines.get(job_id) and pipelines[job_id].segments:
+            job["pre_speed_segments"] = [dict(s) for s in pipelines[job_id].segments]
+    
+    base_audio = job["pre_speed_audio_path"]
     
     if not base_audio or not os.path.exists(base_audio):
         raise HTTPException(404, "Audio file not found")
@@ -960,11 +970,15 @@ async def apply_speed(job_id: str, speed_factor: float = 1.0):
         pipeline = pipelines.get(job_id)
         if pipeline:
             pipeline.audio_path = base_audio
+            if job.get("pre_speed_segments"):
+                pipeline.segments = [dict(s) for s in job["pre_speed_segments"]]
+                job["segments"] = pipeline.segments
         return {"status": "ok", "speed_factor": 1.0, "message": "通常速度に戻しました"}
     
     try:
         import subprocess
-        speed_output = base_audio.replace(".wav", f"_speed{speed_factor}x.wav").replace(".mp3", f"_speed{speed_factor}x.mp3")
+        base, ext = os.path.splitext(base_audio)
+        speed_output = f"{base}_speed{speed_factor}x{ext}"
         
         # FFmpeg atempo filter (supports 0.5-2.0; chain for >2.0)
         atempo_filters = []
@@ -980,7 +994,10 @@ async def apply_speed(job_id: str, speed_factor: float = 1.0):
             "-filter:a", filter_str,
             speed_output
         ]
-        subprocess.run(cmd, check=True, capture_output=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            print(f"[Speed] FFmpeg error: {proc.stderr}")
+            raise Exception(f"FFmpeg failed: {proc.stderr[:200]}")
         
         job["audio_path"] = speed_output
         pipeline = pipelines.get(job_id)

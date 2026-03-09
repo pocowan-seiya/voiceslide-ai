@@ -2521,9 +2521,10 @@ export default function Home() {
                   <a
                     href={`${API_URL}/api/audio/${state.jobId}/trimmed`}
                     download
-                    className="flex items-center justify-center gap-2 w-full py-2.5 mb-3 rounded-lg text-sm font-medium bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 transition-all"
+                    className="w-full py-3 px-4 mb-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-[0.98] text-white font-medium rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
                   >
-                    📥 カット後の音声ダウンロード{audioSettings.speedFactor !== 1 ? ` (${audioSettings.speedFactor}x)` : ''}
+                    <span>⬇️</span>
+                    <span>カット後の音声ダウンロード{audioSettings.speedFactor !== 1 ? ` (${audioSettings.speedFactor}x)` : ''}</span>
                   </a>
 
                   {/* BGM Adjustment Controls (only if BGM mixed) */}
