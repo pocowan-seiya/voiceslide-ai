@@ -665,6 +665,7 @@ async def transcribe(
     cleanup_audio: bool = True,
     cleanup_mode: str = "natural",  # "strict" or "natural"
     silence_threshold: float = 0.5,  # user-adjustable
+    speed_factor: float = 1.0,  # 1.0, 1.2, 1.5, 2.0
     x_openai_key: Optional[str] = Header(None),
     x_gemini_key: Optional[str] = Header(None)
 ):
@@ -687,7 +688,8 @@ async def transcribe(
     jobs[job_id]["cleanup_settings"] = {
         "cleanup_audio": cleanup_audio,
         "cleanup_mode": cleanup_mode,
-        "silence_threshold": silence_threshold
+        "silence_threshold": silence_threshold,
+        "speed_factor": max(0.5, min(3.0, speed_factor))  # clamp to safe range
     }
     
     # Start background processing
@@ -714,6 +716,7 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
         cleanup_audio = settings.get("cleanup_audio", True)
         cleanup_mode = settings.get("cleanup_mode", "natural")
         silence_threshold = settings.get("silence_threshold", 1.0)
+        speed_factor = settings.get("speed_factor", 1.0)
         
         # Mode configuration
         mode_config = {
@@ -794,6 +797,52 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                 "original_duration": cleanup_result.get("original_duration", 0),
                 "new_duration": cleanup_result.get("new_duration", 0)
             }
+        
+        # Step 2d: Speed processing (atempo)
+        if speed_factor != 1.0:
+            jobs[job_id]["transcribe_progress"] = f"倍速処理中 ({speed_factor}x)..."
+            try:
+                import subprocess
+                current_audio = jobs[job_id].get("audio_path")
+                if current_audio:
+                    speed_output = current_audio.replace(".wav", f"_speed{speed_factor}x.wav").replace(".mp3", f"_speed{speed_factor}x.mp3")
+                    # FFmpeg atempo filter (supports 0.5-2.0; chain for >2.0)
+                    atempo_filters = []
+                    remaining = speed_factor
+                    while remaining > 2.0:
+                        atempo_filters.append("atempo=2.0")
+                        remaining /= 2.0
+                    atempo_filters.append(f"atempo={remaining}")
+                    filter_str = ",".join(atempo_filters)
+                    
+                    cmd = [
+                        "ffmpeg", "-y", "-i", current_audio,
+                        "-filter:a", filter_str,
+                        speed_output
+                    ]
+                    subprocess.run(cmd, check=True, capture_output=True)
+                    jobs[job_id]["audio_path"] = speed_output
+                    pipeline.audio_path = speed_output
+                    
+                    # Adjust segment timestamps
+                    segments = result.get("segments", pipeline.segments or [])
+                    for seg in segments:
+                        seg["start"] = seg["start"] / speed_factor
+                        seg["end"] = seg["end"] / speed_factor
+                    result["segments"] = segments
+                    pipeline.segments = segments
+                    
+                    # Adjust keep_regions if present
+                    if hasattr(pipeline, 'audio_keep_regions') and pipeline.audio_keep_regions:
+                        pipeline.audio_keep_regions = [
+                            (start / speed_factor, end / speed_factor)
+                            for start, end in pipeline.audio_keep_regions
+                        ]
+                    
+                    print(f"[Speed] Applied {speed_factor}x speed: {current_audio} → {speed_output}")
+            except Exception as e:
+                print(f"[Speed] Speed processing failed: {e}")
+                # Continue without speed change
             
             # Mix BGM if pending (user uploaded BGM before cleanup was done)
             bgm_path = jobs[job_id].get("bgm_path")

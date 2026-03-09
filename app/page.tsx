@@ -193,7 +193,8 @@ export default function Home() {
     cleanupEnabled: boolean;
     cleanupMode: "strict" | "natural";
     silenceThreshold: number; // seconds (0.3 - 1.0)
-  }>({ cleanupEnabled: true, cleanupMode: "natural", silenceThreshold: 0.5 });
+    speedFactor: number; // 1.0, 1.2, 1.5, 2.0
+  }>({ cleanupEnabled: true, cleanupMode: "natural", silenceThreshold: 0.5, speedFactor: 1 });
 
   // Slide count settings
   const [slideSettings, setSlideSettings] = useState<{
@@ -431,6 +432,7 @@ export default function Home() {
         cleanup_audio: audioSettings.cleanupEnabled.toString(),
         cleanup_mode: audioSettings.cleanupMode,
         silence_threshold: audioSettings.silenceThreshold.toString(),
+        speed_factor: audioSettings.speedFactor.toString(),
       });
 
       const startRes = await fetchWithRetry(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
@@ -2217,6 +2219,31 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+
+                {/* Speed Factor */}
+                <div className="mt-4 bg-zinc-900/50 rounded-lg p-3">
+                  <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                    <span>⚡ 倍速設定</span>
+                    <span className="text-zinc-500">{audioSettings.speedFactor === 1 ? '通常速度' : `${audioSettings.speedFactor}x`}</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[1, 1.2, 1.5, 2].map((rate) => (
+                      <button
+                        key={rate}
+                        onClick={() => setAudioSettings(prev => ({ ...prev, speedFactor: rate }))}
+                        className={`py-2 rounded-lg text-xs font-medium transition-all ${audioSettings.speedFactor === rate
+                          ? "bg-amber-500/20 border border-amber-500/50 text-amber-400"
+                          : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                          }`}
+                      >
+                        {rate === 1 ? '通常' : `${rate}x`}
+                      </button>
+                    ))}
+                  </div>
+                  {audioSettings.speedFactor !== 1 && (
+                    <p className="text-[10px] text-amber-400/60 mt-1.5">※ 音声を{audioSettings.speedFactor}倍速で処理した動画を生成します</p>
+                  )}
+                </div>
               </div>
 
               {/* BGM Section - Simplified (toggle + upload only) */}
