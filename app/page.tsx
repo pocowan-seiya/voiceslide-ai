@@ -3872,29 +3872,7 @@ export default function Home() {
                 <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
               </div>
 
-              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-2 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} onPlay={(e) => { (e.target as HTMLVideoElement).playbackRate = playbackRate; }} />
-
-              {/* Playback Speed */}
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <span className="text-xs text-zinc-500">速度:</span>
-                {[1, 1.2, 1.5, 2].map((rate) => (
-                  <button
-                    key={rate}
-                    onClick={() => {
-                      setPlaybackRate(rate);
-                      document.querySelectorAll('audio, video').forEach((el) => {
-                        (el as HTMLMediaElement).playbackRate = rate;
-                      });
-                    }}
-                    className={`px-2 py-0.5 rounded text-xs transition-all ${playbackRate === rate
-                      ? "bg-cyan-500/20 border border-cyan-500/50 text-cyan-400"
-                      : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
-                      }`}
-                  >
-                    {rate}x
-                  </button>
-                ))}
-              </div>
+              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-6 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} />
 
               <div className="flex flex-wrap justify-center gap-3 mb-8">
                 <button
