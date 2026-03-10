@@ -847,6 +847,7 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                         ]
                     
                     print(f"[Speed] Applied {speed_factor}x speed: {current_audio} → {speed_output}")
+                    pipeline.speed_factor = speed_factor
             except Exception as e:
                 print(f"[Speed] Speed processing failed: {e}")
                 # Continue without speed change
@@ -1011,6 +1012,7 @@ async def apply_speed(job_id: str, speed_factor: float = 1.0):
                     for seg in base_segments
                 ]
                 job["segments"] = pipeline.segments
+            pipeline.speed_factor = speed_factor
         
         print(f"[Speed] Re-applied {speed_factor}x: {base_audio} → {speed_output}")
         return {"status": "ok", "speed_factor": speed_factor, "message": f"{speed_factor}x倍速を適用しました"}

@@ -65,6 +65,7 @@ class HybridPipeline:
         self.audio_keep_regions = None  # From cleanup_audio
         self.audio_trim_start = 0.0  # From trim_silence_from_audio
         self.audio_trim_end = 0.0  # From trim_silence_from_audio
+        self.speed_factor = 1.0  # Audio speed factor (1.0 = normal)
     
     def _sync_segments_with_transcript(self, edited_transcript: str) -> List[Dict[str, Any]]:
         """
@@ -290,7 +291,8 @@ class HybridPipeline:
             facecam_size=self.facecam_size,
             audio_keep_regions=self.audio_keep_regions,
             audio_trim_start=self.audio_trim_start,
-            audio_trim_end=self.audio_trim_end
+            audio_trim_end=self.audio_trim_end,
+            speed_factor=self.speed_factor
         )
         
         return {
