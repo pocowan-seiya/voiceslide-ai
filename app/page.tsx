@@ -812,56 +812,59 @@ export default function Home() {
   [contenteditable="true"]:hover { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); border-radius: 4px; }
   [contenteditable="true"]:focus { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.8); border-radius: 4px; }
   /* Make decorative overlays pass-through in edit mode */
-  svg, svg *, canvas, [class*="decoration"], [class*="circle"], [class*="shape"], [class*="bg-"], [class*="overlay"] {
-    pointer-events: none !important;
-  }
+  svg, svg *, canvas { pointer-events: none !important; }
   /* Ensure all text containers are clickable */
-  h1, h2, h3, h4, h5, h6, p, span, li, td, th, label, a, strong, em, b, i, u,
-  div[contenteditable="true"], span[contenteditable="true"] {
+  [contenteditable="true"], [contenteditable="true"] * {
     pointer-events: auto !important;
   }
 </style>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    var SKIP_TAGS = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME','CIRCLE','ELLIPSE','RECT','LINE','POLYGON','POLYLINE'];
+    var SKIP_TAGS = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME','CIRCLE','ELLIPSE','RECT','LINE','POLYGON','POLYLINE','INPUT','SELECT','TEXTAREA'];
+    var INLINE_TAGS = ['STRONG','EM','B','I','U','SPAN','A','MARK','SUB','SUP','SMALL','ABBR','CODE','FONT'];
     
-    function isLeafText(el) {
-      if (SKIP_TAGS.includes(el.tagName)) return false;
-      var text = (el.textContent || '').trim();
-      if (!text) return false;
-      // Check if this element has child elements with significant text
-      var childEls = Array.from(el.children).filter(function(c) {
-        return !SKIP_TAGS.includes(c.tagName) && (c.textContent || '').trim().length > 0;
-      });
-      return childEls.length === 0;
+    function hasDirectText(el) {
+      // Check if element has any direct text node children (not from child elements)
+      for (var i = 0; i < el.childNodes.length; i++) {
+        if (el.childNodes[i].nodeType === 3 && el.childNodes[i].textContent.trim()) return true;
+      }
+      return false;
     }
     
     function makeEditable(el) {
       if (SKIP_TAGS.includes(el.tagName)) return;
-      if (isLeafText(el)) {
+      var text = (el.textContent || '').trim();
+      if (!text) return;
+      
+      // If this element has direct text content, make it editable
+      if (hasDirectText(el)) {
         el.contentEditable = 'true';
-      } else {
-        Array.from(el.children).forEach(makeEditable);
+        return; // Don't recurse into children — parent handles it all
       }
+      
+      // Check children: if all text-containing children are inline, make this element editable
+      var childEls = Array.from(el.children).filter(function(c) {
+        return !SKIP_TAGS.includes(c.tagName) && (c.textContent || '').trim().length > 0;
+      });
+      
+      if (childEls.length > 0 && childEls.every(function(c) { return INLINE_TAGS.includes(c.tagName); })) {
+        el.contentEditable = 'true';
+        return;
+      }
+      
+      // Otherwise recurse into children
+      Array.from(el.children).forEach(makeEditable);
     }
     
-    // Make non-text elements pass-through for clicks
+    // Make positioned elements without text pass-through for clicks
     function makeDecorativePassthrough(el) {
       if (SKIP_TAGS.includes(el.tagName)) return;
+      if (el.contentEditable === 'true') return; // Skip editable elements
       var text = (el.textContent || '').trim();
       var style = window.getComputedStyle(el);
       var isPositioned = style.position === 'absolute' || style.position === 'fixed';
-      // If element has no text and is positioned, it's likely decorative
       if (!text && isPositioned) {
         el.style.pointerEvents = 'none';
-      }
-      // Also handle ::before/::after pseudo-elements by checking for empty containers
-      // overlapping text areas
-      if (isPositioned && el.contentEditable !== 'true') {
-        var hasEditableChild = el.querySelector('[contenteditable="true"]');
-        if (!hasEditableChild && !text) {
-          el.style.pointerEvents = 'none';
-        }
       }
       Array.from(el.children).forEach(makeDecorativePassthrough);
     }
