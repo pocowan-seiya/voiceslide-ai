@@ -153,7 +153,8 @@ async def compose_video(
     facecam_size: int = 200,
     audio_keep_regions: Optional[List[tuple]] = None,
     audio_trim_start: float = 0.0,
-    audio_trim_end: float = 0.0
+    audio_trim_end: float = 0.0,
+    speed_factor: float = 1.0
 ) -> str:
     """
     全スライドを使用して動画を生成
@@ -294,15 +295,45 @@ async def compose_video(
     if facecam_video_path and os.path.exists(facecam_video_path):
         # Trim facecam to match audio cuts (sync lip movement)
         actual_facecam_path = facecam_video_path
-        if audio_keep_regions or audio_trim_start > 0 or audio_trim_end > 0:
+        
+        # If speed was applied, keep_regions were already divided by speed_factor.
+        # We need the ORIGINAL timestamps (pre-speed) to trim the facecam at normal speed.
+        original_keep_regions = audio_keep_regions
+        if audio_keep_regions and speed_factor != 1.0:
+            original_keep_regions = [
+                (start * speed_factor, end * speed_factor)
+                for start, end in audio_keep_regions
+            ]
+            print(f"[FFmpeg] Reversed speed-adjusted keep_regions for facecam (x{speed_factor})")
+        
+        if original_keep_regions or audio_trim_start > 0 or audio_trim_end > 0:
             trimmed_facecam_path = output_path.replace(".mp4", "_facecam_trimmed.mp4")
             actual_facecam_path = trim_facecam_video(
                 facecam_path=facecam_video_path,
-                keep_regions=audio_keep_regions or [],
+                keep_regions=original_keep_regions or [],
                 output_path=trimmed_facecam_path,
-                trim_start=audio_trim_start,
-                trim_end=audio_trim_end
+                trim_start=audio_trim_start * speed_factor if speed_factor != 1.0 else audio_trim_start,
+                trim_end=audio_trim_end * speed_factor if speed_factor != 1.0 else audio_trim_end
             )
+        
+        # Apply speed to facecam video if speed processing was used
+        if speed_factor != 1.0:
+            sped_facecam_path = output_path.replace(".mp4", "_facecam_sped.mp4")
+            # setpts for video speed, atempo for audio (though we drop audio with -an)
+            setpts_val = 1.0 / speed_factor  # e.g., 1.5x -> PTS*0.6667
+            cmd_speed = [
+                "ffmpeg", "-y", "-i", actual_facecam_path,
+                "-filter:v", f"setpts={setpts_val}*PTS",
+                "-an",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                sped_facecam_path
+            ]
+            speed_result = subprocess.run(cmd_speed, capture_output=True, text=True)
+            if speed_result.returncode == 0:
+                actual_facecam_path = sped_facecam_path
+                print(f"[FFmpeg] Applied {speed_factor}x speed to facecam video")
+            else:
+                print(f"[FFmpeg] Facecam speed failed: {speed_result.stderr[:200]}")
         
         print(f"[FFmpeg] Applying face cam overlay: {facecam_position}, {facecam_size}px")
         temp_with_facecam = output_path.replace(".mp4", "_temp_facecam.mp4")
@@ -357,7 +388,7 @@ async def compose_video(
         raise Exception(f"音声合成エラー: {result.stderr[:200]}")
     
     # 一時ファイルをクリーンアップ
-    for tmp_file in [temp_video, output_path.replace(".mp4", "_temp_facecam.mp4"), output_path.replace(".mp4", "_facecam_trimmed.mp4"), concat_file]:
+    for tmp_file in [temp_video, output_path.replace(".mp4", "_temp_facecam.mp4"), output_path.replace(".mp4", "_facecam_trimmed.mp4"), output_path.replace(".mp4", "_facecam_sped.mp4"), concat_file]:
         if os.path.exists(tmp_file):
             os.remove(tmp_file)
     

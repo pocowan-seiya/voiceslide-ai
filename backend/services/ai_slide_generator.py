@@ -2761,6 +2761,10 @@ Concept to illustrate: """
                     await page.screenshot(path=output_path, type="png")
                     await page.close()
                     render_success = True
+                    
+                    # Update html_contents with the final rendered version
+                    # (fix_body_dimensions may have changed the HTML)
+                    html_contents[-1] = html
                     break
                     
                 except Exception as render_error:

@@ -193,7 +193,8 @@ export default function Home() {
     cleanupEnabled: boolean;
     cleanupMode: "strict" | "natural";
     silenceThreshold: number; // seconds (0.3 - 1.0)
-  }>({ cleanupEnabled: true, cleanupMode: "natural", silenceThreshold: 0.5 });
+    speedFactor: number; // 1.0, 1.2, 1.5, 2.0
+  }>({ cleanupEnabled: true, cleanupMode: "natural", silenceThreshold: 0.5, speedFactor: 1 });
 
   // Slide count settings
   const [slideSettings, setSlideSettings] = useState<{
@@ -232,6 +233,7 @@ export default function Home() {
   const [bgmMixing, setBgmMixing] = useState(false);
   const [bgmFeedback, setBgmFeedback] = useState("");
   const [bgmVolume, setBgmVolume] = useState(-27);
+  const [playbackRate, setPlaybackRate] = useState(1);
   // BGM playback settings
   const [bgmPlayMode, setBgmPlayMode] = useState<'loop' | 'single' | 'minute'>('loop');
   const [bgmFadeIn, setBgmFadeIn] = useState(true);
@@ -430,6 +432,7 @@ export default function Home() {
         cleanup_audio: audioSettings.cleanupEnabled.toString(),
         cleanup_mode: audioSettings.cleanupMode,
         silence_threshold: audioSettings.silenceThreshold.toString(),
+        speed_factor: audioSettings.speedFactor.toString(),
       });
 
       const startRes = await fetchWithRetry(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
@@ -809,56 +812,59 @@ export default function Home() {
   [contenteditable="true"]:hover { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); border-radius: 4px; }
   [contenteditable="true"]:focus { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.8); border-radius: 4px; }
   /* Make decorative overlays pass-through in edit mode */
-  svg, svg *, canvas, [class*="decoration"], [class*="circle"], [class*="shape"], [class*="bg-"], [class*="overlay"] {
-    pointer-events: none !important;
-  }
+  svg, svg *, canvas { pointer-events: none !important; }
   /* Ensure all text containers are clickable */
-  h1, h2, h3, h4, h5, h6, p, span, li, td, th, label, a, strong, em, b, i, u,
-  div[contenteditable="true"], span[contenteditable="true"] {
+  [contenteditable="true"], [contenteditable="true"] * {
     pointer-events: auto !important;
   }
 </style>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    var SKIP_TAGS = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME','CIRCLE','ELLIPSE','RECT','LINE','POLYGON','POLYLINE'];
+    var SKIP_TAGS = ['SCRIPT','STYLE','META','LINK','IMG','SVG','PATH','BR','HR','IFRAME','CIRCLE','ELLIPSE','RECT','LINE','POLYGON','POLYLINE','INPUT','SELECT','TEXTAREA'];
+    var INLINE_TAGS = ['STRONG','EM','B','I','U','SPAN','A','MARK','SUB','SUP','SMALL','ABBR','CODE','FONT'];
     
-    function isLeafText(el) {
-      if (SKIP_TAGS.includes(el.tagName)) return false;
-      var text = (el.textContent || '').trim();
-      if (!text) return false;
-      // Check if this element has child elements with significant text
-      var childEls = Array.from(el.children).filter(function(c) {
-        return !SKIP_TAGS.includes(c.tagName) && (c.textContent || '').trim().length > 0;
-      });
-      return childEls.length === 0;
+    function hasDirectText(el) {
+      // Check if element has any direct text node children (not from child elements)
+      for (var i = 0; i < el.childNodes.length; i++) {
+        if (el.childNodes[i].nodeType === 3 && el.childNodes[i].textContent.trim()) return true;
+      }
+      return false;
     }
     
     function makeEditable(el) {
       if (SKIP_TAGS.includes(el.tagName)) return;
-      if (isLeafText(el)) {
+      var text = (el.textContent || '').trim();
+      if (!text) return;
+      
+      // If this element has direct text content, make it editable
+      if (hasDirectText(el)) {
         el.contentEditable = 'true';
-      } else {
-        Array.from(el.children).forEach(makeEditable);
+        return; // Don't recurse into children — parent handles it all
       }
+      
+      // Check children: if all text-containing children are inline, make this element editable
+      var childEls = Array.from(el.children).filter(function(c) {
+        return !SKIP_TAGS.includes(c.tagName) && (c.textContent || '').trim().length > 0;
+      });
+      
+      if (childEls.length > 0 && childEls.every(function(c) { return INLINE_TAGS.includes(c.tagName); })) {
+        el.contentEditable = 'true';
+        return;
+      }
+      
+      // Otherwise recurse into children
+      Array.from(el.children).forEach(makeEditable);
     }
     
-    // Make non-text elements pass-through for clicks
+    // Make positioned elements without text pass-through for clicks
     function makeDecorativePassthrough(el) {
       if (SKIP_TAGS.includes(el.tagName)) return;
+      if (el.contentEditable === 'true') return; // Skip editable elements
       var text = (el.textContent || '').trim();
       var style = window.getComputedStyle(el);
       var isPositioned = style.position === 'absolute' || style.position === 'fixed';
-      // If element has no text and is positioned, it's likely decorative
       if (!text && isPositioned) {
         el.style.pointerEvents = 'none';
-      }
-      // Also handle ::before/::after pseudo-elements by checking for empty containers
-      // overlapping text areas
-      if (isPositioned && el.contentEditable !== 'true') {
-        var hasEditableChild = el.querySelector('[contenteditable="true"]');
-        if (!hasEditableChild && !text) {
-          el.style.pointerEvents = 'none';
-        }
       }
       Array.from(el.children).forEach(makeDecorativePassthrough);
     }
@@ -2216,6 +2222,31 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+
+                {/* Speed Factor */}
+                <div className="mt-4 bg-zinc-900/50 rounded-lg p-3">
+                  <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                    <span>⚡ 倍速設定</span>
+                    <span className="text-zinc-500">{audioSettings.speedFactor === 1 ? '通常速度' : `${audioSettings.speedFactor}x`}</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[1, 1.2, 1.5, 2].map((rate) => (
+                      <button
+                        key={rate}
+                        onClick={() => setAudioSettings(prev => ({ ...prev, speedFactor: rate }))}
+                        className={`py-2 rounded-lg text-xs font-medium transition-all ${audioSettings.speedFactor === rate
+                          ? "bg-amber-500/20 border border-amber-500/50 text-amber-400"
+                          : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                          }`}
+                      >
+                        {rate === 1 ? '通常' : `${rate}x`}
+                      </button>
+                    ))}
+                  </div>
+                  {audioSettings.speedFactor !== 1 && (
+                    <p className="text-[10px] text-amber-400/60 mt-1.5">※ 音声を{audioSettings.speedFactor}倍速で処理した動画を生成します</p>
+                  )}
+                </div>
               </div>
 
               {/* BGM Section - Simplified (toggle + upload only) */}
@@ -2432,14 +2463,72 @@ export default function Home() {
                   <audio
                     key={bgmMixed ? `mixed-${Date.now()}` : 'trimmed'}
                     controls
-                    className="w-full mb-3"
+                    className="w-full mb-2"
                     src={bgmMixed
                       ? `${API_URL}/api/audio/${state.jobId}/mixed?t=${Date.now()}`
                       : `${API_URL}/api/audio/${state.jobId}/trimmed`
                     }
+                    onPlay={(e) => { (e.target as HTMLAudioElement).playbackRate = playbackRate; }}
                   >
                     お使いのブラウザは音声再生に対応していません
                   </audio>
+
+                  {/* Speed Processing Controls */}
+                  <div className="bg-zinc-900/50 rounded-lg p-3 mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-zinc-400">⚡ 倍速設定</span>
+                      <span className="text-xs text-zinc-500">{audioSettings.speedFactor === 1 ? '通常速度' : `${audioSettings.speedFactor}x`}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mb-2">
+                      {[1, 1.2, 1.5, 2].map((rate) => (
+                        <button
+                          key={rate}
+                          onClick={() => setAudioSettings(prev => ({ ...prev, speedFactor: rate }))}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${audioSettings.speedFactor === rate
+                            ? "bg-amber-500/20 border border-amber-500/50 text-amber-400"
+                            : "bg-zinc-800 border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                            }`}
+                        >
+                          {rate === 1 ? '通常' : `${rate}x`}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setIsLoadingText(true);
+                        try {
+                          const res = await fetch(`${API_URL}/api/audio/${state.jobId}/apply-speed?speed_factor=${audioSettings.speedFactor}`, {
+                            method: "POST",
+                            headers: getAPIHeaders(),
+                          });
+                          if (res.ok) {
+                            const audioEl = document.querySelector('audio') as HTMLAudioElement;
+                            if (audioEl) {
+                              audioEl.src = bgmMixed
+                                ? `${API_URL}/api/audio/${state.jobId}/mixed?t=${Date.now()}`
+                                : `${API_URL}/api/audio/${state.jobId}/trimmed?t=${Date.now()}`;
+                              audioEl.load();
+                            }
+                          }
+                        } catch (e) { console.error("Speed apply failed:", e); }
+                        setIsLoadingText(false);
+                      }}
+                      disabled={isLoadingText}
+                      className="w-full py-2 rounded-lg text-xs font-medium bg-amber-500/20 border border-amber-500/40 text-amber-400 hover:bg-amber-500/30 transition-all disabled:opacity-50"
+                    >
+                      {isLoadingText ? '処理中...' : '🔄 音声を更新'}
+                    </button>
+                  </div>
+
+                  {/* Audio Download */}
+                  <a
+                    href={`${API_URL}/api/audio/${state.jobId}/trimmed`}
+                    download
+                    className="w-full py-3 px-4 mb-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-[0.98] text-white font-medium rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
+                  >
+                    <span>⬇️</span>
+                    <span>カット後の音声ダウンロード{audioSettings.speedFactor !== 1 ? ` (${audioSettings.speedFactor}x)` : ''}</span>
+                  </a>
 
                   {/* BGM Adjustment Controls (only if BGM mixed) */}
                   {bgmMixed && (
@@ -2495,44 +2584,7 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Download Button */}
-                  <button
-                    onClick={async (e) => {
-                      const btn = e.currentTarget;
-                      btn.textContent = '⏳ ダウンロード中...';
-                      btn.disabled = true;
-                      try {
-                        const endpoint = bgmMixed ? 'mixed' : 'trimmed';
-                        const res = await fetch(
-                          `${API_URL}/api/audio/${state.jobId}/${endpoint}`
-                        );
-                        if (!res.ok) throw new Error('Download failed');
-                        const blob = await res.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `audio_${state.jobId}${bgmMixed ? '_mixed' : ''}.mp3`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        window.URL.revokeObjectURL(url);
-                        btn.innerHTML = '✅ ダウンロード完了！';
-                        setTimeout(() => {
-                          btn.innerHTML = `<span>⬇️</span><span>${bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>`;
-                          btn.disabled = false;
-                        }, 2000);
-                      } catch (err) {
-                        console.error('Download error:', err);
-                        alert('ダウンロードに失敗しました');
-                        btn.innerHTML = `<span>⬇️</span><span>${bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>`;
-                        btn.disabled = false;
-                      }
-                    }}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-[0.98] disabled:opacity-50 text-white font-medium rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
-                  >
-                    <span>⬇️</span>
-                    <span>{bgmMixed ? 'BGM入り音声をダウンロード' : 'カット済み音声をダウンロード'}</span>
-                  </button>
+                  {/* Download button removed - already in speed controls section above */}
                 </div>
               )}
 

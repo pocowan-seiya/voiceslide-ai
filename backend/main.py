@@ -665,6 +665,7 @@ async def transcribe(
     cleanup_audio: bool = True,
     cleanup_mode: str = "natural",  # "strict" or "natural"
     silence_threshold: float = 0.5,  # user-adjustable
+    speed_factor: float = 1.0,  # 1.0, 1.2, 1.5, 2.0
     x_openai_key: Optional[str] = Header(None),
     x_gemini_key: Optional[str] = Header(None)
 ):
@@ -687,7 +688,8 @@ async def transcribe(
     jobs[job_id]["cleanup_settings"] = {
         "cleanup_audio": cleanup_audio,
         "cleanup_mode": cleanup_mode,
-        "silence_threshold": silence_threshold
+        "silence_threshold": silence_threshold,
+        "speed_factor": max(0.5, min(3.0, speed_factor))  # clamp to safe range
     }
     
     # Start background processing
@@ -714,6 +716,7 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
         cleanup_audio = settings.get("cleanup_audio", True)
         cleanup_mode = settings.get("cleanup_mode", "natural")
         silence_threshold = settings.get("silence_threshold", 1.0)
+        speed_factor = settings.get("speed_factor", 1.0)
         
         # Mode configuration
         mode_config = {
@@ -794,6 +797,60 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                 "original_duration": cleanup_result.get("original_duration", 0),
                 "new_duration": cleanup_result.get("new_duration", 0)
             }
+        
+        # Step 2d: Speed processing (atempo)
+        if speed_factor != 1.0:
+            jobs[job_id]["transcribe_progress"] = f"倍速処理中 ({speed_factor}x)..."
+            # Save pre-speed state for later re-processing
+            jobs[job_id]["pre_speed_audio_path"] = jobs[job_id].get("audio_path")
+            jobs[job_id]["pre_speed_segments"] = [dict(s) for s in (result.get("segments") or [])]
+            try:
+                import subprocess
+                current_audio = jobs[job_id].get("audio_path")
+                if current_audio:
+                    base, ext = os.path.splitext(current_audio)
+                    speed_output = f"{base}_speed{speed_factor}x{ext}"
+                    # FFmpeg atempo filter (supports 0.5-2.0; chain for >2.0)
+                    atempo_filters = []
+                    remaining = speed_factor
+                    while remaining > 2.0:
+                        atempo_filters.append("atempo=2.0")
+                        remaining /= 2.0
+                    atempo_filters.append(f"atempo={remaining}")
+                    filter_str = ",".join(atempo_filters)
+                    
+                    cmd = [
+                        "ffmpeg", "-y", "-i", current_audio,
+                        "-filter:a", filter_str,
+                        speed_output
+                    ]
+                    proc = subprocess.run(cmd, capture_output=True, text=True)
+                    if proc.returncode != 0:
+                        print(f"[Speed] FFmpeg error: {proc.stderr}")
+                        raise Exception(f"FFmpeg failed: {proc.stderr[:200]}")
+                    jobs[job_id]["audio_path"] = speed_output
+                    pipeline.audio_path = speed_output
+                    
+                    # Adjust segment timestamps
+                    segments = result.get("segments", pipeline.segments or [])
+                    for seg in segments:
+                        seg["start"] = seg["start"] / speed_factor
+                        seg["end"] = seg["end"] / speed_factor
+                    result["segments"] = segments
+                    pipeline.segments = segments
+                    
+                    # Adjust keep_regions if present
+                    if hasattr(pipeline, 'audio_keep_regions') and pipeline.audio_keep_regions:
+                        pipeline.audio_keep_regions = [
+                            (start / speed_factor, end / speed_factor)
+                            for start, end in pipeline.audio_keep_regions
+                        ]
+                    
+                    print(f"[Speed] Applied {speed_factor}x speed: {current_audio} → {speed_output}")
+                    pipeline.speed_factor = speed_factor
+            except Exception as e:
+                print(f"[Speed] Speed processing failed: {e}")
+                # Continue without speed change
             
             # Mix BGM if pending (user uploaded BGM before cleanup was done)
             bgm_path = jobs[job_id].get("bgm_path")
@@ -866,36 +923,102 @@ async def get_transcribe_status(job_id: str):
 
 @app.get("/api/audio/{job_id}/trimmed")
 async def get_trimmed_audio(job_id: str):
-    """Download the trimmed audio file for a job"""
+    """Download the processed audio file (includes speed processing if applied)"""
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
     
     job = jobs[job_id]
     audio_path = job.get("audio_path")
     
-    if not audio_path:
+    if not audio_path or not os.path.exists(audio_path):
         raise HTTPException(404, "Audio file not found")
     
-    # Check for trimmed version first
-    base, ext = os.path.splitext(audio_path)
-    trimmed_path = f"{base}_trimmed{ext}"
-    
-    # Use trimmed if exists, otherwise original
-    if os.path.exists(trimmed_path):
-        file_path = trimmed_path
-        filename = f"{job_id}_trimmed{ext}"
-    elif os.path.exists(audio_path):
-        file_path = audio_path
-        filename = f"{job_id}{ext}"
-    else:
-        raise HTTPException(404, "Audio file not found on disk")
+    ext = os.path.splitext(audio_path)[1]
+    filename = f"{job_id}_processed{ext}"
     
     return FileResponse(
-        file_path,
+        audio_path,
         media_type="audio/mpeg",
         filename=filename,
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@app.post("/api/audio/{job_id}/apply-speed")
+async def apply_speed(job_id: str, speed_factor: float = 1.0):
+    """Re-apply speed processing to the audio"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    job = jobs[job_id]
+    
+    # Save pre-speed state on first use
+    if not job.get("pre_speed_audio_path"):
+        job["pre_speed_audio_path"] = job.get("audio_path")
+        if pipelines.get(job_id) and pipelines[job_id].segments:
+            job["pre_speed_segments"] = [dict(s) for s in pipelines[job_id].segments]
+    
+    base_audio = job["pre_speed_audio_path"]
+    
+    if not base_audio or not os.path.exists(base_audio):
+        raise HTTPException(404, "Audio file not found")
+    
+    speed_factor = max(0.5, min(3.0, speed_factor))
+    
+    if speed_factor == 1.0:
+        # Reset to base audio
+        job["audio_path"] = base_audio
+        pipeline = pipelines.get(job_id)
+        if pipeline:
+            pipeline.audio_path = base_audio
+            if job.get("pre_speed_segments"):
+                pipeline.segments = [dict(s) for s in job["pre_speed_segments"]]
+                job["segments"] = pipeline.segments
+        return {"status": "ok", "speed_factor": 1.0, "message": "通常速度に戻しました"}
+    
+    try:
+        import subprocess
+        base, ext = os.path.splitext(base_audio)
+        speed_output = f"{base}_speed{speed_factor}x{ext}"
+        
+        # FFmpeg atempo filter (supports 0.5-2.0; chain for >2.0)
+        atempo_filters = []
+        remaining = speed_factor
+        while remaining > 2.0:
+            atempo_filters.append("atempo=2.0")
+            remaining /= 2.0
+        atempo_filters.append(f"atempo={remaining}")
+        filter_str = ",".join(atempo_filters)
+        
+        cmd = [
+            "ffmpeg", "-y", "-i", base_audio,
+            "-filter:a", filter_str,
+            speed_output
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            print(f"[Speed] FFmpeg error: {proc.stderr}")
+            raise Exception(f"FFmpeg failed: {proc.stderr[:200]}")
+        
+        job["audio_path"] = speed_output
+        pipeline = pipelines.get(job_id)
+        if pipeline:
+            pipeline.audio_path = speed_output
+            # Adjust segment timestamps from base
+            if pipeline.segments:
+                base_segments = job.get("pre_speed_segments") or pipeline.segments
+                pipeline.segments = [
+                    {**seg, "start": seg["start"] / speed_factor, "end": seg["end"] / speed_factor}
+                    for seg in base_segments
+                ]
+                job["segments"] = pipeline.segments
+            pipeline.speed_factor = speed_factor
+        
+        print(f"[Speed] Re-applied {speed_factor}x: {base_audio} → {speed_output}")
+        return {"status": "ok", "speed_factor": speed_factor, "message": f"{speed_factor}x倍速を適用しました"}
+    except Exception as e:
+        print(f"[Speed] Error: {e}")
+        raise HTTPException(500, f"Speed processing failed: {e}")
 
 
 # ========== BGM MIXING ==========
