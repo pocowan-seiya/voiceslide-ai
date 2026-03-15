@@ -3,11 +3,8 @@
 import { useState, useEffect } from "react";
 
 const GEMINI_MODELS = [
-    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview (デフォルト)" },
-    { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite ⚡ 最新・超軽量" },
-    { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite (軽量・安定版)" },
-    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
+    { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview" },
 ];
 
 interface APIKeysSettingsProps {
