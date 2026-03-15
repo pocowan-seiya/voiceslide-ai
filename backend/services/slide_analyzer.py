@@ -103,7 +103,7 @@ async def copy_images(source_path: str, output_dir: str) -> List[str]:
     return image_paths
 
 
-async def analyze_slide_image(image_path: str, slide_number: int) -> Dict[str, Any]:
+async def analyze_slide_image(image_path: str, slide_number: int, model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
     """
     Gemini Visionでスライド画像を詳細分析
     マッピング精度向上のため、より多くの情報を抽出
@@ -112,7 +112,7 @@ async def analyze_slide_image(image_path: str, slide_number: int) -> Dict[str, A
         with open(image_path, "rb") as f:
             image_data = f.read()
         
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         
         # より詳細な分析プロンプト
         prompt = """このスライド画像を詳細に分析してください。

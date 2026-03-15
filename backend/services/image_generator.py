@@ -163,12 +163,12 @@ def create_professional_background(theme: Dict, slide_index: int, total_slides: 
     return image.convert("RGB")
 
 
-async def generate_slide_illustration(title: str, points: List[str], description: str) -> Image.Image:
+async def generate_slide_illustration(title: str, points: List[str], description: str, model_name: str = "gemini-3-flash-preview") -> Image.Image:
     """
     Generate an illustration for the slide using Gemini
     """
     try:
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         
         content_summary = f"{title}. {'. '.join(points[:2])}" if points else title
         

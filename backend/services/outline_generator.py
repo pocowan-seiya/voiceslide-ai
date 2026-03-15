@@ -537,12 +537,13 @@ POLISH_PROMPT = """# タスク
 
 
 async def generate_outline(
-    transcript: str, 
-    segments: List[Dict[str, Any]], 
+    transcript: str,
+    segments: List[Dict[str, Any]],
     gemini_key: str = None,
     slide_count_mode: str = "auto",
     custom_slide_count: int = 10,
-    audio_duration: float = None  # 実際の音声長（指定がなければセグメントから推定）
+    audio_duration: float = None,  # 実際の音声長（指定がなければセグメントから推定）
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     高精度タイムスタンプ同期のスライドアウトラインを生成
@@ -624,12 +625,15 @@ async def generate_outline(
     )
     
     try:
-        # Get available model name
-        model_name = get_available_gemini_model(key)
-        print(f"[Outline] Using model: {model_name}")
+        # Use specified model or auto-detect
+        if model_name != "gemini-3-flash-preview":
+            actual_model = model_name
+        else:
+            actual_model = get_available_gemini_model(key)
+        print(f"[Outline] Using model: {actual_model}")
         
         response_text = await safe_gemini_generate(
-            model_name,
+            actual_model,
             prompt,
             key,
             config=genai.GenerationConfig(
@@ -673,7 +677,7 @@ async def generate_outline(
     return result
 
 
-async def polish_outline(outline: Dict[str, Any]) -> Dict[str, Any]:
+async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
     """
     アウトラインのタイムスタンプ精度を維持しながらブラッシュアップ
     """
@@ -691,10 +695,13 @@ async def polish_outline(outline: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from services.transcription import get_available_gemini_model
         key = GEMINI_API_KEY
-        model_name = get_available_gemini_model(key)
-        
+        if model_name != "gemini-3-flash-preview":
+            actual_model = model_name
+        else:
+            actual_model = get_available_gemini_model(key)
+
         response_text = await safe_gemini_generate(
-            model_name,
+            actual_model,
             prompt,
             key,
             config=genai.GenerationConfig(

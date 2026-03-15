@@ -667,18 +667,21 @@ async def transcribe(
     silence_threshold: float = 0.5,  # user-adjustable
     speed_factor: float = 1.0,  # 1.0, 1.2, 1.5, 2.0
     x_openai_key: Optional[str] = Header(None),
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """Step 2: Start transcription (async background processing)"""
     audio_path = jobs.get(job_id, {}).get("audio_path")
     if not audio_path:
         raise HTTPException(404, "Job not found or no audio uploaded")
-    
+
     # Store API keys and settings in job
     if x_openai_key:
         jobs[job_id]["openai_key"] = x_openai_key
     if x_gemini_key:
         jobs[job_id]["gemini_key"] = x_gemini_key
+    if x_gemini_model:
+        jobs[job_id]["gemini_model"] = x_gemini_model
     
     jobs[job_id]["step"] = 2
     jobs[job_id]["transcribe_status"] = "processing"
@@ -1201,21 +1204,25 @@ async def get_mixed_audio(job_id: str):
 async def polish_transcript(
     job_id: str, 
     update: Optional[TranscriptUpdate] = None,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """Step 3: Polish and improve transcript"""
     pipeline = get_or_create_pipeline(job_id)
-    
-    # Store API key for this job
+
+    # Store API key and model for this job
     if x_gemini_key:
         jobs[job_id]["gemini_key"] = x_gemini_key
-    
+    if x_gemini_model:
+        jobs[job_id]["gemini_model"] = x_gemini_model
+
     jobs[job_id]["step"] = 3
     jobs[job_id]["status"] = "processing"
-    
+
     edited = update.transcript if update else None
     original_script = update.original_script if update else None
-    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script)
+    gemini_model = jobs[job_id].get("gemini_model", "gemini-3-flash-preview")
+    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script, model_name=gemini_model)
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["polished_transcript"] = result["polished_transcript"]
@@ -1234,15 +1241,18 @@ async def generate_outline(
     job_id: str, 
     background_tasks: BackgroundTasks,
     update: Optional[TranscriptUpdate] = None,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """Step 4: Start outline generation (async background processing)"""
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
-    
-    # Store API key and settings
+
+    # Store API key, model and settings
     if x_gemini_key:
         jobs[job_id]["gemini_key"] = x_gemini_key
+    if x_gemini_model:
+        jobs[job_id]["gemini_model"] = x_gemini_model
     
     jobs[job_id]["step"] = 4
     jobs[job_id]["outline_status"] = "processing"
@@ -1256,12 +1266,14 @@ async def generate_outline(
     }
     
     # Start background processing
+    gemini_model = jobs[job_id].get("gemini_model", "gemini-3-flash-preview")
     background_tasks.add_task(
         run_outline_background,
         job_id,
-        x_gemini_key
+        x_gemini_key,
+        gemini_model
     )
-    
+
     return {
         "job_id": job_id,
         "status": "processing",
@@ -1269,23 +1281,24 @@ async def generate_outline(
     }
 
 
-async def run_outline_background(job_id: str, gemini_key: Optional[str]):
+async def run_outline_background(job_id: str, gemini_key: Optional[str], model_name: str = "gemini-3-flash-preview"):
     """Background task for outline generation"""
     try:
         pipeline = get_or_create_pipeline(job_id)
         settings = jobs[job_id].get("outline_settings", {})
-        
+
         edited = settings.get("transcript")
         slide_count_mode = settings.get("slide_count_mode", "auto")
         custom_slide_count = settings.get("custom_slide_count", 10)
-        
+
         jobs[job_id]["outline_progress"] = "AIでアウトライン作成中..."
-        
+
         result = await pipeline.step_generate_outline(
-            edited, 
+            edited,
             gemini_key=gemini_key,
             slide_count_mode=slide_count_mode,
-            custom_slide_count=custom_slide_count
+            custom_slide_count=custom_slide_count,
+            model_name=model_name
         )
         
         jobs[job_id]["outline_status"] = "completed"
@@ -1377,6 +1390,7 @@ async def export_outline(job_id: str, format: str = "json"):
 async def generate_slides_endpoint(
     job_id: str,
     x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
     x_color_theme: Optional[str] = Header(None),  # Color theme: cosmic, warm, elegant, nature, ocean, mono
     x_font_style: Optional[str] = Header(None)    # Font style: gothic, mincho, pop, handwritten
 ):
@@ -1417,6 +1431,7 @@ async def generate_slides_endpoint(
             }
         
         # Generate completely custom HTML/CSS for each slide using AI Design Architect
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
         image_paths = await generate_all_custom_slides(
             slides=slides,
             job_id=job_id,
@@ -1424,7 +1439,8 @@ async def generate_slides_endpoint(
             outline=outline,
             color_theme=x_color_theme,
             font_style=x_font_style,
-            progress_callback=update_progress
+            progress_callback=update_progress,
+            model_name=gemini_model
         )
         
         # パイプラインに保存
@@ -1470,6 +1486,7 @@ async def generate_slides_batch_endpoint(
     request: BatchGenerateRequest,
     background_tasks: BackgroundTasks,
     x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
     x_color_theme: Optional[str] = Header(None),
     x_font_style: Optional[str] = Header(None)
 ):
@@ -1520,6 +1537,7 @@ async def generate_slides_batch_endpoint(
             video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
             
             # Generate batch of slides
+            gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
             image_paths = await generate_all_custom_slides(
                 slides=slides,
                 job_id=job_id,
@@ -1541,7 +1559,8 @@ async def generate_slides_batch_endpoint(
                 video_width=video_w,
                 video_height=video_h,
                 facecam_position=request.facecam_position,
-                facecam_size=request.facecam_size
+                facecam_size=request.facecam_size,
+                model_name=gemini_model
             )
             
             # パイプラインに保存
@@ -1827,7 +1846,8 @@ async def update_slide_text(
     job_id: str,
     slide_number: int,
     request: SlideTextUpdateRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """Update slide text directly (no AI) and re-render"""
     if job_id not in jobs:
@@ -1947,7 +1967,8 @@ async def update_slide_html(
     job_id: str,
     slide_number: int,
     request: SlideHtmlUpdateRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """Update slide with directly edited HTML and re-render screenshot"""
     if job_id not in jobs:
@@ -2029,7 +2050,8 @@ class SlideFeedbackRequest(BaseModel):
 async def slide_feedback_endpoint(
     job_id: str,
     request: SlideFeedbackRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """Regenerate a slide based on user feedback"""
     if job_id not in jobs:
@@ -2068,6 +2090,7 @@ async def slide_feedback_endpoint(
         pipeline = get_or_create_pipeline(job_id)
         video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
         
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
         result = await regenerate_slide_with_feedback(
             job_id=job_id,
             slide_number=request.slide_number,
@@ -2079,7 +2102,8 @@ async def slide_feedback_endpoint(
             video_width=video_w,
             video_height=video_h,
             facecam_position=request.facecam_position,
-            facecam_size=request.facecam_size
+            facecam_size=request.facecam_size,
+            model_name=gemini_model
         )
         
         if not result["success"]:
@@ -2114,26 +2138,29 @@ class ImageRegenerateRequest(BaseModel):
 async def regenerate_image_endpoint(
     job_id: str,
     request: ImageRegenerateRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """Regenerate only the AI-generated illustration for a specific slide"""
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
-    
+
     try:
         from services.ai_slide_generator import regenerate_slide_illustration
-        
+
         # Get video dimensions from pipeline
         pipeline = get_or_create_pipeline(job_id)
         video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
-        
+
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
         result = await regenerate_slide_illustration(
             job_id=job_id,
             slide_number=request.slide_number,
             feedback=request.feedback,
             gemini_key=x_gemini_key,
             video_width=video_w,
-            video_height=video_h
+            video_height=video_h,
+            model_name=gemini_model
         )
         
         if not result["success"]:
@@ -2683,14 +2710,15 @@ VoiSlide Movieは音声からスライド動画を自動生成するサービス
 @app.post("/support/chat")
 async def support_chat(
     request: SupportChatRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """AI-powered support chat using Gemini"""
     import google.generativeai as genai
-    
+
     # Get API key from header or environment
     gemini_key = x_gemini_key or os.environ.get("GEMINI_API_KEY")
-    
+
     if not gemini_key:
         return {
             "reply": "申し訳ございません。サポートチャットを利用するにはGemini APIキーが必要です。\n\n画面上部の「API設定」からGemini APIキーを設定してください。\n\nAPIキーは https://aistudio.google.com/app/apikey で無料で取得できます。"
@@ -2698,8 +2726,9 @@ async def support_chat(
     
     try:
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-3-flash-preview")
-        
+        support_model = x_gemini_model or "gemini-3-flash-preview"
+        model = genai.GenerativeModel(support_model)
+
         # Build conversation context
         messages = []
         

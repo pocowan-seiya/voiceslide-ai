@@ -255,7 +255,7 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None) -> str:
+async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None, model_name: str = "gemini-3-flash-preview") -> str:
     """Polishes the transcript for readability and alignment with a reference script."""
     key = gemini_key or GEMINI_API_KEY
     
@@ -267,9 +267,12 @@ async def polish_transcript(text: str, gemini_key: Optional[str] = None, origina
         return text 
 
     try:
-        # Get available model
-        model_name = get_available_gemini_model(key)
-        print(f"[{get_ts()}] [Polish] Starting with model: {model_name}")
+        # Use specified model or auto-detect
+        if model_name != "gemini-3-flash-preview":
+            actual_model = model_name
+        else:
+            actual_model = get_available_gemini_model(key)
+        print(f"[{get_ts()}] [Polish] Starting with model: {actual_model}")
         
         reference_script = f"参考台本:\n{original_script}\n\n" if original_script else ""
     
@@ -290,7 +293,7 @@ async def polish_transcript(text: str, gemini_key: Optional[str] = None, origina
         
         # Use the robust shared utility
         result = await safe_gemini_generate(
-            model_name,
+            actual_model,
             prompt,
             key,
             config=None # Default config

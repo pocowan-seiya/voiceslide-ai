@@ -21,6 +21,7 @@ function getAPIHeaders(): HeadersInit {
   const headers: HeadersInit = {};
   if (keys.openai) headers["x-openai-key"] = keys.openai;
   if (keys.gemini) headers["x-gemini-key"] = keys.gemini;
+  if (keys.geminiModel) headers["x-gemini-model"] = keys.geminiModel;
   return headers;
 }
 

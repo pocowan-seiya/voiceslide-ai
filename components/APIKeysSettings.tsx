@@ -2,6 +2,13 @@
 
 import { useState, useEffect } from "react";
 
+const GEMINI_MODELS = [
+    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash (デフォルト)" },
+    { id: "gemini-2.5-flash-lite-preview-06-17", label: "Gemini 2.5 Flash Lite (軽量・高速)" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+];
+
 interface APIKeysSettingsProps {
     onClose: () => void;
 }
@@ -9,6 +16,7 @@ interface APIKeysSettingsProps {
 export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
     const [openaiKey, setOpenaiKey] = useState("");
     const [geminiKey, setGeminiKey] = useState("");
+    const [geminiModel, setGeminiModel] = useState("gemini-3-flash-preview");
     const [showOpenai, setShowOpenai] = useState(false);
     const [showGemini, setShowGemini] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -17,13 +25,16 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
         // Load saved keys from localStorage
         const savedOpenai = localStorage.getItem("voiceslide_openai_key") || "";
         const savedGemini = localStorage.getItem("voiceslide_gemini_key") || "";
+        const savedModel = localStorage.getItem("voiceslide_gemini_model") || "gemini-3-flash-preview";
         setOpenaiKey(savedOpenai);
         setGeminiKey(savedGemini);
+        setGeminiModel(savedModel);
     }, []);
 
     const handleSave = () => {
         localStorage.setItem("voiceslide_openai_key", openaiKey);
         localStorage.setItem("voiceslide_gemini_key", geminiKey);
+        localStorage.setItem("voiceslide_gemini_model", geminiModel);
         setSaved(true);
         setTimeout(() => {
             setSaved(false);
@@ -34,8 +45,10 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
     const handleClear = () => {
         localStorage.removeItem("voiceslide_openai_key");
         localStorage.removeItem("voiceslide_gemini_key");
+        localStorage.removeItem("voiceslide_gemini_model");
         setOpenaiKey("");
         setGeminiKey("");
+        setGeminiModel("gemini-3-flash-preview");
     };
 
     return (
@@ -136,6 +149,27 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                         </p>
                     </div>
 
+                    {/* Gemini Model Selection */}
+                    <div>
+                        <label className="block text-sm font-medium text-zinc-400 mb-2">
+                            Gemini モデル
+                        </label>
+                        <select
+                            value={geminiModel}
+                            onChange={(e) => setGeminiModel(e.target.value)}
+                            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none appearance-none cursor-pointer"
+                        >
+                            {GEMINI_MODELS.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                    {m.label}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-zinc-500 mt-1">
+                            軽量モデルはAPI消費が少なく高速ですが、品質が下がる場合があります
+                        </p>
+                    </div>
+
                     {/* Info */}
                     <div className="bg-zinc-800/50 rounded-lg p-3 text-xs text-zinc-400">
                         <p>⚠️ APIキーはブラウザに保存され、サーバーには保存されません。</p>
@@ -165,10 +199,11 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
 
 // Helper function to get API keys
 export function getAPIKeys() {
-    if (typeof window === "undefined") return { openai: "", gemini: "" };
+    if (typeof window === "undefined") return { openai: "", gemini: "", geminiModel: "" };
     return {
         openai: localStorage.getItem("voiceslide_openai_key") || "",
         gemini: localStorage.getItem("voiceslide_gemini_key") || "",
+        geminiModel: localStorage.getItem("voiceslide_gemini_model") || "",
     };
 }
 

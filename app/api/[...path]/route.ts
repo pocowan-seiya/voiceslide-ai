@@ -23,8 +23,10 @@ export async function GET(
 
         const openaiKey = request.headers.get('x-openai-key');
         const geminiKey = request.headers.get('x-gemini-key');
+        const geminiModel = request.headers.get('x-gemini-model');
         if (openaiKey) headers['x-openai-key'] = openaiKey;
         if (geminiKey) headers['x-gemini-key'] = geminiKey;
+        if (geminiModel) headers['x-gemini-model'] = geminiModel;
 
         const response = await fetch(targetUrl, { headers });
 
@@ -76,8 +78,10 @@ export async function POST(
         // Forward API keys from headers
         const openaiKey = request.headers.get('x-openai-key');
         const geminiKey = request.headers.get('x-gemini-key');
+        const geminiModel = request.headers.get('x-gemini-model');
         if (openaiKey) headers['x-openai-key'] = openaiKey;
         if (geminiKey) headers['x-gemini-key'] = geminiKey;
+        if (geminiModel) headers['x-gemini-model'] = geminiModel;
 
         if (contentType.includes('multipart/form-data')) {
             // Handle file uploads - pass through FormData
@@ -135,8 +139,10 @@ export async function DELETE(
         const headers: HeadersInit = {};
         const openaiKey = request.headers.get('x-openai-key');
         const geminiKey = request.headers.get('x-gemini-key');
+        const geminiModel = request.headers.get('x-gemini-model');
         if (openaiKey) headers['x-openai-key'] = openaiKey;
         if (geminiKey) headers['x-gemini-key'] = geminiKey;
+        if (geminiModel) headers['x-gemini-model'] = geminiModel;
 
         const response = await fetch(targetUrl, {
             method: 'DELETE',

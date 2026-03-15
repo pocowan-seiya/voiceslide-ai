@@ -12,7 +12,8 @@ from config import GEMINI_API_KEY
 
 async def generate_slide_image(
     prompt: str,
-    gemini_key: Optional[str] = None
+    gemini_key: Optional[str] = None,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Optional[Dict[str, str]]:
     """
     Generate an image using Gemini Imagen
@@ -41,7 +42,7 @@ The image should be suitable as a slide background or accent image, with areas d
 
     try:
         # Use Gemini with image generation capability
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         
         response = model.generate_content(
             full_prompt,

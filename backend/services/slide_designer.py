@@ -152,7 +152,8 @@ async def get_design_decision(
     subheadline: str,
     bullet_count: int,
     key_message: str,
-    slide_role: str
+    slide_role: str,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Geminiを使用してスライドのデザイン決定を取得
@@ -168,7 +169,7 @@ async def get_design_decision(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(

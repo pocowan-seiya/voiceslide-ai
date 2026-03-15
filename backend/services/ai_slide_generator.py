@@ -474,7 +474,8 @@ async def polish_copy_for_illustration(
     slide_number: int,
     total_slides: int,
     strategy: Dict[str, Any],
-    gemini_key: str
+    gemini_key: str,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, str]:
     """
     Polish slide copy for illustration mode using AI.
@@ -610,7 +611,7 @@ async def polish_copy_for_illustration(
     
     try:
         response_text = await safe_gemini_generate(
-            "gemini-3-flash-preview",
+            model_name,
             prompt,
             key,
             config=genai.GenerationConfig(
@@ -619,11 +620,11 @@ async def polish_copy_for_illustration(
                 max_output_tokens=500
             )
         )
-        
+
         result = json.loads(response_text)
-        
+
         print(f"[Copy Polish] Slide {slide_number}: '{raw_title[:20]}...' → '{result.get('title', '')}'")
-        
+
         return {
             "title": result.get("title") or raw_title,
             "subtitle": result.get("subtitle") or "",
@@ -1555,7 +1556,8 @@ async def generate_design_strategy(
     design_preference: Optional[str] = None,
     copy_style_request: Optional[str] = None,
     facecam_position: Optional[str] = None,
-    facecam_size: Optional[int] = None
+    facecam_size: Optional[int] = None,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Step 1 & 2: Analyze content and define design strategy
@@ -1653,7 +1655,7 @@ async def generate_design_strategy(
     
     try:
         response_text = await safe_gemini_generate(
-            "gemini-3-flash-preview",
+            model_name,
             prompt,
             key,
             config=genai.GenerationConfig(
@@ -1661,7 +1663,7 @@ async def generate_design_strategy(
                 temperature=0.7
             )
         )
-        
+
         strategy = json.loads(response_text)
         print(f"[Design Architect] Strategy: {strategy['design_style']['concept_name']}")
         
@@ -1741,7 +1743,8 @@ async def generate_slide_html(
     video_width: int = VIDEO_WIDTH,
     video_height: int = VIDEO_HEIGHT,
     facecam_position: Optional[str] = None,
-    facecam_size: Optional[int] = None
+    facecam_size: Optional[int] = None,
+    model_name: str = "gemini-3-flash-preview"
 ) -> str:
     """
     Step 3: Generate individual slide HTML based on strategy.
@@ -2084,7 +2087,7 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     try:
         # Gemini 3 Flash for high-quality slide generation
         html = await safe_gemini_generate(
-            "gemini-3-flash-preview",
+            model_name,
             prompt,
             key,
             config=genai.GenerationConfig(
@@ -2352,7 +2355,8 @@ async def generate_all_custom_slides(
     video_width: int = VIDEO_WIDTH,  # Dynamic video width (for portrait support)
     video_height: int = VIDEO_HEIGHT,  # Dynamic video height (for portrait support)
     facecam_position: Optional[str] = None,  # PiP position for text avoidance
-    facecam_size: Optional[int] = None  # PiP size
+    facecam_size: Optional[int] = None,  # PiP size
+    model_name: str = "gemini-3-flash-preview"
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -2391,7 +2395,7 @@ async def generate_all_custom_slides(
         if progress_callback:
             progress_callback(0, end_slide - start_slide + 2, "デザイン戦略を生成中...")
         
-        strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference, copy_style_request, facecam_position, facecam_size)
+        strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference, copy_style_request, facecam_position, facecam_size, model_name)
         
         # Store copy_style_request in strategy for per-slide prompt injection
         if copy_style_request:
@@ -2621,7 +2625,8 @@ Concept to illustrate: """
                     slide_number=slide_number,
                     total_slides=total_slides,
                     strategy=strategy,
-                    gemini_key=gemini_key
+                    gemini_key=gemini_key,
+                    model_name=model_name
                 )
                 
                 # 整形されたコピーをslideに反映（元のslideを上書きしないようにコピー）
@@ -2650,7 +2655,8 @@ Concept to illustrate: """
                     video_width=vw,
                     video_height=vh,
                     facecam_position=facecam_position,
-                    facecam_size=facecam_size
+                    facecam_size=facecam_size,
+                    model_name=model_name
                 )
                 
                 # Inject AI illustration into the generated HTML if image exists
@@ -2695,7 +2701,8 @@ Concept to illustrate: """
                     video_width=vw,
                     video_height=vh,
                     facecam_position=facecam_position,
-                    facecam_size=facecam_size
+                    facecam_size=facecam_size,
+                    model_name=model_name
                 )
                 
                 # Step 3b-2: Inject AI illustration if not present in HTML (fallback)
@@ -2723,7 +2730,8 @@ Concept to illustrate: """
                 html = await self_review_slide(
                     html=html,
                     strategy=strategy,
-                    gemini_key=gemini_key
+                    gemini_key=gemini_key,
+                    model_name=model_name
                 )
                 
                 # Step 3d: Post-processing - forcibly remove any remaining caption text
@@ -2879,7 +2887,8 @@ VALIDATION_PROMPT = """あなたはスライドの**厳格な**品質検証担�
 
 async def validate_slide_screenshot(
     image_path: str,
-    gemini_key: Optional[str] = None
+    gemini_key: Optional[str] = None,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Validate a slide screenshot using Gemini Vision
@@ -2904,7 +2913,7 @@ async def validate_slide_screenshot(
         }
         
         response_text = await safe_gemini_generate(
-            "gemini-3-flash-preview",
+            model_name,
             [VALIDATION_PROMPT, image_part],
             key,
             config=genai.GenerationConfig(
@@ -2931,7 +2940,8 @@ async def validate_and_regenerate_slide(
     browser,
     slides_dir: str,
     gemini_key: Optional[str] = None,
-    max_retries: int = 2
+    max_retries: int = 2,
+    model_name: str = "gemini-3-flash-preview"
 ) -> tuple:
     """
     Validate a slide and regenerate if needed.
@@ -2944,7 +2954,7 @@ async def validate_and_regenerate_slide(
     
     for attempt in range(max_retries):
         # Validate the current screenshot
-        validation = await validate_slide_screenshot(path, gemini_key)
+        validation = await validate_slide_screenshot(path, gemini_key, model_name)
         
         if validation.get("is_valid", True):
             if attempt > 0:
@@ -2968,7 +2978,8 @@ async def validate_and_regenerate_slide(
                 html=html,
                 strategy=strategy,
                 gemini_key=gemini_key,
-                additional_feedback=feedback
+                additional_feedback=feedback,
+                model_name=model_name
             )
             
             # Re-render
@@ -3206,7 +3217,8 @@ async def self_review_slide(
     html: str,
     strategy: Dict[str, Any],
     gemini_key: Optional[str] = None,
-    additional_feedback: Optional[str] = None  # Additional fix instructions from validation
+    additional_feedback: Optional[str] = None,  # Additional fix instructions from validation
+    model_name: str = "gemini-3-flash-preview"
 ) -> str:
     """
     AI self-reviews and improves a slide before showing to user
@@ -3244,7 +3256,7 @@ async def self_review_slide(
     try:
         # Gemini 3 Flash for self-review
         improved_html = await safe_gemini_generate(
-            "gemini-3-flash-preview",
+            model_name,
             prompt,
             key,
             config=genai.GenerationConfig(
@@ -3352,7 +3364,8 @@ async def regenerate_slide_with_feedback(
     video_width: int = VIDEO_WIDTH,
     video_height: int = VIDEO_HEIGHT,
     facecam_position: Optional[str] = None,
-    facecam_size: Optional[int] = None
+    facecam_size: Optional[int] = None,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Regenerate a single slide based on user feedback (supports image uploads)
@@ -3502,7 +3515,7 @@ async def regenerate_slide_with_feedback(
         try:
             # Generate JSON
             response_text = await safe_gemini_generate(
-                "gemini-3-flash-preview",
+                model_name,
                 copy_prompt,
                 key,
                 config=genai.GenerationConfig(
@@ -3672,8 +3685,8 @@ async def regenerate_slide_with_feedback(
         # Gemini 2.0 Flash for creative prompts
         # Generate response
         response_text = await safe_gemini_generate(
-            "gemini-3-flash-preview", # Assuming model_name should be this
-            prompt, # Assuming full_prompt should be prompt
+            model_name,
+            prompt,
             key,
             config=genai.GenerationConfig(temperature=0.7)
         )
@@ -3879,7 +3892,8 @@ async def regenerate_slide_illustration(
     feedback: str,
     gemini_key: Optional[str] = None,
     video_width: int = VIDEO_WIDTH,
-    video_height: int = VIDEO_HEIGHT
+    video_height: int = VIDEO_HEIGHT,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Regenerate ONLY the illustration image for a specific slide based on feedback.

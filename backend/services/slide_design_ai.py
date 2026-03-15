@@ -129,7 +129,8 @@ async def analyze_slide_design(
     slide: Dict[str, Any],
     slide_number: int,
     total_slides: int,
-    gemini_key: Optional[str] = None
+    gemini_key: Optional[str] = None,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Analyze slide content and determine optimal design
@@ -176,7 +177,7 @@ async def analyze_slide_design(
     
     try:
         # Try available models
-        model_names = ["gemini-3-flash-preview", "gemini-1.5-flash-latest", "gemini-pro"]
+        model_names = [model_name, "gemini-1.5-flash-latest", "gemini-pro"]
         
         for model_name in model_names:
             try:
@@ -291,7 +292,8 @@ def get_fallback_design(slide: Dict, slide_number: int, total_slides: int) -> Di
 
 async def generate_background_image(
     prompt: str,
-    gemini_key: Optional[str] = None
+    gemini_key: Optional[str] = None,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Optional[bytes]:
     """
     Generate background image using Gemini
@@ -303,7 +305,7 @@ async def generate_background_image(
     genai.configure(api_key=key)
     
     try:
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         
         full_prompt = f"""Generate a professional presentation slide background image.
 Style: {prompt}
