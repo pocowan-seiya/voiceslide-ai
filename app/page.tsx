@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useCallback, DragEvent, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, DragEvent, useEffect, useMemo, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { APIKeysSettings, getAPIKeys, hasAPIKeys } from "@/components/APIKeysSettings";
+import { createClient } from "@/lib/supabase/client";
 import { SupportChat } from "@/components/SupportChat";
 
 // 本番環境：Frontend (Next.js) + Backend (FastAPI) を別々にデプロイ
@@ -94,7 +96,17 @@ const FULL_AI_STEPS = [
   { id: 6, label: "動画生成", icon: "🎬" },
 ];
 
-export default function Home() {
+function HomeInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = createClient();
+
+  // プロジェクト管理
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>("新しいプロジェクト");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [isSavingProject, setIsSavingProject] = useState(false);
+
   const [state, setState] = useState<JobState>({
     jobId: null,
     step: 1,
@@ -314,6 +326,101 @@ export default function Home() {
   const updateState = (updates: Partial<JobState>) => {
     setState((prev) => ({ ...prev, ...updates }));
   };
+
+  // ===== プロジェクト自動保存 =====
+  const saveProject = useCallback(async (currentState: JobState, settings: object) => {
+    if (!projectId) return;
+    setIsSavingProject(true);
+    try {
+      await supabase.from("projects").update({
+        step: currentState.step,
+        workflow_mode: currentState.workflowMode,
+        transcript: currentState.transcript,
+        polished_transcript: currentState.polishedTranscript,
+        outline: currentState.outline,
+        polished_outline: currentState.polishedOutline,
+        timing_map: currentState.timingMap,
+        slide_count: currentState.slideCount,
+        job_id: currentState.jobId,
+        status: currentState.videoUrl ? "completed" : "draft",
+        video_url: currentState.videoUrl,
+        settings,
+      }).eq("id", projectId);
+      setLastSavedAt(new Date());
+    } catch (e) {
+      console.error("[AutoSave] failed:", e);
+    } finally {
+      setIsSavingProject(false);
+    }
+  }, [projectId, supabase]);
+
+  // ページロード時: URLの ?project= からプロジェクトを復元
+  useEffect(() => {
+    const pid = searchParams.get("project");
+    if (!pid) return;
+    setProjectId(pid);
+
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("id", pid)
+        .single();
+      if (error || !data) return;
+
+      setProjectName(data.name);
+      setState((prev) => ({
+        ...prev,
+        jobId: data.job_id,
+        step: data.step as Step,
+        workflowMode: data.workflow_mode,
+        transcript: data.transcript,
+        polishedTranscript: data.polished_transcript,
+        outline: data.outline,
+        polishedOutline: data.polished_outline,
+        timingMap: data.timing_map ?? [],
+        slideCount: data.slide_count,
+        videoUrl: data.video_url,
+      }));
+
+      const s = data.settings ?? {};
+      if (s.audioSettings) setAudioSettings(s.audioSettings);
+      if (s.slideSettings) setSlideSettings(s.slideSettings);
+      if (s.selectedColorTheme !== undefined) setSelectedColorTheme(s.selectedColorTheme);
+      if (s.selectedFontStyle !== undefined) setSelectedFontStyle(s.selectedFontStyle);
+      if (s.designPreference !== undefined) setDesignPreference(s.designPreference);
+      if (s.textDensity) setTextDensity(s.textDensity);
+      if (s.aspectRatio) setAspectRatio(s.aspectRatio);
+      if (s.bgmEnabled !== undefined) setBgmEnabled(s.bgmEnabled);
+      if (s.bgmVolume !== undefined) setBgmVolume(s.bgmVolume);
+    };
+    load();
+  }, [searchParams]);
+
+  // ステップ変化時に保存
+  useEffect(() => {
+    if (!projectId || state.step === 1) return;
+    const settings = {
+      audioSettings, slideSettings, selectedColorTheme,
+      selectedFontStyle, designPreference, textDensity,
+      aspectRatio, bgmEnabled, bgmVolume,
+    };
+    saveProject(state, settings);
+  }, [state.step, state.outline, state.polishedOutline, state.timingMap, state.videoUrl]);
+
+  // 30秒ごとの自動保存
+  useEffect(() => {
+    if (!projectId) return;
+    const timer = setInterval(() => {
+      const settings = {
+        audioSettings, slideSettings, selectedColorTheme,
+        selectedFontStyle, designPreference, textDensity,
+        aspectRatio, bgmEnabled, bgmVolume,
+      };
+      saveProject(state, settings);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [projectId, state, saveProject]);
 
   // Helper: Set error with timestamp for easier log correlation
   const setError = (message: string, isProcessing = false) => {
@@ -1771,7 +1878,12 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      <Header
+        lastSavedAt={lastSavedAt}
+        isSaving={isSavingProject}
+        projectName={projectName}
+        projectId={projectId}
+      />
 
       {/* API Keys Settings Modal */}
       {showSettings && <APIKeysSettings onClose={() => setShowSettings(false)} />}
@@ -4287,5 +4399,13 @@ export default function Home() {
         geminiKey={getAPIKeys().gemini}
       />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeInner />
+    </Suspense>
   );
 }
