@@ -54,3 +54,26 @@ CREATE POLICY "ユーザーは自分のプロジェクトのみ操作可能"
 CREATE INDEX idx_projects_user_id ON projects(user_id);
 CREATE INDEX idx_projects_status ON projects(user_id, status);
 CREATE INDEX idx_projects_updated_at ON projects(user_id, updated_at DESC);
+
+-- ユーザー設定テーブル（APIキーなど）
+CREATE TABLE IF NOT EXISTS user_settings (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
+  openai_key  TEXT NOT NULL DEFAULT '',
+  gemini_key  TEXT NOT NULL DEFAULT '',
+  gemini_model TEXT NOT NULL DEFAULT 'gemini-3-flash-preview',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER user_settings_updated_at
+  BEFORE UPDATE ON user_settings
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- RLS: 自分の設定だけアクセス可能
+ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "ユーザーは自分の設定のみ操作可能"
+  ON user_settings FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);

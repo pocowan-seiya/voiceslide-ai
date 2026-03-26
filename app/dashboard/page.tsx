@@ -29,6 +29,14 @@ function timeAgo(dateStr: string): string {
   return `${days}日前`;
 }
 
+function getDefaultProjectName(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}${m}${d}`;
+}
+
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,7 +67,7 @@ export default function DashboardPage() {
 
     const { data, error } = await supabase
       .from("projects")
-      .insert({ user_id: user.id, name: "新しいプロジェクト" })
+      .insert({ user_id: user.id, name: getDefaultProjectName() })
       .select()
       .single();
 
@@ -75,6 +83,15 @@ export default function DashboardPage() {
     await supabase.from("projects").delete().eq("id", id);
     setProjects((prev) => prev.filter((p) => p.id !== id));
     setDeletingId(null);
+  };
+
+  const handleRename = async (id: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    await supabase.from("projects").update({ name: trimmed }).eq("id", id);
+    setProjects((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, name: trimmed } : p))
+    );
   };
 
   const handleLogout = async () => {
@@ -166,6 +183,7 @@ export default function DashboardPage() {
                       project={project}
                       onOpen={() => router.push(`/?project=${project.id}`)}
                       onDelete={(e) => handleDelete(project.id, e)}
+                      onRename={(name) => handleRename(project.id, name)}
                       isDeleting={deletingId === project.id}
                     />
                   ))}
@@ -186,6 +204,7 @@ export default function DashboardPage() {
                       project={project}
                       onOpen={() => router.push(`/?project=${project.id}`)}
                       onDelete={(e) => handleDelete(project.id, e)}
+                      onRename={(name) => handleRename(project.id, name)}
                       isDeleting={deletingId === project.id}
                     />
                   ))}
@@ -203,15 +222,42 @@ function ProjectCard({
   project,
   onOpen,
   onDelete,
+  onRename,
   isDeleting,
 }: {
   project: Project;
   onOpen: () => void;
   onDelete: (e: React.MouseEvent) => void;
+  onRename: (name: string) => void;
   isDeleting: boolean;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(project.name);
   const isCompleted = project.status === "completed";
   const stepLabel = STEP_LABELS[project.step] ?? `ステップ ${project.step}`;
+
+  const handleEditStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditName(project.name);
+    setIsEditing(true);
+  };
+
+  const handleEditSave = (e: React.FormEvent | React.FocusEvent) => {
+    e.preventDefault();
+    if ("stopPropagation" in e) e.stopPropagation();
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== project.name) {
+      onRename(trimmed);
+    }
+    setIsEditing(false);
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      setIsEditing(false);
+      setEditName(project.name);
+    }
+  };
 
   return (
     <div
@@ -247,8 +293,33 @@ function ProjectCard({
         </button>
       </div>
 
-      {/* プロジェクト名 */}
-      <h4 className="font-semibold text-white mb-1 truncate">{project.name}</h4>
+      {/* プロジェクト名（編集可能） */}
+      {isEditing ? (
+        <form onSubmit={handleEditSave} onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={handleEditSave}
+            onKeyDown={handleEditKeyDown}
+            autoFocus
+            className="w-full font-semibold text-white bg-zinc-800 border border-zinc-600 rounded-lg px-2 py-1 mb-1 outline-none focus:border-purple-500"
+          />
+        </form>
+      ) : (
+        <div className="flex items-center gap-1.5 mb-1">
+          <h4 className="font-semibold text-white truncate">{project.name}</h4>
+          <button
+            onClick={handleEditStart}
+            className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-white transition-all p-0.5 rounded shrink-0"
+            title="名前を変更"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* モード */}
       {project.workflow_mode && (
