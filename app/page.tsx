@@ -344,7 +344,10 @@ function HomeInner() {
         job_id: currentState.jobId,
         status: currentState.videoUrl ? "completed" : "draft",
         video_url: currentState.videoUrl,
-        settings,
+        settings: {
+          ...settings,
+          slidePreviews: currentState.slidePreviews,
+        },
       }).eq("id", projectId);
       setLastSavedAt(new Date());
     } catch (e) {
@@ -369,55 +372,92 @@ function HomeInner() {
       if (error || !data) return;
 
       setProjectName(data.name);
+
+      const s = data.settings ?? {};
+      const restoredPreviews: string[] = s.slidePreviews ?? [];
+
+      // スライドプレビューURLが有効か確認（バックエンドの一時ファイルが消えている可能性）
+      let validPreviews = restoredPreviews;
+      let adjustedStep = data.step as Step;
+
+      if (restoredPreviews.length > 0 && data.step >= 6) {
+        try {
+          const checkRes = await fetch(restoredPreviews[0], { method: "HEAD" });
+          if (!checkRes.ok) {
+            // スライド画像が消失 → スライド生成前のステップに戻す
+            console.warn("[Restore] Slide previews expired, rolling back to outline step");
+            validPreviews = [];
+            adjustedStep = (data.workflow_mode === "full-ai" ? 5 : 8) as Step;
+          }
+        } catch {
+          validPreviews = [];
+          adjustedStep = (data.workflow_mode === "full-ai" ? 5 : 8) as Step;
+        }
+      }
+
       setState((prev) => ({
         ...prev,
         jobId: data.job_id,
-        step: data.step as Step,
+        step: adjustedStep,
         workflowMode: data.workflow_mode,
         transcript: data.transcript,
         polishedTranscript: data.polished_transcript,
         outline: data.outline,
         polishedOutline: data.polished_outline,
         timingMap: data.timing_map ?? [],
-        slideCount: data.slide_count,
+        slideCount: validPreviews.length > 0 ? data.slide_count : 0,
+        slidePreviews: validPreviews,
         videoUrl: data.video_url,
       }));
 
-      const s = data.settings ?? {};
       if (s.audioSettings) setAudioSettings(s.audioSettings);
       if (s.slideSettings) setSlideSettings(s.slideSettings);
       if (s.selectedColorTheme !== undefined) setSelectedColorTheme(s.selectedColorTheme);
       if (s.selectedFontStyle !== undefined) setSelectedFontStyle(s.selectedFontStyle);
       if (s.designPreference !== undefined) setDesignPreference(s.designPreference);
+      if (s.copyStyleRequest !== undefined) setCopyStyleRequest(s.copyStyleRequest);
       if (s.textDensity) setTextDensity(s.textDensity);
       if (s.aspectRatio) setAspectRatio(s.aspectRatio);
       if (s.bgmEnabled !== undefined) setBgmEnabled(s.bgmEnabled);
       if (s.bgmVolume !== undefined) setBgmVolume(s.bgmVolume);
+      if (s.bgmPlayMode !== undefined) setBgmPlayMode(s.bgmPlayMode);
+      if (s.bgmFadeIn !== undefined) setBgmFadeIn(s.bgmFadeIn);
+      if (s.bgmFadeOut !== undefined) setBgmFadeOut(s.bgmFadeOut);
+      if (s.addIllustrations !== undefined) setAddIllustrations(s.addIllustrations);
+      if (s.illustrationPercentage !== undefined) setIllustrationPercentage(s.illustrationPercentage);
+      if (s.illustrationRequest !== undefined) setIllustrationRequest(s.illustrationRequest);
+      if (s.facecamPosition !== undefined) setFacecamPosition(s.facecamPosition);
+      if (s.facecamSize !== undefined) setFacecamSize(s.facecamSize);
     };
     load();
   }, [searchParams]);
 
+  // 保存用設定オブジェクトを生成
+  const buildSettings = useCallback(() => ({
+    audioSettings, slideSettings, selectedColorTheme,
+    selectedFontStyle, designPreference, copyStyleRequest, textDensity,
+    aspectRatio, bgmEnabled, bgmVolume, bgmPlayMode, bgmFadeIn, bgmFadeOut,
+    addIllustrations, illustrationPercentage, illustrationRequest,
+    facecamPosition, facecamSize,
+  }), [
+    audioSettings, slideSettings, selectedColorTheme,
+    selectedFontStyle, designPreference, copyStyleRequest, textDensity,
+    aspectRatio, bgmEnabled, bgmVolume, bgmPlayMode, bgmFadeIn, bgmFadeOut,
+    addIllustrations, illustrationPercentage, illustrationRequest,
+    facecamPosition, facecamSize,
+  ]);
+
   // ステップ変化時に保存
   useEffect(() => {
     if (!projectId || state.step === 1) return;
-    const settings = {
-      audioSettings, slideSettings, selectedColorTheme,
-      selectedFontStyle, designPreference, textDensity,
-      aspectRatio, bgmEnabled, bgmVolume,
-    };
-    saveProject(state, settings);
+    saveProject(state, buildSettings());
   }, [state.step, state.outline, state.polishedOutline, state.timingMap, state.videoUrl]);
 
   // 30秒ごとの自動保存
   useEffect(() => {
     if (!projectId) return;
     const timer = setInterval(() => {
-      const settings = {
-        audioSettings, slideSettings, selectedColorTheme,
-        selectedFontStyle, designPreference, textDensity,
-        aspectRatio, bgmEnabled, bgmVolume,
-      };
-      saveProject(state, settings);
+      saveProject(state, buildSettings());
     }, 30000);
     return () => clearInterval(timer);
   }, [projectId, state, saveProject]);
