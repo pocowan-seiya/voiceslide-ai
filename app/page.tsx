@@ -401,9 +401,35 @@ function HomeInner() {
         }
       }
 
+      // バックエンドのパイプラインを復元（スライド再生成に必要）
+      let restoredJobId = data.job_id;
+      if (adjustedStep >= 4 && (data.outline || data.polished_outline)) {
+        try {
+          const restoreRes = await fetch(`${API_URL}/api/restore-project`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              transcript: data.transcript || "",
+              polished_transcript: data.polished_transcript || "",
+              outline: data.outline,
+              polished_outline: data.polished_outline,
+              timing_map: data.timing_map,
+              aspect_ratio: s.aspectRatio || "landscape",
+            }),
+          });
+          if (restoreRes.ok) {
+            const restoreData = await restoreRes.json();
+            restoredJobId = restoreData.job_id;
+            console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}`);
+          }
+        } catch (e) {
+          console.warn("[Restore] Backend restore failed, keeping old job_id:", e);
+        }
+      }
+
       setState((prev) => ({
         ...prev,
-        jobId: data.job_id,
+        jobId: restoredJobId,
         step: adjustedStep,
         workflowMode: data.workflow_mode,
         transcript: data.transcript,

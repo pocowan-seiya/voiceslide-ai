@@ -2513,6 +2513,57 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     return response
 
 
+# ========== Project Restore ==========
+
+class RestoreProjectRequest(BaseModel):
+    """Request body for restoring a project from saved state"""
+    transcript: str = ""
+    polished_transcript: str = ""
+    outline: Optional[dict] = None
+    polished_outline: Optional[dict] = None
+    timing_map: Optional[list] = None
+    aspect_ratio: Optional[str] = "landscape"
+
+@app.post("/api/restore-project")
+async def restore_project(request: RestoreProjectRequest):
+    """Restore a pipeline from saved project data (no audio file needed for slide generation)"""
+    job_id = str(uuid.uuid4())
+
+    # Create a dummy audio path (not needed for slide generation)
+    dummy_audio_path = os.path.join(UPLOAD_DIR, f"{job_id}_placeholder.wav")
+    # Create an empty file so pipeline doesn't crash
+    with open(dummy_audio_path, "wb") as f:
+        f.write(b"")
+
+    # Initialize pipeline with saved state
+    pipeline = get_or_create_pipeline(job_id, dummy_audio_path)
+    pipeline.raw_transcript = request.transcript
+    pipeline.polished_transcript = request.polished_transcript
+    pipeline.raw_outline = request.outline
+    pipeline.polished_outline = request.polished_outline
+    if request.timing_map:
+        pipeline.timing_map = request.timing_map
+    if request.aspect_ratio:
+        pipeline.aspect_ratio = request.aspect_ratio
+
+    # Initialize job tracking
+    jobs[job_id] = {
+        "id": job_id,
+        "step": 5,
+        "status": "restored",
+        "created_at": datetime.now().isoformat()
+    }
+    job_timestamps[job_id] = datetime.now()
+
+    print(f"[Restore] Project restored as job {job_id}")
+
+    return {
+        "job_id": job_id,
+        "status": "restored",
+        "message": "Project restored successfully"
+    }
+
+
 # ========== Utilities ==========
 
 @app.get("/api/status/{job_id}")
