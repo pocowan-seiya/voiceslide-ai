@@ -380,11 +380,17 @@ function HomeInner() {
       let validPreviews = restoredPreviews;
       let adjustedStep = data.step as Step;
 
+      // スライド生成済みステップ(6以降)なのにプレビューが無い → スライド生成前に戻す
+      if (data.step >= 6 && restoredPreviews.length === 0) {
+        console.warn("[Restore] No slide previews saved, rolling back to outline step");
+        adjustedStep = (data.workflow_mode === "full-ai" ? 5 : 8) as Step;
+      }
+
+      // プレビューURLがあっても画像が消えている場合 → スライド生成前に戻す
       if (restoredPreviews.length > 0 && data.step >= 6) {
         try {
           const checkRes = await fetch(restoredPreviews[0], { method: "HEAD" });
           if (!checkRes.ok) {
-            // スライド画像が消失 → スライド生成前のステップに戻す
             console.warn("[Restore] Slide previews expired, rolling back to outline step");
             validPreviews = [];
             adjustedStep = (data.workflow_mode === "full-ai" ? 5 : 8) as Step;
