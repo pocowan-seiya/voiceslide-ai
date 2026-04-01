@@ -681,21 +681,21 @@ async def generate_outline(
     return result
 
 
-async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
+async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash") -> Dict[str, Any]:
     """
     アウトラインのタイムスタンプ精度を維持しながらブラッシュアップ
     """
     segments = outline.pop("_segments", [])
     total_duration = outline.pop("_total_duration", 0)
-    
+
     segments_info = format_segments_precisely(segments) if segments else ""
     outline_json = json.dumps(outline, ensure_ascii=False, indent=2)
-    
+
     prompt = POLISH_PROMPT.format(
         segments_info=segments_info,
         current_outline=outline_json
     )
-    
+
     try:
         from services.transcription import get_available_gemini_model
         key = GEMINI_API_KEY
@@ -711,7 +711,9 @@ async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-fl
             config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 max_output_tokens=16384  # Support long audio
-            )
+            ),
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model,
         )
         
         result = json.loads(response_text)

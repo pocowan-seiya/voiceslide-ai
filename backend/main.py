@@ -1355,19 +1355,32 @@ async def get_outline_status(job_id: str):
 # ========== STEP 5: Polish Outline ==========
 
 @app.post("/api/polish-outline/{job_id}")
-async def polish_outline(job_id: str, update: Optional[OutlineUpdate] = None):
+async def polish_outline(
+    job_id: str,
+    update: Optional[OutlineUpdate] = None,
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
+):
     """Step 5: Brush up outline"""
     pipeline = get_or_create_pipeline(job_id)
-    
+
     jobs[job_id]["step"] = 5
     jobs[job_id]["status"] = "processing"
-    
+
+    # OpenRouter params from header or stored in job
+    openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
+    openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash")
+
     edited = update.outline if update else None
-    result = await pipeline.step_polish_outline(edited)
-    
+    result = await pipeline.step_polish_outline(
+        edited,
+        openrouter_key=openrouter_key if openrouter_key else None,
+        openrouter_model=openrouter_model,
+    )
+
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["polished_outline"] = result["polished_outline"]
-    
+
     return {
         "job_id": job_id,
         "step": 5,

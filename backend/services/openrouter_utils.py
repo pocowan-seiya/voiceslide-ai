@@ -31,6 +31,7 @@ async def openrouter_generate(
         json_mode: If True, request JSON response format
         max_tokens: Maximum tokens in response
     """
+    print(f"[OpenRouter] Generating with model={model_name}, json_mode={json_mode}, max_tokens={max_tokens}")
     client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=key,

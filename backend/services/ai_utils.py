@@ -31,11 +31,21 @@ async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: O
     # OpenRouter routing: text-only prompts can go through OpenRouter
     if openrouter_key and openrouter_model and isinstance(prompt, str):
         from services.openrouter_utils import openrouter_generate
+        # Extract json_mode and max_tokens from Gemini config if available
+        json_mode = False
+        max_tokens = 8192
+        if config:
+            if hasattr(config, 'response_mime_type') and config.response_mime_type == "application/json":
+                json_mode = True
+            if hasattr(config, 'max_output_tokens') and config.max_output_tokens:
+                max_tokens = config.max_output_tokens
         return await openrouter_generate(
             model_name=openrouter_model,
             prompt=prompt,
             key=openrouter_key,
             max_retries=max_retries,
+            json_mode=json_mode,
+            max_tokens=max_tokens,
         )
 
     # Direct Gemini API
