@@ -9,11 +9,22 @@ const GEMINI_MODELS = [
     { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview" },
 ];
 
-const OPENROUTER_MODELS = [
+const OPENROUTER_TEXT_MODELS = [
     { id: "google/gemini-3-flash", label: "Gemini 3 Flash (Google)" },
     { id: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (Google)" },
     { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
     { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
+    { id: "openai/gpt-4.1", label: "GPT-4.1 (OpenAI)" },
+    { id: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini (OpenAI)" },
+    { id: "google/gemini-2.5-pro-preview", label: "Gemini 2.5 Pro (Google)" },
+    { id: "deepseek/deepseek-r1", label: "DeepSeek R1" },
+];
+
+const OPENROUTER_DESIGN_MODELS = [
+    { id: "google/gemini-3-flash", label: "Gemini 3 Flash (Google)" },
+    { id: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (Google)" },
+    { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
+    { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
     { id: "openai/gpt-4.1", label: "GPT-4.1 (OpenAI)" },
     { id: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini (OpenAI)" },
     { id: "google/gemini-2.5-pro-preview", label: "Gemini 2.5 Pro (Google)" },
@@ -30,6 +41,7 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
     const [geminiModel, setGeminiModel] = useState("gemini-3-flash-preview");
     const [openrouterKey, setOpenrouterKey] = useState("");
     const [openrouterModel, setOpenrouterModel] = useState("google/gemini-3-flash");
+    const [openrouterDesignModel, setOpenrouterDesignModel] = useState("google/gemini-3-flash");
     const [showOpenai, setShowOpenai] = useState(false);
     const [showGemini, setShowGemini] = useState(false);
     const [showOpenrouter, setShowOpenrouter] = useState(false);
@@ -60,8 +72,9 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                 setGeminiModel(data.gemini_model || "gemini-3-flash-preview");
                 setOpenrouterKey(data.openrouter_key || "");
                 setOpenrouterModel(data.openrouter_model || "google/gemini-3-flash");
+                setOpenrouterDesignModel(data.openrouter_design_model || "google/gemini-3-flash");
                 // localStorageにもバックアップ
-                syncToLocalStorage(data.openai_key, data.gemini_key, data.gemini_model, data.openrouter_key || "", data.openrouter_model || "google/gemini-3-flash");
+                syncToLocalStorage(data.openai_key, data.gemini_key, data.gemini_model, data.openrouter_key || "", data.openrouter_model || "google/gemini-3-flash", data.openrouter_design_model || "google/gemini-3-flash");
             } else {
                 // Supabaseにキーが無い → localStorageから移行
                 const localOpenai = localStorage.getItem("voiceslide_openai_key") || "";
@@ -69,11 +82,13 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                 const localModel = localStorage.getItem("voiceslide_gemini_model") || "gemini-3-flash-preview";
                 const localOpenrouter = localStorage.getItem("voiceslide_openrouter_key") || "";
                 const localOpenrouterModel = localStorage.getItem("voiceslide_openrouter_model") || "google/gemini-3-flash";
+                const localOpenrouterDesignModel = localStorage.getItem("voiceslide_openrouter_design_model") || "google/gemini-3-flash";
                 setOpenaiKey(localOpenai);
                 setGeminiKey(localGemini);
                 setGeminiModel(localModel);
                 setOpenrouterKey(localOpenrouter);
                 setOpenrouterModel(localOpenrouterModel);
+                setOpenrouterDesignModel(localOpenrouterDesignModel);
 
                 if (localOpenai || localGemini || localOpenrouter) {
                     // localStorageにキーがある → Supabaseへ自動移行
@@ -84,6 +99,7 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                         gemini_model: localModel,
                         openrouter_key: localOpenrouter,
                         openrouter_model: localOpenrouterModel,
+                        openrouter_design_model: localOpenrouterDesignModel,
                     }, { onConflict: "user_id" });
                 }
             }
@@ -94,23 +110,25 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
             setGeminiModel(localStorage.getItem("voiceslide_gemini_model") || "gemini-3-flash-preview");
             setOpenrouterKey(localStorage.getItem("voiceslide_openrouter_key") || "");
             setOpenrouterModel(localStorage.getItem("voiceslide_openrouter_model") || "google/gemini-3-flash");
+            setOpenrouterDesignModel(localStorage.getItem("voiceslide_openrouter_design_model") || "google/gemini-3-flash");
         }
         setIsLoading(false);
     };
 
-    const syncToLocalStorage = (openai: string, gemini: string, model: string, openrouter: string, openrouterModel: string) => {
+    const syncToLocalStorage = (openai: string, gemini: string, model: string, openrouter: string, openrouterModel: string, openrouterDesignModel: string) => {
         localStorage.setItem("voiceslide_openai_key", openai);
         localStorage.setItem("voiceslide_gemini_key", gemini);
         localStorage.setItem("voiceslide_gemini_model", model || "gemini-3-flash-preview");
         localStorage.setItem("voiceslide_openrouter_key", openrouter);
         localStorage.setItem("voiceslide_openrouter_model", openrouterModel || "google/gemini-3-flash");
+        localStorage.setItem("voiceslide_openrouter_design_model", openrouterDesignModel || "google/gemini-3-flash");
     };
 
     const handleSave = async () => {
         setSaving(true);
 
         // localStorageにも保存（互換性維持）
-        syncToLocalStorage(openaiKey, geminiKey, geminiModel, openrouterKey, openrouterModel);
+        syncToLocalStorage(openaiKey, geminiKey, geminiModel, openrouterKey, openrouterModel, openrouterDesignModel);
 
         // Supabaseにも保存
         const supabase = createClient();
@@ -123,6 +141,7 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                 gemini_model: geminiModel,
                 openrouter_key: openrouterKey,
                 openrouter_model: openrouterModel,
+                openrouter_design_model: openrouterDesignModel,
             }, { onConflict: "user_id" });
         }
 
@@ -140,11 +159,13 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
         localStorage.removeItem("voiceslide_gemini_model");
         localStorage.removeItem("voiceslide_openrouter_key");
         localStorage.removeItem("voiceslide_openrouter_model");
+        localStorage.removeItem("voiceslide_openrouter_design_model");
         setOpenaiKey("");
         setGeminiKey("");
         setGeminiModel("gemini-3-flash-preview");
         setOpenrouterKey("");
         setOpenrouterModel("google/gemini-3-flash");
+        setOpenrouterDesignModel("google/gemini-3-flash");
 
         // Supabaseからもクリア
         const supabase = createClient();
@@ -157,6 +178,7 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                 gemini_model: "gemini-3-flash-preview",
                 openrouter_key: "",
                 openrouter_model: "google/gemini-3-flash",
+                openrouter_design_model: "google/gemini-3-flash",
             }, { onConflict: "user_id" });
         }
     };
@@ -232,23 +254,43 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
 
                                 {/* OpenRouter Model Selection */}
                                 {hasOpenrouterKey && (
-                                    <div className="mt-3">
-                                        <label className="block text-sm font-medium text-zinc-400 mb-2">
-                                            テキスト生成モデル
-                                        </label>
-                                        <select
-                                            value={openrouterModel}
-                                            onChange={(e) => setOpenrouterModel(e.target.value)}
-                                            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none appearance-none cursor-pointer"
-                                        >
-                                            {OPENROUTER_MODELS.map((m) => (
-                                                <option key={m.id} value={m.id}>
-                                                    {m.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <p className="text-xs text-zinc-500 mt-1">
-                                            アウトライン・スライドHTML生成に使用。画像生成は引き続きGemini APIを使用します。
+                                    <div className="mt-3 space-y-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-2">
+                                                テキスト生成モデル
+                                                <span className="text-[10px] text-zinc-500 ml-2">アウトライン・文字起こし整形</span>
+                                            </label>
+                                            <select
+                                                value={openrouterModel}
+                                                onChange={(e) => setOpenrouterModel(e.target.value)}
+                                                className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none appearance-none cursor-pointer"
+                                            >
+                                                {OPENROUTER_TEXT_MODELS.map((m) => (
+                                                    <option key={m.id} value={m.id}>
+                                                        {m.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-2">
+                                                デザイン生成モデル
+                                                <span className="text-[10px] text-zinc-500 ml-2">スライドHTML生成</span>
+                                            </label>
+                                            <select
+                                                value={openrouterDesignModel}
+                                                onChange={(e) => setOpenrouterDesignModel(e.target.value)}
+                                                className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none appearance-none cursor-pointer"
+                                            >
+                                                {OPENROUTER_DESIGN_MODELS.map((m) => (
+                                                    <option key={m.id} value={m.id}>
+                                                        {m.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <p className="text-xs text-zinc-500">
+                                            画像生成（イラスト）は引き続きGemini APIを使用します。
                                         </p>
                                     </div>
                                 )}
@@ -404,13 +446,14 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
 
 // Helper function to get API keys (localStorage fallback for API calls)
 export function getAPIKeys() {
-    if (typeof window === "undefined") return { openai: "", gemini: "", geminiModel: "", openrouter: "", openrouterModel: "" };
+    if (typeof window === "undefined") return { openai: "", gemini: "", geminiModel: "", openrouter: "", openrouterModel: "", openrouterDesignModel: "" };
     return {
         openai: localStorage.getItem("voiceslide_openai_key") || "",
         gemini: localStorage.getItem("voiceslide_gemini_key") || "",
         geminiModel: localStorage.getItem("voiceslide_gemini_model") || "",
         openrouter: localStorage.getItem("voiceslide_openrouter_key") || "",
         openrouterModel: localStorage.getItem("voiceslide_openrouter_model") || "",
+        openrouterDesignModel: localStorage.getItem("voiceslide_openrouter_design_model") || "",
     };
 }
 

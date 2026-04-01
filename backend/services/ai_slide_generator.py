@@ -21,6 +21,7 @@ from services.ai_utils import safe_gemini_generate
 # Context vars for OpenRouter routing (set per-request, read by safe_gemini_generate)
 _openrouter_key_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar('_openrouter_key', default=None)
 _openrouter_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_model', default='google/gemini-3-flash')
+_openrouter_design_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_design_model', default='google/gemini-3-flash')
 
 # Global semaphore to limit concurrent browser instances
 # Railway Pro Plan (24GB RAM, 24 vCPU) - increased for better concurrency
@@ -1666,7 +1667,8 @@ async def generate_design_strategy(
             config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.7
-            )
+            ),
+            use_design_model=True,
         )
 
         strategy = json.loads(response_text)
@@ -2090,7 +2092,7 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     )
     
     try:
-        # Gemini 3 Flash for high-quality slide generation
+        # Slide HTML generation (uses design model via OpenRouter)
         html = await safe_gemini_generate(
             model_name,
             prompt,
@@ -2098,7 +2100,8 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
             config=genai.GenerationConfig(
                 temperature=0.8,
                 max_output_tokens=4096
-            )
+            ),
+            use_design_model=True,
         )
         
         # Extract HTML from markdown code block if present
@@ -2363,18 +2366,21 @@ async def generate_all_custom_slides(
     facecam_size: Optional[int] = None,  # PiP size
     model_name: str = "gemini-3-flash-preview",
     openrouter_key: Optional[str] = None,  # OpenRouter API key (priority over Gemini)
-    openrouter_model: str = "google/gemini-3-flash",  # OpenRouter model ID
+    openrouter_model: str = "google/gemini-3-flash",  # OpenRouter model ID (text generation)
+    openrouter_design_model: str = "google/gemini-3-flash",  # OpenRouter model ID (HTML design)
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
     """
-    print(f"[DEBUG] generate_all_custom_slides called for job {job_id}, dimensions={video_width}x{video_height}, openrouter={'yes' if openrouter_key else 'no'}")
+    print(f"[DEBUG] generate_all_custom_slides called for job {job_id}, dimensions={video_width}x{video_height}, openrouter={'yes' if openrouter_key else 'no'}, design_model={openrouter_design_model if openrouter_key else 'N/A'}")
 
     # Set OpenRouter context for this generation run
-    # All nested safe_gemini_generate calls will pick this up via contextvars
+    # Design model is used for HTML slide generation, text model for outline/analysis
+    # safe_gemini_generate reads _openrouter_design_model_var for slide HTML generation
     if openrouter_key:
         _openrouter_key_var.set(openrouter_key)
         _openrouter_model_var.set(openrouter_model)
+        _openrouter_design_model_var.set(openrouter_design_model)
 
     import os
     from playwright.async_api import async_playwright
@@ -3268,7 +3274,7 @@ async def self_review_slide(
 """
     
     try:
-        # Gemini 3 Flash for self-review
+        # Self-review of slide HTML (uses design model via OpenRouter)
         improved_html = await safe_gemini_generate(
             model_name,
             prompt,
@@ -3276,7 +3282,8 @@ async def self_review_slide(
             config=genai.GenerationConfig(
                 temperature=0.7,
                 max_output_tokens=4096
-            )
+            ),
+            use_design_model=True,
         )
         
         # Extract HTML from markdown code block if present
@@ -3527,14 +3534,15 @@ async def regenerate_slide_with_feedback(
 }}
 """
         try:
-            # Generate JSON
+            # Generate JSON (slide copy modification, uses design model)
             response_text = await safe_gemini_generate(
                 model_name,
                 copy_prompt,
                 key,
                 config=genai.GenerationConfig(
                     response_mime_type="application/json"
-                )
+                ),
+                use_design_model=True,
             )
             new_copy = json.loads(response_text)
             print(f"[Feedback] New copy generated: {new_copy}")
@@ -3696,13 +3704,13 @@ async def regenerate_slide_with_feedback(
 
     
     try:
-        # Gemini 2.0 Flash for creative prompts
-        # Generate response
+        # Slide HTML regeneration with feedback (uses design model via OpenRouter)
         response_text = await safe_gemini_generate(
             model_name,
             prompt,
             key,
-            config=genai.GenerationConfig(temperature=0.7)
+            config=genai.GenerationConfig(temperature=0.7),
+            use_design_model=True,
         )
         
         new_html = response_text.strip()

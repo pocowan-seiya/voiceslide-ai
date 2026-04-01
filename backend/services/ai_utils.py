@@ -4,21 +4,27 @@ import json
 import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 
-async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: Optional[genai.GenerationConfig] = None, max_retries: int = 5, openrouter_key: Optional[str] = None, openrouter_model: Optional[str] = None) -> str:
+async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: Optional[genai.GenerationConfig] = None, max_retries: int = 5, openrouter_key: Optional[str] = None, openrouter_model: Optional[str] = None, use_design_model: bool = False) -> str:
     """
     Safely call AI API with robust retry logic.
     If openrouter_key is provided, routes through OpenRouter instead of Gemini.
     Works for both single-part (text) and multi-part (text+image) prompts.
+
+    use_design_model: If True, uses the design model (for HTML slide generation)
+                      instead of the text model (for outline/transcript).
     """
     # Check contextvars for OpenRouter config if not explicitly passed
     if not openrouter_key:
         try:
             import contextvars
             # Import from ai_slide_generator where the vars are defined
-            from services.ai_slide_generator import _openrouter_key_var, _openrouter_model_var
+            from services.ai_slide_generator import _openrouter_key_var, _openrouter_model_var, _openrouter_design_model_var
             openrouter_key = _openrouter_key_var.get(None)
             if openrouter_key and not openrouter_model:
-                openrouter_model = _openrouter_model_var.get('google/gemini-3-flash')
+                if use_design_model:
+                    openrouter_model = _openrouter_design_model_var.get('google/gemini-3-flash')
+                else:
+                    openrouter_model = _openrouter_model_var.get('google/gemini-3-flash')
         except (ImportError, LookupError):
             pass
 

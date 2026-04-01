@@ -26,11 +26,13 @@ export async function GET(
         const geminiModel = request.headers.get('x-gemini-model');
         const openrouterKey = request.headers.get('x-openrouter-key');
         const openrouterModel = request.headers.get('x-openrouter-model');
+        const openrouterDesignModel = request.headers.get('x-openrouter-design-model');
         if (openaiKey) headers['x-openai-key'] = openaiKey;
         if (geminiKey) headers['x-gemini-key'] = geminiKey;
         if (geminiModel) headers['x-gemini-model'] = geminiModel;
         if (openrouterKey) headers['x-openrouter-key'] = openrouterKey;
         if (openrouterModel) headers['x-openrouter-model'] = openrouterModel;
+        if (openrouterDesignModel) headers['x-openrouter-design-model'] = openrouterDesignModel;
 
         const response = await fetch(targetUrl, { headers });
 
@@ -85,11 +87,13 @@ export async function POST(
         const geminiModel = request.headers.get('x-gemini-model');
         const openrouterKey = request.headers.get('x-openrouter-key');
         const openrouterModel = request.headers.get('x-openrouter-model');
+        const openrouterDesignModel = request.headers.get('x-openrouter-design-model');
         if (openaiKey) headers['x-openai-key'] = openaiKey;
         if (geminiKey) headers['x-gemini-key'] = geminiKey;
         if (geminiModel) headers['x-gemini-model'] = geminiModel;
         if (openrouterKey) headers['x-openrouter-key'] = openrouterKey;
         if (openrouterModel) headers['x-openrouter-model'] = openrouterModel;
+        if (openrouterDesignModel) headers['x-openrouter-design-model'] = openrouterDesignModel;
 
         if (contentType.includes('multipart/form-data')) {
             // Handle file uploads - pass through FormData
@@ -150,11 +154,13 @@ export async function DELETE(
         const geminiModel = request.headers.get('x-gemini-model');
         const openrouterKey = request.headers.get('x-openrouter-key');
         const openrouterModel = request.headers.get('x-openrouter-model');
+        const openrouterDesignModel = request.headers.get('x-openrouter-design-model');
         if (openaiKey) headers['x-openai-key'] = openaiKey;
         if (geminiKey) headers['x-gemini-key'] = geminiKey;
         if (geminiModel) headers['x-gemini-model'] = geminiModel;
         if (openrouterKey) headers['x-openrouter-key'] = openrouterKey;
         if (openrouterModel) headers['x-openrouter-model'] = openrouterModel;
+        if (openrouterDesignModel) headers['x-openrouter-design-model'] = openrouterDesignModel;
 
         const response = await fetch(targetUrl, {
             method: 'DELETE',

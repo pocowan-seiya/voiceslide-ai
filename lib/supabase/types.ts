@@ -55,6 +55,7 @@ export interface UserSettings {
   gemini_model: string;
   openrouter_key?: string;
   openrouter_model?: string;
+  openrouter_design_model?: string;
   created_at: string;
   updated_at: string;
 }

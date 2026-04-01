@@ -1507,6 +1507,7 @@ async def generate_slides_batch_endpoint(
     x_font_style: Optional[str] = Header(None),
     x_openrouter_key: Optional[str] = Header(None),
     x_openrouter_model: Optional[str] = Header(None),
+    x_openrouter_design_model: Optional[str] = Header(None),
 ):
     """Batch slide generation: runs in background to avoid timeout"""
     pipeline = get_or_create_pipeline(job_id)
@@ -1558,6 +1559,7 @@ async def generate_slides_batch_endpoint(
             gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
             openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
             openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash")
+            openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-3-flash")
             image_paths = await generate_all_custom_slides(
                 slides=slides,
                 job_id=job_id,
@@ -1583,6 +1585,7 @@ async def generate_slides_batch_endpoint(
                 model_name=gemini_model,
                 openrouter_key=openrouter_key if openrouter_key else None,
                 openrouter_model=openrouter_model,
+                openrouter_design_model=openrouter_design_model,
             )
             
             # パイプラインに保存

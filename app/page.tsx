@@ -26,6 +26,7 @@ function getAPIHeaders(): HeadersInit {
   if (keys.geminiModel) headers["x-gemini-model"] = keys.geminiModel;
   if (keys.openrouter) headers["x-openrouter-key"] = keys.openrouter;
   if (keys.openrouterModel) headers["x-openrouter-model"] = keys.openrouterModel;
+  if (keys.openrouterDesignModel) headers["x-openrouter-design-model"] = keys.openrouterDesignModel;
   return headers;
 }
 
