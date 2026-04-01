@@ -11,6 +11,7 @@ const GEMINI_MODELS = [
 
 const OPENROUTER_TEXT_MODELS = [
     { id: "google/gemini-3-flash", label: "Gemini 3 Flash (Google)" },
+    { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview (Google)" },
     { id: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (Google)" },
     { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
     { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
@@ -22,6 +23,7 @@ const OPENROUTER_TEXT_MODELS = [
 
 const OPENROUTER_DESIGN_MODELS = [
     { id: "google/gemini-3-flash", label: "Gemini 3 Flash (Google)" },
+    { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview (Google)" },
     { id: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (Google)" },
     { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
     { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
