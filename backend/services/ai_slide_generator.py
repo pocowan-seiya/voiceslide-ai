@@ -10,12 +10,17 @@ import json
 import base64
 import random
 import asyncio
+import contextvars
 from typing import Dict, Any, List, Optional
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 
 from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT, get_video_dimensions
 from services.ai_utils import safe_gemini_generate
+
+# Context vars for OpenRouter routing (set per-request, read by safe_gemini_generate)
+_openrouter_key_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar('_openrouter_key', default=None)
+_openrouter_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_model', default='google/gemini-3-flash')
 
 # Global semaphore to limit concurrent browser instances
 # Railway Pro Plan (24GB RAM, 24 vCPU) - increased for better concurrency
@@ -2356,12 +2361,21 @@ async def generate_all_custom_slides(
     video_height: int = VIDEO_HEIGHT,  # Dynamic video height (for portrait support)
     facecam_position: Optional[str] = None,  # PiP position for text avoidance
     facecam_size: Optional[int] = None,  # PiP size
-    model_name: str = "gemini-3-flash-preview"
+    model_name: str = "gemini-3-flash-preview",
+    openrouter_key: Optional[str] = None,  # OpenRouter API key (priority over Gemini)
+    openrouter_model: str = "google/gemini-3-flash",  # OpenRouter model ID
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
     """
-    print(f"[DEBUG] generate_all_custom_slides called for job {job_id}, dimensions={video_width}x{video_height}")
+    print(f"[DEBUG] generate_all_custom_slides called for job {job_id}, dimensions={video_width}x{video_height}, openrouter={'yes' if openrouter_key else 'no'}")
+
+    # Set OpenRouter context for this generation run
+    # All nested safe_gemini_generate calls will pick this up via contextvars
+    if openrouter_key:
+        _openrouter_key_var.set(openrouter_key)
+        _openrouter_model_var.set(openrouter_model)
+
     import os
     from playwright.async_api import async_playwright
     from config import OUTPUT_DIR

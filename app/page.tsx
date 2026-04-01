@@ -24,6 +24,8 @@ function getAPIHeaders(): HeadersInit {
   if (keys.openai) headers["x-openai-key"] = keys.openai;
   if (keys.gemini) headers["x-gemini-key"] = keys.gemini;
   if (keys.geminiModel) headers["x-gemini-model"] = keys.geminiModel;
+  if (keys.openrouter) headers["x-openrouter-key"] = keys.openrouter;
+  if (keys.openrouterModel) headers["x-openrouter-model"] = keys.openrouterModel;
   return headers;
 }
 
@@ -106,6 +108,7 @@ function HomeInner() {
   const [projectName, setProjectName] = useState<string>("新しいプロジェクト");
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [isSavingProject, setIsSavingProject] = useState(false);
+  const [isRestoringProject, setIsRestoringProject] = useState(false);
 
   const [state, setState] = useState<JobState>({
     jobId: null,
@@ -364,102 +367,124 @@ function HomeInner() {
     setProjectId(pid);
 
     const load = async () => {
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("id", pid)
-        .single();
-      if (error || !data) return;
+      setIsRestoringProject(true);
+      try {
+        const { data, error } = await supabase
+          .from("projects")
+          .select("*")
+          .eq("id", pid)
+          .single();
+        if (error || !data) {
+          console.error("[Restore] Failed to load project:", error);
+          setIsRestoringProject(false);
+          return;
+        }
 
-      setProjectName(data.name);
+        setProjectName(data.name);
 
-      const s = data.settings ?? {};
-      const restoredPreviews: string[] = s.slidePreviews ?? [];
+        const s = data.settings ?? {};
+        const restoredPreviews: string[] = s.slidePreviews ?? [];
 
-      // スライドプレビューURLが有効か確認（バックエンドの一時ファイルが消えている可能性）
-      let validPreviews = restoredPreviews;
-      let adjustedStep = data.step as Step;
+        // スライドプレビューURLの検証
+        let validPreviews = restoredPreviews;
+        let adjustedStep = data.step as Step;
 
-      // スライド生成済みステップ(6以降)なのにプレビューが無い → スライド生成前に戻す
-      if (data.step >= 6 && restoredPreviews.length === 0) {
-        console.warn("[Restore] No slide previews saved, rolling back to outline step");
-        adjustedStep = (data.workflow_mode === "full-ai" ? 5 : 8) as Step;
-      }
+        // スライド生成ステップの判定（full-aiは6以降、hybridは9以降）
+        const slideCompleteStep = data.workflow_mode === "full-ai" ? 6 : 9;
+        const slideGenStep = data.workflow_mode === "full-ai" ? 5 : 8;
 
-      // プレビューURLがあっても画像が消えている場合 → スライド生成前に戻す
-      if (restoredPreviews.length > 0 && data.step >= 6) {
-        try {
-          const checkRes = await fetch(restoredPreviews[0], { method: "HEAD" });
-          if (!checkRes.ok) {
-            console.warn("[Restore] Slide previews expired, rolling back to outline step");
+        // スライド生成済みステップなのにプレビューが無い → スライド生成前に戻す
+        if (data.step >= slideCompleteStep && restoredPreviews.length === 0) {
+          console.warn("[Restore] No slide previews saved, rolling back to slide generation step");
+          adjustedStep = slideGenStep as Step;
+        }
+
+        // プレビューURLがあっても画像が消えている場合 → スライド生成前に戻す
+        if (restoredPreviews.length > 0 && data.step >= slideCompleteStep) {
+          try {
+            const checkRes = await fetch(restoredPreviews[0], { method: "HEAD" });
+            if (!checkRes.ok) {
+              console.warn("[Restore] Slide previews expired, rolling back to slide generation step");
+              validPreviews = [];
+              adjustedStep = slideGenStep as Step;
+            }
+          } catch {
+            console.warn("[Restore] Slide preview URL check failed, rolling back");
             validPreviews = [];
-            adjustedStep = (data.workflow_mode === "full-ai" ? 5 : 8) as Step;
+            adjustedStep = slideGenStep as Step;
           }
-        } catch {
-          validPreviews = [];
-          adjustedStep = (data.workflow_mode === "full-ai" ? 5 : 8) as Step;
         }
-      }
 
-      // バックエンドのパイプラインを復元（スライド再生成に必要）
-      let restoredJobId = data.job_id;
-      if (adjustedStep >= 4 && (data.outline || data.polished_outline)) {
-        try {
-          const restoreRes = await fetch(`${API_URL}/api/restore-project`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              transcript: data.transcript || "",
-              polished_transcript: data.polished_transcript || "",
-              outline: data.outline,
-              polished_outline: data.polished_outline,
-              timing_map: data.timing_map,
-              aspect_ratio: s.aspectRatio || "landscape",
-            }),
-          });
-          if (restoreRes.ok) {
-            const restoreData = await restoreRes.json();
-            restoredJobId = restoreData.job_id;
-            console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}`);
+        // バックエンドのパイプラインを復元（スライド再生成に必要）
+        // APIキーも一緒に渡してバックエンドに保存する
+        let restoredJobId = data.job_id;
+        const apiKeys = getAPIKeys();
+
+        if (adjustedStep >= 4 && (data.outline || data.polished_outline)) {
+          try {
+            const restoreRes = await fetch(`${API_URL}/api/restore-project`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...getAPIHeaders(),
+              },
+              body: JSON.stringify({
+                transcript: data.transcript || "",
+                polished_transcript: data.polished_transcript || "",
+                outline: data.outline,
+                polished_outline: data.polished_outline,
+                timing_map: data.timing_map,
+                aspect_ratio: s.aspectRatio || "landscape",
+              }),
+            });
+            if (restoreRes.ok) {
+              const restoreData = await restoreRes.json();
+              restoredJobId = restoreData.job_id;
+              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}`);
+            } else {
+              console.error(`[Restore] Backend restore failed: ${restoreRes.status}`);
+            }
+          } catch (e) {
+            console.error("[Restore] Backend restore network error:", e);
           }
-        } catch (e) {
-          console.warn("[Restore] Backend restore failed, keeping old job_id:", e);
         }
+
+        setState((prev) => ({
+          ...prev,
+          jobId: restoredJobId,
+          step: adjustedStep,
+          workflowMode: data.workflow_mode,
+          transcript: data.transcript,
+          polishedTranscript: data.polished_transcript,
+          outline: data.outline,
+          polishedOutline: data.polished_outline,
+          timingMap: data.timing_map ?? [],
+          slideCount: validPreviews.length > 0 ? data.slide_count : 0,
+          slidePreviews: validPreviews,
+          videoUrl: data.video_url,
+        }));
+
+        if (s.audioSettings) setAudioSettings(s.audioSettings);
+        if (s.slideSettings) setSlideSettings(s.slideSettings);
+        if (s.selectedColorTheme !== undefined) setSelectedColorTheme(s.selectedColorTheme);
+        if (s.selectedFontStyle !== undefined) setSelectedFontStyle(s.selectedFontStyle);
+        if (s.designPreference !== undefined) setDesignPreference(s.designPreference);
+        if (s.copyStyleRequest !== undefined) setCopyStyleRequest(s.copyStyleRequest);
+        if (s.textDensity) setTextDensity(s.textDensity);
+        if (s.aspectRatio) setAspectRatio(s.aspectRatio);
+        if (s.bgmEnabled !== undefined) setBgmEnabled(s.bgmEnabled);
+        if (s.bgmVolume !== undefined) setBgmVolume(s.bgmVolume);
+        if (s.bgmPlayMode !== undefined) setBgmPlayMode(s.bgmPlayMode);
+        if (s.bgmFadeIn !== undefined) setBgmFadeIn(s.bgmFadeIn);
+        if (s.bgmFadeOut !== undefined) setBgmFadeOut(s.bgmFadeOut);
+        if (s.addIllustrations !== undefined) setAddIllustrations(s.addIllustrations);
+        if (s.illustrationPercentage !== undefined) setIllustrationPercentage(s.illustrationPercentage);
+        if (s.illustrationRequest !== undefined) setIllustrationRequest(s.illustrationRequest);
+        if (s.facecamPosition !== undefined) setFacecamPosition(s.facecamPosition);
+        if (s.facecamSize !== undefined) setFacecamSize(s.facecamSize);
+      } finally {
+        setIsRestoringProject(false);
       }
-
-      setState((prev) => ({
-        ...prev,
-        jobId: restoredJobId,
-        step: adjustedStep,
-        workflowMode: data.workflow_mode,
-        transcript: data.transcript,
-        polishedTranscript: data.polished_transcript,
-        outline: data.outline,
-        polishedOutline: data.polished_outline,
-        timingMap: data.timing_map ?? [],
-        slideCount: validPreviews.length > 0 ? data.slide_count : 0,
-        slidePreviews: validPreviews,
-        videoUrl: data.video_url,
-      }));
-
-      if (s.audioSettings) setAudioSettings(s.audioSettings);
-      if (s.slideSettings) setSlideSettings(s.slideSettings);
-      if (s.selectedColorTheme !== undefined) setSelectedColorTheme(s.selectedColorTheme);
-      if (s.selectedFontStyle !== undefined) setSelectedFontStyle(s.selectedFontStyle);
-      if (s.designPreference !== undefined) setDesignPreference(s.designPreference);
-      if (s.copyStyleRequest !== undefined) setCopyStyleRequest(s.copyStyleRequest);
-      if (s.textDensity) setTextDensity(s.textDensity);
-      if (s.aspectRatio) setAspectRatio(s.aspectRatio);
-      if (s.bgmEnabled !== undefined) setBgmEnabled(s.bgmEnabled);
-      if (s.bgmVolume !== undefined) setBgmVolume(s.bgmVolume);
-      if (s.bgmPlayMode !== undefined) setBgmPlayMode(s.bgmPlayMode);
-      if (s.bgmFadeIn !== undefined) setBgmFadeIn(s.bgmFadeIn);
-      if (s.bgmFadeOut !== undefined) setBgmFadeOut(s.bgmFadeOut);
-      if (s.addIllustrations !== undefined) setAddIllustrations(s.addIllustrations);
-      if (s.illustrationPercentage !== undefined) setIllustrationPercentage(s.illustrationPercentage);
-      if (s.illustrationRequest !== undefined) setIllustrationRequest(s.illustrationRequest);
-      if (s.facecamPosition !== undefined) setFacecamPosition(s.facecamPosition);
-      if (s.facecamSize !== undefined) setFacecamSize(s.facecamSize);
     };
     load();
   }, [searchParams]);
@@ -3724,10 +3749,10 @@ function HomeInner() {
                     isPreviewMode.current = false;
                     handleGenerateSlides(1);
                   }}
-                  disabled={state.isProcessing}
+                  disabled={state.isProcessing || isRestoringProject}
                   className="btn-primary"
                 >
-                  {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成"}
+                  {isRestoringProject ? "プロジェクト復元中..." : state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成"}
                 </button>
                 <button
                   onClick={() => {

@@ -1202,10 +1202,12 @@ async def get_mixed_audio(job_id: str):
 
 @app.post("/api/polish-transcript/{job_id}")
 async def polish_transcript(
-    job_id: str, 
+    job_id: str,
     update: Optional[TranscriptUpdate] = None,
     x_gemini_key: Optional[str] = Header(None),
-    x_gemini_model: Optional[str] = Header(None)
+    x_gemini_model: Optional[str] = Header(None),
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
 ):
     """Step 3: Polish and improve transcript"""
     pipeline = get_or_create_pipeline(job_id)
@@ -1215,6 +1217,10 @@ async def polish_transcript(
         jobs[job_id]["gemini_key"] = x_gemini_key
     if x_gemini_model:
         jobs[job_id]["gemini_model"] = x_gemini_model
+    if x_openrouter_key:
+        jobs[job_id]["openrouter_key"] = x_openrouter_key
+    if x_openrouter_model:
+        jobs[job_id]["openrouter_model"] = x_openrouter_model
 
     jobs[job_id]["step"] = 3
     jobs[job_id]["status"] = "processing"
@@ -1222,7 +1228,7 @@ async def polish_transcript(
     edited = update.transcript if update else None
     original_script = update.original_script if update else None
     gemini_model = jobs[job_id].get("gemini_model", "gemini-3-flash-preview")
-    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script, model_name=gemini_model)
+    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script, model_name=gemini_model, openrouter_key=x_openrouter_key, openrouter_model=x_openrouter_model or "google/gemini-3-flash")
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["polished_transcript"] = result["polished_transcript"]
@@ -1238,11 +1244,13 @@ async def polish_transcript(
 
 @app.post("/api/generate-outline/{job_id}")
 async def generate_outline(
-    job_id: str, 
+    job_id: str,
     background_tasks: BackgroundTasks,
     update: Optional[TranscriptUpdate] = None,
     x_gemini_key: Optional[str] = Header(None),
-    x_gemini_model: Optional[str] = Header(None)
+    x_gemini_model: Optional[str] = Header(None),
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
 ):
     """Step 4: Start outline generation (async background processing)"""
     if job_id not in jobs:
@@ -1253,25 +1261,31 @@ async def generate_outline(
         jobs[job_id]["gemini_key"] = x_gemini_key
     if x_gemini_model:
         jobs[job_id]["gemini_model"] = x_gemini_model
-    
+    if x_openrouter_key:
+        jobs[job_id]["openrouter_key"] = x_openrouter_key
+    if x_openrouter_model:
+        jobs[job_id]["openrouter_model"] = x_openrouter_model
+
     jobs[job_id]["step"] = 4
     jobs[job_id]["outline_status"] = "processing"
     jobs[job_id]["outline_progress"] = "アウトライン生成開始..."
-    
+
     # Store settings for background task
     jobs[job_id]["outline_settings"] = {
         "transcript": update.transcript if update else None,
         "slide_count_mode": update.slide_count_mode if update else "auto",
         "custom_slide_count": update.custom_slide_count if update else 10
     }
-    
+
     # Start background processing
     gemini_model = jobs[job_id].get("gemini_model", "gemini-3-flash-preview")
     background_tasks.add_task(
         run_outline_background,
         job_id,
         x_gemini_key,
-        gemini_model
+        gemini_model,
+        x_openrouter_key,
+        x_openrouter_model,
     )
 
     return {
@@ -1281,7 +1295,7 @@ async def generate_outline(
     }
 
 
-async def run_outline_background(job_id: str, gemini_key: Optional[str], model_name: str = "gemini-3-flash-preview"):
+async def run_outline_background(job_id: str, gemini_key: Optional[str], model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: Optional[str] = None):
     """Background task for outline generation"""
     try:
         pipeline = get_or_create_pipeline(job_id)
@@ -1298,7 +1312,9 @@ async def run_outline_background(job_id: str, gemini_key: Optional[str], model_n
             gemini_key=gemini_key,
             slide_count_mode=slide_count_mode,
             custom_slide_count=custom_slide_count,
-            model_name=model_name
+            model_name=model_name,
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model or "google/gemini-3-flash",
         )
         
         jobs[job_id]["outline_status"] = "completed"
@@ -1488,7 +1504,9 @@ async def generate_slides_batch_endpoint(
     x_gemini_key: Optional[str] = Header(None),
     x_gemini_model: Optional[str] = Header(None),
     x_color_theme: Optional[str] = Header(None),
-    x_font_style: Optional[str] = Header(None)
+    x_font_style: Optional[str] = Header(None),
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
 ):
     """Batch slide generation: runs in background to avoid timeout"""
     pipeline = get_or_create_pipeline(job_id)
@@ -1538,6 +1556,8 @@ async def generate_slides_batch_endpoint(
             
             # Generate batch of slides
             gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+            openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
+            openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash")
             image_paths = await generate_all_custom_slides(
                 slides=slides,
                 job_id=job_id,
@@ -1560,7 +1580,9 @@ async def generate_slides_batch_endpoint(
                 video_height=video_h,
                 facecam_position=request.facecam_position,
                 facecam_size=request.facecam_size,
-                model_name=gemini_model
+                model_name=gemini_model,
+                openrouter_key=openrouter_key if openrouter_key else None,
+                openrouter_model=openrouter_model,
             )
             
             # パイプラインに保存
@@ -2525,7 +2547,13 @@ class RestoreProjectRequest(BaseModel):
     aspect_ratio: Optional[str] = "landscape"
 
 @app.post("/api/restore-project")
-async def restore_project(request: RestoreProjectRequest):
+async def restore_project(
+    request: RestoreProjectRequest,
+    x_openai_key: Optional[str] = Header(None),
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_openrouter_key: Optional[str] = Header(None),
+):
     """Restore a pipeline from saved project data (no audio file needed for slide generation)"""
     job_id = str(uuid.uuid4())
 
@@ -2546,16 +2574,25 @@ async def restore_project(request: RestoreProjectRequest):
     if request.aspect_ratio:
         pipeline.aspect_ratio = request.aspect_ratio
 
-    # Initialize job tracking
+    # Initialize job tracking with API keys
     jobs[job_id] = {
         "id": job_id,
         "step": 5,
         "status": "restored",
-        "created_at": datetime.now().isoformat()
+        "created_at": datetime.now().isoformat(),
+        "gemini_key": x_gemini_key or "",
+        "gemini_model": x_gemini_model or "gemini-3-flash-preview",
+        "openrouter_key": x_openrouter_key or "",
     }
     job_timestamps[job_id] = datetime.now()
 
-    print(f"[Restore] Project restored as job {job_id}")
+    # Store API keys for this job
+    api_keys[job_id] = {
+        "openai": x_openai_key or "",
+        "gemini": x_gemini_key or "",
+    }
+
+    print(f"[Restore] Project restored as job {job_id} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)})")
 
     return {
         "job_id": job_id,

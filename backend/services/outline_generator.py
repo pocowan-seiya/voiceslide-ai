@@ -543,7 +543,9 @@ async def generate_outline(
     slide_count_mode: str = "auto",
     custom_slide_count: int = 10,
     audio_duration: float = None,  # 実際の音声長（指定がなければセグメントから推定）
-    model_name: str = "gemini-3-flash-preview"
+    model_name: str = "gemini-3-flash-preview",
+    openrouter_key: str = None,
+    openrouter_model: str = "google/gemini-3-flash",
 ) -> Dict[str, Any]:
     """
     高精度タイムスタンプ同期のスライドアウトラインを生成
@@ -640,7 +642,9 @@ async def generate_outline(
                 response_mime_type="application/json",
                 temperature=0.1,
                 max_output_tokens=16384  # Support long audio (10+ minutes)
-            )
+            ),
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model,
         )
         print(f"[Outline] Success!")
         result = repair_and_parse_json(response_text, "Gemini")

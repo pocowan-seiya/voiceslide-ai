@@ -255,7 +255,7 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None, model_name: str = "gemini-3-flash-preview") -> str:
+async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None, model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash") -> str:
     """Polishes the transcript for readability and alignment with a reference script."""
     key = gemini_key or GEMINI_API_KEY
     
@@ -291,12 +291,14 @@ async def polish_transcript(text: str, gemini_key: Optional[str] = None, origina
 
 整形後:"""
         
-        # Use the robust shared utility
+        # Use the robust shared utility (OpenRouter routing if available)
         result = await safe_gemini_generate(
             actual_model,
             prompt,
             key,
-            config=None # Default config
+            config=None, # Default config
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model,
         )
         
         print(f"[{get_ts()}] [Polish] Success!")

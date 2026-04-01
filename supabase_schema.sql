@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS user_settings (
   openai_key  TEXT NOT NULL DEFAULT '',
   gemini_key  TEXT NOT NULL DEFAULT '',
   gemini_model TEXT NOT NULL DEFAULT 'gemini-3-flash-preview',
+  openrouter_key TEXT NOT NULL DEFAULT '',
+  openrouter_model TEXT NOT NULL DEFAULT 'google/gemini-3-flash',
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

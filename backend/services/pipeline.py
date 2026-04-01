@@ -117,7 +117,9 @@ class HybridPipeline:
         edited_transcript: Optional[str] = None,
         gemini_key: Optional[str] = None,
         original_script: Optional[str] = None,
-        model_name: str = "gemini-3-flash-preview"
+        model_name: str = "gemini-3-flash-preview",
+        openrouter_key: Optional[str] = None,
+        openrouter_model: str = "google/gemini-3-flash",
     ) -> Dict[str, Any]:
         """Polish and improve the transcript"""
         text_to_polish = edited_transcript or self.raw_transcript
@@ -126,7 +128,9 @@ class HybridPipeline:
             text_to_polish,
             gemini_key=gemini_key,
             original_script=original_script,
-            model_name=model_name
+            model_name=model_name,
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model,
         )
         
         return {
@@ -142,7 +146,9 @@ class HybridPipeline:
         gemini_key: Optional[str] = None,
         slide_count_mode: str = "auto",
         custom_slide_count: int = 10,
-        model_name: str = "gemini-3-flash-preview"
+        model_name: str = "gemini-3-flash-preview",
+        openrouter_key: Optional[str] = None,
+        openrouter_model: str = "google/gemini-3-flash",
     ) -> Dict[str, Any]:
         """Generate slide outline from transcript"""
         transcript = edited_transcript or self.polished_transcript or self.raw_transcript
@@ -166,7 +172,9 @@ class HybridPipeline:
             slide_count_mode=slide_count_mode,
             custom_slide_count=custom_slide_count,
             audio_duration=actual_audio_duration,
-            model_name=model_name
+            model_name=model_name,
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model,
         )
         
         return {

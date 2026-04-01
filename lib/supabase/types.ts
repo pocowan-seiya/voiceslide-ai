@@ -53,6 +53,8 @@ export interface UserSettings {
   openai_key: string;
   gemini_key: string;
   gemini_model: string;
+  openrouter_key?: string;
+  openrouter_model?: string;
   created_at: string;
   updated_at: string;
 }
