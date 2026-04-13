@@ -45,6 +45,13 @@ export interface ProjectSettings {
   addIllustrations?: boolean;
   illustrationPercentage?: number;
   illustrationRequest?: string;
+  copyStyleRequest?: string;
+  facecamPosition?: string;
+  facecamSize?: number;
+  playbackRate?: number;
+  bgmMixed?: boolean;
+  facecamUploaded?: boolean;
+  slidePreviews?: string[];
 }
 
 export interface UserSettings {
