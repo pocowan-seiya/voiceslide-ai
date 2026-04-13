@@ -184,11 +184,11 @@ class HybridPipeline:
         }
     
     # Step 5: Outline Brush-up
-    async def step_polish_outline(self, edited_outline: Optional[Dict] = None, model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash") -> Dict[str, Any]:
+    async def step_polish_outline(self, edited_outline: Optional[Dict] = None, model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash", gemini_key: Optional[str] = None) -> Dict[str, Any]:
         """Brush up and improve the outline"""
         outline_to_polish = edited_outline or self.raw_outline
 
-        self.polished_outline = await polish_outline(outline_to_polish, model_name=model_name, openrouter_key=openrouter_key, openrouter_model=openrouter_model)
+        self.polished_outline = await polish_outline(outline_to_polish, model_name=model_name, openrouter_key=openrouter_key, openrouter_model=openrouter_model, gemini_key=gemini_key)
         
         return {
             "step": 5,

@@ -5,7 +5,7 @@ VoiceSlide AI v3 - 高精度音声同期アウトラインジェネレーター
 
 import json
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from openai import OpenAI
 import google.generativeai as genai
 
@@ -681,7 +681,7 @@ async def generate_outline(
     return result
 
 
-async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash") -> Dict[str, Any]:
+async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash", gemini_key: Optional[str] = None) -> Dict[str, Any]:
     """
     アウトラインのタイムスタンプ精度を維持しながらブラッシュアップ
     """
@@ -698,7 +698,7 @@ async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-fl
 
     try:
         from services.transcription import get_available_gemini_model
-        key = GEMINI_API_KEY
+        key = gemini_key or GEMINI_API_KEY
         if model_name != "gemini-3-flash-preview":
             actual_model = model_name
         else:
