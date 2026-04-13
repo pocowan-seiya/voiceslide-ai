@@ -2144,20 +2144,76 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
             key,
             config=genai.GenerationConfig(
                 temperature=0.8,
-                max_output_tokens=4096
+                max_output_tokens=8192
             ),
             use_design_model=True,
         )
         
-        # Extract HTML from markdown code block if present
-        if "```html" in html:
-            html = html.split("```html")[1].split("```")[0].strip()
+        # Extract HTML from markdown code block if present (case-insensitive)
+        html_lower = html.lower()
+        if "```html" in html_lower:
+            idx = html_lower.index("```html")
+            html = html[idx + 7:]  # skip past ```html
+            if "```" in html:
+                html = html[:html.index("```")].strip()
         elif "```" in html:
             html = html.split("```")[1].split("```")[0].strip()
-        
+
+        # Handle truncated HTML (max_tokens exceeded)
+        if "</html>" not in html_lower and "<html" in html_lower:
+            print(f"[Design Architect] HTML appears truncated for slide {slide_number}, closing tags")
+            # Close any open tags
+            if "</body>" not in html:
+                html += "\n</body>"
+            html += "\n</html>"
+
         if not html.startswith("<!DOCTYPE") and not html.startswith("<html"):
             print(f"[Design Architect] Invalid HTML for slide {slide_number}, using fallback")
             return generate_fallback_html(slide, slide_number, total_slides, strategy)
+
+        # Validate that generated HTML contains the slide text content
+        # If text is missing (common with some OpenRouter models), inject it
+        from bs4 import BeautifulSoup as BS4
+        soup_check = BS4(html, 'html.parser')
+        visible_text = soup_check.get_text(strip=True)
+
+        # Check if title appears in the rendered text
+        if title and len(title) > 2 and title not in visible_text:
+            print(f"[Design Architect] WARNING: Title '{title[:30]}...' not found in slide {slide_number} HTML, attempting fix")
+            # Try to find the body and inject text content
+            body_tag = soup_check.find('body')
+            if body_tag:
+                # Create a content div with the slide text
+                import re as re_mod
+                # Find existing content container or create one
+                content_div = soup_check.new_tag('div', attrs={
+                    'class': 'injected-content',
+                    'style': 'position:relative;z-index:10;text-align:center;padding:40px 60px;'
+                })
+                if title:
+                    h1 = soup_check.new_tag('h1', attrs={
+                        'style': 'color:white;font-size:clamp(2rem,4vw,3.5rem);font-weight:900;margin-bottom:20px;text-shadow:0 2px 8px rgba(0,0,0,0.3);'
+                    })
+                    h1.string = title
+                    content_div.append(h1)
+                if subtitle:
+                    h3 = soup_check.new_tag('h3', attrs={
+                        'style': 'color:rgba(255,255,255,0.85);font-size:clamp(1rem,2vw,1.5rem);font-weight:400;margin-bottom:30px;'
+                    })
+                    h3.string = subtitle
+                    content_div.append(h3)
+                if points_str and points_str.strip():
+                    for point in points_str.strip().split('\n'):
+                        point = point.strip().lstrip('- •')
+                        if point:
+                            p = soup_check.new_tag('p', attrs={
+                                'style': 'color:rgba(255,255,255,0.9);font-size:1.2rem;margin:8px 0;'
+                            })
+                            p.string = point
+                            content_div.append(p)
+                body_tag.append(content_div)
+                html = str(soup_check)
+                print(f"[Design Architect] Injected missing text content into slide {slide_number}")
         
         # Replace user image placeholder with actual base64 if present (for ANY slide that has placeholder)
         user_images_list = strategy.get("_user_images_data", [])

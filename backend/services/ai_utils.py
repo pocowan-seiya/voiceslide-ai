@@ -31,14 +31,17 @@ async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: O
     # OpenRouter routing: text-only prompts can go through OpenRouter
     if openrouter_key and openrouter_model and isinstance(prompt, str):
         from services.openrouter_utils import openrouter_generate
-        # Extract json_mode and max_tokens from Gemini config if available
+        # Extract json_mode, max_tokens, temperature from Gemini config if available
         json_mode = False
         max_tokens = 8192
+        temperature = None
         if config:
             if hasattr(config, 'response_mime_type') and config.response_mime_type == "application/json":
                 json_mode = True
             if hasattr(config, 'max_output_tokens') and config.max_output_tokens:
                 max_tokens = config.max_output_tokens
+            if hasattr(config, 'temperature') and config.temperature is not None:
+                temperature = config.temperature
         return await openrouter_generate(
             model_name=openrouter_model,
             prompt=prompt,
@@ -46,6 +49,7 @@ async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: O
             max_retries=max_retries,
             json_mode=json_mode,
             max_tokens=max_tokens,
+            temperature=temperature,
         )
 
     # Direct Gemini API

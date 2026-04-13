@@ -18,6 +18,7 @@ async def openrouter_generate(
     max_retries: int = 5,
     json_mode: bool = False,
     max_tokens: int = 8192,
+    temperature: Optional[float] = None,
 ) -> str:
     """
     Call OpenRouter API with robust retry logic.
@@ -30,8 +31,9 @@ async def openrouter_generate(
         max_retries: Max retry attempts
         json_mode: If True, request JSON response format
         max_tokens: Maximum tokens in response
+        temperature: Sampling temperature (0.0-2.0)
     """
-    print(f"[OpenRouter] Generating with model={model_name}, json_mode={json_mode}, max_tokens={max_tokens}")
+    print(f"[OpenRouter] Generating with model={model_name}, json_mode={json_mode}, max_tokens={max_tokens}, temperature={temperature}")
     client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=key,
@@ -60,6 +62,8 @@ async def openrouter_generate(
                 "messages": messages,
                 "max_tokens": max_tokens,
             }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
 
