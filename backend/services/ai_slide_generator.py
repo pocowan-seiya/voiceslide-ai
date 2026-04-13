@@ -11,9 +11,11 @@ import base64
 import random
 import asyncio
 import contextvars
+import time as time_mod_global
 from typing import Dict, Any, List, Optional
 from bs4 import BeautifulSoup
 import google.generativeai as genai
+from playwright.async_api import async_playwright, Browser
 
 from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT, get_video_dimensions
 from services.ai_utils import safe_gemini_generate
@@ -22,6 +24,49 @@ from services.ai_utils import safe_gemini_generate
 _openrouter_key_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar('_openrouter_key', default=None)
 _openrouter_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_model', default='google/gemini-3-flash')
 _openrouter_design_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_design_model', default='google/gemini-3-flash')
+
+# ── Playwright browser pool ──
+# Re-use a single browser instance across requests to eliminate 3-5s startup cost.
+_browser_pool_lock = asyncio.Lock()
+_browser_instance: Optional[Browser] = None
+_browser_playwright = None  # Keep playwright context alive
+_browser_last_used: float = 0.0
+_BROWSER_IDLE_TIMEOUT = 300  # 5 minutes
+
+
+async def get_pooled_browser() -> Browser:
+    """Get or create a shared Chromium browser instance."""
+    global _browser_instance, _browser_playwright, _browser_last_used
+    async with _browser_pool_lock:
+        if _browser_instance and _browser_instance.is_connected():
+            _browser_last_used = time_mod_global.time()
+            return _browser_instance
+        # Launch new browser
+        pw = await async_playwright().start()
+        _browser_playwright = pw
+        _browser_instance = await pw.chromium.launch(
+            args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        )
+        _browser_last_used = time_mod_global.time()
+        print("[BrowserPool] New browser instance created")
+        return _browser_instance
+
+
+async def release_pooled_browser_if_idle():
+    """Close the browser if it hasn't been used for IDLE_TIMEOUT seconds."""
+    global _browser_instance, _browser_playwright
+    async with _browser_pool_lock:
+        if _browser_instance and (time_mod_global.time() - _browser_last_used > _BROWSER_IDLE_TIMEOUT):
+            try:
+                await _browser_instance.close()
+                if _browser_playwright:
+                    await _browser_playwright.stop()
+            except Exception:
+                pass
+            _browser_instance = None
+            _browser_playwright = None
+            print("[BrowserPool] Idle browser closed")
+
 
 # Global semaphore to limit concurrent browser instances
 # Railway Pro Plan (24GB RAM, 24 vCPU) - increased for better concurrency
@@ -2503,16 +2548,16 @@ async def generate_all_custom_slides(
     print(f"[Queue] Job {job_id} entered queue (waiters: {len(queue_waiters)}, active: {len(queue_active)})")
     
     print(f"[DEBUG] Waiting for BROWSER_SEMAPHORE (current value: {BROWSER_SEMAPHORE._value})")
-    async with BROWSER_SEMAPHORE, async_playwright() as p:
+    async with BROWSER_SEMAPHORE:
         # Move from waiting to active
         if job_id in queue_waiters:
             del queue_waiters[job_id]
         queue_active[job_id] = time_module.time()
         print(f"[Queue] Job {job_id} now processing (waiters: {len(queue_waiters)}, active: {len(queue_active)})")
-        
-        print(f"[DEBUG] BROWSER_SEMAPHORE acquired, launching browser...")
-        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
-        print(f"[DEBUG] Browser launched successfully")
+
+        print(f"[DEBUG] BROWSER_SEMAPHORE acquired, getting pooled browser...")
+        browser = await get_pooled_browser()
+        print(f"[DEBUG] Browser ready (pooled)")
         
         for i, slide in enumerate(slides):
             slide_number = i + 1
@@ -2772,13 +2817,18 @@ Concept to illustrate: """
                     try:
                         page = await browser.new_page(viewport={"width": vw, "height": vh})
                     except Exception as page_error:
-                        print(f"[Browser] new_page failed, restarting browser... ({str(page_error)[:50]})")
-                        try:
-                            await browser.close()
-                        except:
-                            pass
+                        print(f"[Browser] new_page failed, getting fresh browser from pool... ({str(page_error)[:50]})")
+                        # Force pool to create a new browser
+                        global _browser_instance, _browser_playwright
+                        async with _browser_pool_lock:
+                            try:
+                                if _browser_instance:
+                                    await _browser_instance.close()
+                            except:
+                                pass
+                            _browser_instance = None
                         await asyncio.sleep(1)
-                        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+                        browser = await get_pooled_browser()
                         page = await browser.new_page(viewport={"width": vw, "height": vh})
                     
                     html = fix_body_dimensions(html, vw, vh)
@@ -2802,14 +2852,17 @@ Concept to illustrate: """
                     except:
                         pass
                     if render_attempt < 2:
-                        # Restart browser
-                        try:
-                            await browser.close()
-                        except:
-                            pass
+                        # Restart browser via pool
+                        async with _browser_pool_lock:
+                            try:
+                                if _browser_instance:
+                                    await _browser_instance.close()
+                            except:
+                                pass
+                            _browser_instance = None
                         await asyncio.sleep(1)
-                        browser = await p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
-                        print(f"[Browser] Restarted for retry {render_attempt + 2}")
+                        browser = await get_pooled_browser()
+                        print(f"[Browser] Restarted via pool for retry {render_attempt + 2}")
             
             if not render_success:
                 print(f"[Design Architect] ⚠️ Slide {slide_number} rendering failed, skipping...")
@@ -2828,8 +2881,9 @@ Concept to illustrate: """
             if slide_number < total_slides:
                 await asyncio.sleep(2.5) 
         
-        await browser.close()
-    
+        # Browser is pooled - don't close, just release semaphore
+        await release_pooled_browser_if_idle()
+
     # Clean up queue tracking
     if job_id in queue_active:
         del queue_active[job_id]
