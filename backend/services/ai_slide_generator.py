@@ -1420,10 +1420,15 @@ CSSで表現する**質感と雰囲気**：
 
 ### 正しい例（これを参考に）:
 ```css
-.title {{ color: white; }}  /* ベスト */
-.title {{ background: linear-gradient(135deg, #FF6B6B, #F97316); -webkit-background-clip: text; color: transparent; }}  /* 明るいグラデ */
-.title {{ background: linear-gradient(135deg, #FF85A2, #A855F7); -webkit-background-clip: text; color: transparent; }}  /* ピンク→パープル */
+.title {{ color: white; }}  /* ベスト・最も安全 */
+.title {{ color: #FBBF24; }}  /* ゴールド単色 */
+.title {{ color: #FF6B6B; }}  /* 明るい赤単色 */
 ```
+
+### ⚠️ グラデーションテキストは禁止:
+`-webkit-background-clip: text` と `color: transparent` の組み合わせは**使用禁止**です。
+レンダリング環境によってテキストが完全に見えなくなるためです。
+テキストの色は必ず**不透明な単色**を使ってください。
 
 ### 間違った例（使用禁止！）:
 ```css
@@ -2329,6 +2334,74 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     return html
 
 
+def ensure_text_visible(html: str, slide: Dict[str, Any], slide_number: int, total_slides: int, strategy: Dict[str, Any]) -> str:
+    """
+    Final safety net: verify the HTML contains visible text.
+    Fixes common invisible-text CSS patterns and falls back to safe HTML if needed.
+    """
+    from bs4 import BeautifulSoup as BS4
+    import re as re_mod
+
+    soup = BS4(html, 'html.parser')
+    visible_text = soup.get_text(strip=True)
+
+    slide_copy = slide.get("slide_copy", {})
+    title = slide_copy.get("headline") or slide.get("title", "")
+
+    # --- Fix 1: Remove color:transparent without proper background-clip ---
+    style_tags = soup.find_all('style')
+    for style_tag in style_tags:
+        css = style_tag.string or ""
+        if "color:" in css and "transparent" in css:
+            # Replace color:transparent with color:white everywhere
+            css = re_mod.sub(r'color\s*:\s*transparent', 'color: white', css)
+            # Also remove -webkit-background-clip: text (it requires transparent)
+            css = re_mod.sub(r'-webkit-background-clip\s*:\s*text\s*;?', '', css)
+            css = re_mod.sub(r'background-clip\s*:\s*text\s*;?', '', css)
+            css = re_mod.sub(r'-webkit-text-fill-color\s*:\s*transparent\s*;?', '', css)
+            style_tag.string = css
+
+    # Fix inline styles with color:transparent
+    for el in soup.find_all(style=True):
+        style = el.get('style', '')
+        if 'color' in style and 'transparent' in style:
+            style = re_mod.sub(r'color\s*:\s*transparent', 'color: white', style)
+            style = re_mod.sub(r'-webkit-background-clip\s*:\s*text\s*;?', '', style)
+            style = re_mod.sub(r'background-clip\s*:\s*text\s*;?', '', style)
+            style = re_mod.sub(r'-webkit-text-fill-color\s*:\s*transparent\s*;?', '', style)
+            el['style'] = style
+
+    # Fix opacity:0, visibility:hidden, display:none on text-containing elements
+    for el in soup.find_all(style=True):
+        style = el.get('style', '')
+        text = el.get_text(strip=True)
+        if text and len(text) > 2:
+            if 'opacity' in style and re_mod.search(r'opacity\s*:\s*0[^.]', style):
+                style = re_mod.sub(r'opacity\s*:\s*0([^.])', r'opacity: 1\1', style)
+                el['style'] = style
+            if 'visibility' in style and 'hidden' in style:
+                style = style.replace('visibility: hidden', 'visibility: visible')
+                style = style.replace('visibility:hidden', 'visibility:visible')
+                el['style'] = style
+
+    html = str(soup)
+
+    # --- Fix 2: Check if title text is present in the rendered output ---
+    soup2 = BS4(html, 'html.parser')
+    visible_text2 = soup2.get_text(strip=True)
+
+    if title and len(title) > 2 and title not in visible_text2:
+        print(f"[TextSafety] Slide {slide_number}: title '{title[:30]}' NOT found after CSS fix, using fallback HTML")
+        return generate_fallback_html(slide, slide_number, total_slides, strategy)
+    elif not visible_text2 or len(visible_text2) < 5:
+        print(f"[TextSafety] Slide {slide_number}: no visible text at all, using fallback HTML")
+        return generate_fallback_html(slide, slide_number, total_slides, strategy)
+    else:
+        if title and title not in visible_text and title in visible_text2:
+            print(f"[TextSafety] Slide {slide_number}: fixed invisible text (CSS transparent/hidden)")
+        return html
+
+
 def generate_fallback_html(
     slide: Dict[str, Any],
     slide_number: int,
@@ -2860,7 +2933,10 @@ Concept to illustrate: """
                 html = remove_caption_text(html)
             else:
                 print(f"[Design Architect] Skipping self-review for illustration slide {slide_number}")
-            
+
+            # Step 3e: Final safety — ensure text content exists and is visible
+            html = ensure_text_visible(html, slide, slide_number, total_slides, strategy)
+
             html_contents.append(html)
             
             # Render to image with browser restart on crash
@@ -3178,9 +3254,10 @@ def remove_caption_text(html: str) -> str:
         flags=re.IGNORECASE
     )
     
-    # Pattern 4: Remove divs/spans with class containing "caption", "subtitle", "narration"
+    # Pattern 4: Remove divs/spans with class containing "caption", "narration", "transcript"
+    # NOTE: "subtitle" is intentionally excluded — it's a valid slide content class
     html = re.sub(
-        r'<[^>]*class="[^"]*(?:caption|subtitle|narration|transcript)[^"]*"[^>]*>.*?</[^>]+>',
+        r'<[^>]*class="[^"]*(?:caption|narration|transcript)[^"]*"[^>]*>.*?</[^>]+>',
         '',
         html,
         flags=re.DOTALL | re.IGNORECASE
@@ -3391,18 +3468,38 @@ async def self_review_slide(
             key,
             config=genai.GenerationConfig(
                 temperature=0.7,
-                max_output_tokens=4096
+                max_output_tokens=8192
             ),
             use_design_model=True,
         )
-        
-        # Extract HTML from markdown code block if present
-        if "```html" in improved_html:
-            improved_html = improved_html.split("```html")[1].split("```")[0].strip()
+
+        # Extract HTML from markdown code block if present (case-insensitive)
+        improved_lower = improved_html.lower()
+        if "```html" in improved_lower:
+            idx = improved_lower.index("```html")
+            improved_html = improved_html[idx + 7:]
+            if "```" in improved_html:
+                improved_html = improved_html[:improved_html.index("```")].strip()
         elif "```" in improved_html:
             improved_html = improved_html.split("```")[1].split("```")[0].strip()
-        
+
+        # Handle truncated HTML
+        if "</html>" not in improved_html.lower() and "<html" in improved_html.lower():
+            if "</body>" not in improved_html:
+                improved_html += "\n</body>"
+            improved_html += "\n</html>"
+
         if improved_html.startswith("<!DOCTYPE") or improved_html.startswith("<html"):
+            # Validate that self-review didn't remove essential text content
+            from bs4 import BeautifulSoup as BS4
+            original_text = BS4(html, 'html.parser').get_text(strip=True)
+            improved_text = BS4(improved_html, 'html.parser').get_text(strip=True)
+
+            # If improved version lost >60% of text, keep original
+            if len(original_text) > 20 and len(improved_text) < len(original_text) * 0.4:
+                print(f"[Self-Review] ⚠ Improved version lost too much text ({len(improved_text)} vs {len(original_text)} chars), keeping original")
+                return html
+
             print("[Self-Review] ✓ Slide improved")
             return improved_html
         else:
