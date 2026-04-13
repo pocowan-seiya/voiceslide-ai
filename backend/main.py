@@ -540,6 +540,50 @@ async def delete_slide(job_id: str, slide_index: int):
     }
 
 
+@app.post("/api/slides/{job_id}/duplicate/{slide_index}")
+async def duplicate_slide(job_id: str, slide_index: int):
+    """指定スライドを複製して直後に挿入"""
+    pipeline = get_or_create_pipeline(job_id)
+
+    if not hasattr(pipeline, 'slide_images') or not pipeline.slide_images:
+        raise HTTPException(400, "No slides found for this job")
+
+    if slide_index < 0 or slide_index >= len(pipeline.slide_images):
+        raise HTTPException(400, f"Invalid slide_index: {slide_index} (total: {len(pipeline.slide_images)})")
+
+    source_path = pipeline.slide_images[slide_index]
+
+    if not os.path.exists(source_path):
+        raise HTTPException(400, f"Source slide image not found: {os.path.basename(source_path)}")
+
+    # コピー先ファイル名を生成
+    base_dir = os.path.dirname(source_path)
+    ext = os.path.splitext(source_path)[1]
+    import time
+    new_filename = f"slide_dup_{slide_index}_{int(time.time())}{ext}"
+    new_path = os.path.join(base_dir, new_filename)
+
+    shutil.copy2(source_path, new_path)
+
+    # 複製元の直後に挿入
+    insert_pos = slide_index + 1
+    pipeline.slide_images.insert(insert_pos, new_path)
+
+    # 公開URLを生成
+    image_url = f"/outputs/{job_id}/{new_filename}"
+
+    print(f"[DuplicateSlide] Duplicated slide {slide_index} -> {insert_pos} for job {job_id}")
+    print(f"[DuplicateSlide] Total slides: {len(pipeline.slide_images)}")
+
+    return {
+        "success": True,
+        "source_index": slide_index,
+        "new_index": insert_pos,
+        "image_url": image_url,
+        "total_slides": len(pipeline.slide_images)
+    }
+
+
 @app.post("/api/upload-reference-image/{job_id}")
 async def upload_reference_image(
     job_id: str,
@@ -1360,6 +1404,8 @@ async def polish_outline(
     update: Optional[OutlineUpdate] = None,
     x_openrouter_key: Optional[str] = Header(None),
     x_openrouter_model: Optional[str] = Header(None),
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
 ):
     """Step 5: Brush up outline"""
     pipeline = get_or_create_pipeline(job_id)
@@ -1367,15 +1413,33 @@ async def polish_outline(
     jobs[job_id]["step"] = 5
     jobs[job_id]["status"] = "processing"
 
+    # Store Gemini key/model for this job
+    if x_gemini_key:
+        jobs[job_id]["gemini_key"] = x_gemini_key
+    if x_gemini_model:
+        jobs[job_id]["gemini_model"] = x_gemini_model
+
+    # Store in api_keys dict
+    if x_gemini_key:
+        if job_id not in api_keys:
+            api_keys[job_id] = {"openai": "", "gemini": ""}
+        api_keys[job_id]["gemini"] = x_gemini_key
+
     # OpenRouter params from header or stored in job
     openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
     openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash")
 
+    # Gemini params from header or stored in job
+    gemini_key = x_gemini_key or jobs.get(job_id, {}).get("gemini_key", "")
+    gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+
     edited = update.outline if update else None
     result = await pipeline.step_polish_outline(
         edited,
+        model_name=gemini_model,
         openrouter_key=openrouter_key if openrouter_key else None,
         openrouter_model=openrouter_model,
+        gemini_key=gemini_key if gemini_key else None,
     )
 
     jobs[job_id]["status"] = "completed"
@@ -1421,7 +1485,10 @@ async def generate_slides_endpoint(
     x_gemini_key: Optional[str] = Header(None),
     x_gemini_model: Optional[str] = Header(None),
     x_color_theme: Optional[str] = Header(None),  # Color theme: cosmic, warm, elegant, nature, ocean, mono
-    x_font_style: Optional[str] = Header(None)    # Font style: gothic, mincho, pop, handwritten
+    x_font_style: Optional[str] = Header(None),   # Font style: gothic, mincho, pop, handwritten
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
+    x_openrouter_design_model: Optional[str] = Header(None),
 ):
     """Step 7 (Full AI Mode): AI generates unique custom slides from outline"""
     pipeline = get_or_create_pipeline(job_id)
@@ -1461,6 +1528,9 @@ async def generate_slides_endpoint(
         
         # Generate completely custom HTML/CSS for each slide using AI Design Architect
         gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+        openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
+        openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash")
+        openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-3-flash")
         image_paths = await generate_all_custom_slides(
             slides=slides,
             job_id=job_id,
@@ -1469,7 +1539,10 @@ async def generate_slides_endpoint(
             color_theme=x_color_theme,
             font_style=x_font_style,
             progress_callback=update_progress,
-            model_name=gemini_model
+            model_name=gemini_model,
+            openrouter_key=openrouter_key if openrouter_key else None,
+            openrouter_model=openrouter_model,
+            openrouter_design_model=openrouter_design_model,
         )
         
         # パイプラインに保存
@@ -2561,6 +2634,7 @@ class RestoreProjectRequest(BaseModel):
     polished_outline: Optional[dict] = None
     timing_map: Optional[list] = None
     aspect_ratio: Optional[str] = "landscape"
+    step: Optional[int] = None
 
 @app.post("/api/restore-project")
 async def restore_project(
@@ -2590,10 +2664,15 @@ async def restore_project(
     if request.aspect_ratio:
         pipeline.aspect_ratio = request.aspect_ratio
 
+    # Determine restore step: use frontend-provided step if valid, otherwise default to 5
+    restore_step = 5
+    if request.step is not None and 1 <= request.step <= 10:
+        restore_step = request.step
+
     # Initialize job tracking with API keys
     jobs[job_id] = {
         "id": job_id,
-        "step": 5,
+        "step": restore_step,
         "status": "restored",
         "created_at": datetime.now().isoformat(),
         "gemini_key": x_gemini_key or "",
@@ -2608,7 +2687,7 @@ async def restore_project(
         "gemini": x_gemini_key or "",
     }
 
-    print(f"[Restore] Project restored as job {job_id} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)})")
+    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)})")
 
     return {
         "job_id": job_id,

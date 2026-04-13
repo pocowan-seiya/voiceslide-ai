@@ -176,6 +176,9 @@ function HomeInner() {
   // Slide zoom modal
   const [zoomedSlide, setZoomedSlide] = useState<number | null>(null);
 
+  // Slide regeneration flag (set during restore when previews are missing)
+  const [showSlideRegenButton, setShowSlideRegenButton] = useState(false);
+
   // Color theme selection
   const [selectedColorTheme, setSelectedColorTheme] = useState<string>(""); // empty = AI chooses
 
@@ -354,8 +357,15 @@ function HomeInner() {
         },
       }).eq("id", projectId);
       setLastSavedAt(new Date());
-    } catch (e) {
-      console.error("[AutoSave] failed:", e);
+    } catch (e: any) {
+      console.error("[AutoSave] failed:", {
+        projectId,
+        step: currentState.step,
+        error: e?.message || e,
+        code: e?.code,
+        details: e?.details,
+        timestamp: new Date().toISOString(),
+      });
     } finally {
       setIsSavingProject(false);
     }
@@ -394,32 +404,65 @@ function HomeInner() {
         const slideCompleteStep = data.workflow_mode === "full-ai" ? 6 : 9;
         const slideGenStep = data.workflow_mode === "full-ai" ? 5 : 8;
 
-        // スライド生成済みステップなのにプレビューが無い → スライド生成前に戻す
-        if (data.step >= slideCompleteStep && restoredPreviews.length === 0) {
-          console.warn("[Restore] No slide previews saved, rolling back to slide generation step");
-          adjustedStep = slideGenStep as Step;
+        // --- 復元データの妥当性チェック ---
+        // step >= 4（アウトライン以降）なのに outline が null/undefined/非object → step=3 に戻す
+        if (adjustedStep >= 4 && (!data.outline || typeof data.outline !== "object")) {
+          console.warn("[Restore] outline is missing or invalid, rolling back to step 3");
+          adjustedStep = 3 as Step;
+        }
+        // step >= 5（full-ai でアウトライン改善以降）なのに polished_outline が null/undefined/非object → step=4 に戻す
+        if (
+          adjustedStep >= 5 &&
+          data.workflow_mode === "full-ai" &&
+          (!data.polished_outline || typeof data.polished_outline !== "object")
+        ) {
+          console.warn("[Restore] polished_outline is missing or invalid, rolling back to step 4");
+          adjustedStep = 4 as Step;
         }
 
-        // プレビューURLがあっても画像が消えている場合 → スライド生成前に戻す
+        // スライド生成済みステップなのにプレビューが無い → 巻き戻さず再生成ボタンを表示
+        let needsSlideRegeneration = false;
+        if (data.step >= slideCompleteStep && restoredPreviews.length === 0) {
+          console.warn("[Restore] No slide previews saved, showing regeneration button");
+          needsSlideRegeneration = true;
+        }
+
+        // プレビューURLがあっても画像が消えている場合 → 壊れたURLのみ除外
         if (restoredPreviews.length > 0 && data.step >= slideCompleteStep) {
           try {
-            const checkRes = await fetch(restoredPreviews[0], { method: "HEAD" });
-            if (!checkRes.ok) {
-              console.warn("[Restore] Slide previews expired, rolling back to slide generation step");
+            const checkResults = await Promise.allSettled(
+              restoredPreviews.map((url) =>
+                fetch(url, { method: "HEAD" }).then((res) => res.ok)
+              )
+            );
+            const checked = restoredPreviews.filter((_, i) => {
+              const result = checkResults[i];
+              return result.status === "fulfilled" && result.value === true;
+            });
+            if (checked.length === 0) {
+              console.warn("[Restore] All slide previews expired, showing regeneration button");
               validPreviews = [];
-              adjustedStep = slideGenStep as Step;
+              needsSlideRegeneration = true;
+            } else if (checked.length < restoredPreviews.length) {
+              console.warn(`[Restore] ${restoredPreviews.length - checked.length} slide previews expired, keeping ${checked.length} valid`);
+              validPreviews = checked;
             }
           } catch {
-            console.warn("[Restore] Slide preview URL check failed, rolling back");
+            console.warn("[Restore] Slide preview URL check failed, showing regeneration button");
             validPreviews = [];
-            adjustedStep = slideGenStep as Step;
+            needsSlideRegeneration = true;
           }
+        }
+
+        if (needsSlideRegeneration) {
+          setShowSlideRegenButton(true);
         }
 
         // バックエンドのパイプラインを復元（スライド再生成に必要）
         // APIキーも一緒に渡してバックエンドに保存する
         let restoredJobId = data.job_id;
         const apiKeys = getAPIKeys();
+        let backendRestoreFailed = false;
 
         if (adjustedStep >= 4 && (data.outline || data.polished_outline)) {
           try {
@@ -436,6 +479,7 @@ function HomeInner() {
                 polished_outline: data.polished_outline,
                 timing_map: data.timing_map,
                 aspect_ratio: s.aspectRatio || "landscape",
+                step: adjustedStep,
               }),
             });
             if (restoreRes.ok) {
@@ -444,9 +488,11 @@ function HomeInner() {
               console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}`);
             } else {
               console.error(`[Restore] Backend restore failed: ${restoreRes.status}`);
+              backendRestoreFailed = true;
             }
           } catch (e) {
             console.error("[Restore] Backend restore network error:", e);
+            backendRestoreFailed = true;
           }
         }
 
@@ -462,6 +508,9 @@ function HomeInner() {
           timingMap: data.timing_map ?? [],
           slideCount: validPreviews.length > 0 ? data.slide_count : 0,
           slidePreviews: validPreviews,
+          error: backendRestoreFailed
+            ? "バックエンドの復元に失敗しました。スライドの再生成や動画生成を行うには、ページを再読み込みしてください。"
+            : null,
           videoUrl: data.video_url,
         }));
 
@@ -483,6 +532,9 @@ function HomeInner() {
         if (s.illustrationRequest !== undefined) setIllustrationRequest(s.illustrationRequest);
         if (s.facecamPosition !== undefined) setFacecamPosition(s.facecamPosition);
         if (s.facecamSize !== undefined) setFacecamSize(s.facecamSize);
+        if (s.playbackRate !== undefined) setPlaybackRate(s.playbackRate);
+        if (s.bgmMixed !== undefined) setBgmMixed(s.bgmMixed);
+        if (s.facecamUploaded !== undefined) setFacecamUploaded(s.facecamUploaded);
       } finally {
         setIsRestoringProject(false);
       }
@@ -497,12 +549,14 @@ function HomeInner() {
     aspectRatio, bgmEnabled, bgmVolume, bgmPlayMode, bgmFadeIn, bgmFadeOut,
     addIllustrations, illustrationPercentage, illustrationRequest,
     facecamPosition, facecamSize,
+    playbackRate, bgmMixed, facecamUploaded,
   }), [
     audioSettings, slideSettings, selectedColorTheme,
     selectedFontStyle, designPreference, copyStyleRequest, textDensity,
     aspectRatio, bgmEnabled, bgmVolume, bgmPlayMode, bgmFadeIn, bgmFadeOut,
     addIllustrations, illustrationPercentage, illustrationRequest,
     facecamPosition, facecamSize,
+    playbackRate, bgmMixed, facecamUploaded,
   ]);
 
   // ステップ変化時に保存
@@ -519,6 +573,80 @@ function HomeInner() {
     }, 30000);
     return () => clearInterval(timer);
   }, [projectId, state, saveProject]);
+
+  // ページ離脱時に保存（beforeunload）
+  // useRef で最新の state/settings を参照し、sendBeacon で確実に送信する
+  const stateRef = useRef(state);
+  const settingsRef = useRef(buildSettings());
+  const projectIdRef = useRef(projectId);
+  useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { settingsRef.current = buildSettings(); }, [buildSettings]);
+  useEffect(() => { projectIdRef.current = projectId; }, [projectId]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const pid = projectIdRef.current;
+      if (!pid) return;
+
+      const currentState = stateRef.current;
+      const settings = settingsRef.current;
+
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseKey) {
+        console.error("[BeforeUnload] Supabase URL or key not available");
+        return;
+      }
+
+      const url = `${supabaseUrl}/rest/v1/projects?id=eq.${pid}`;
+      const body = JSON.stringify({
+        step: currentState.step,
+        workflow_mode: currentState.workflowMode,
+        transcript: currentState.transcript,
+        polished_transcript: currentState.polishedTranscript,
+        outline: currentState.outline,
+        polished_outline: currentState.polishedOutline,
+        timing_map: currentState.timingMap,
+        slide_count: currentState.slideCount,
+        job_id: currentState.jobId,
+        status: currentState.videoUrl ? "completed" : "draft",
+        video_url: currentState.videoUrl,
+        settings: {
+          ...settings,
+          slidePreviews: currentState.slidePreviews,
+        },
+      });
+
+      // fetch with keepalive はページ離脱後もブラウザが送信を保証する
+      // sendBeacon は Content-Type 以外のカスタムヘッダーを設定できないため、fetch keepalive を使用
+      try {
+        fetch(url, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${supabaseKey}`,
+            "Prefer": "return=minimal",
+          },
+          body,
+          keepalive: true,
+        }).catch((e) => {
+          console.error("[BeforeUnload] Save failed:", e);
+        });
+      } catch (e) {
+        console.error("[BeforeUnload] Save error:", e);
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
+  // slidePreviews が更新されたら即座に保存
+  useEffect(() => {
+    if (!projectId || state.slidePreviews.length === 0) return;
+    saveProject(state, buildSettings());
+  }, [state.slidePreviews]);
 
   // Helper: Set error with timestamp for easier log correlation
   const setError = (message: string, isProcessing = false) => {
@@ -783,7 +911,7 @@ function HomeInner() {
     try {
       const res = await fetch(`${API_URL}/api/polish-outline/${state.jobId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAPIHeaders() },
         body: JSON.stringify({ outline: state.outline }),
       });
       const data = await res.json();
@@ -1580,6 +1708,65 @@ function HomeInner() {
       timingMap: newTimingMap,
       slidePreviews: newPreviews
     });
+  };
+
+  const handleDuplicateSlide = async (slideIndex: number) => {
+    if (!state.jobId) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/duplicate/${slideIndex}`, {
+        method: 'POST',
+        headers: getAPIHeaders(),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        console.error('[DuplicateSlide] Backend error:', data.detail);
+        return;
+      }
+
+      const data = await res.json();
+
+      // slidePreviews を更新: 複製元の直後に挿入
+      const newPreviews = [...state.slidePreviews];
+      const insertPos = data.new_index;
+      newPreviews.splice(insertPos, 0, `${API_URL}${data.image_url}`);
+
+      // timingMap を更新: 複製元のタイミングを半分に分割
+      const newTimingMap = [...state.timingMap];
+      if (slideIndex < newTimingMap.length) {
+        const original = newTimingMap[slideIndex];
+        const midTime = ((original.start_time || 0) + (original.end_time || 0)) / 2;
+
+        // 元スライドの後半を新スライドに割り当て
+        const duplicatedEntry = {
+          ...JSON.parse(JSON.stringify(original)),
+          slide_number: slideIndex + 2,
+          start_time: midTime,
+          end_time: original.end_time,
+        };
+
+        // 元スライドの終了時間を中間点に
+        newTimingMap[slideIndex] = {
+          ...newTimingMap[slideIndex],
+          end_time: midTime,
+        };
+
+        newTimingMap.splice(insertPos, 0, duplicatedEntry);
+
+        // リナンバリング
+        for (let i = 0; i < newTimingMap.length; i++) {
+          newTimingMap[i].slide_number = i + 1;
+        }
+      }
+
+      updateState({
+        slidePreviews: newPreviews,
+        timingMap: newTimingMap,
+      });
+    } catch (err) {
+      console.error('[DuplicateSlide] Failed:', err);
+    }
   };
 
   // Slide add/replace state
@@ -3245,8 +3432,23 @@ function HomeInner() {
                     </>
                   )}
 
-
-
+                  {/* スライドプレビューが無い場合の再生成ボタン */}
+                  {state.slidePreviews.length === 0 && showSlideRegenButton && (
+                    <div className="mb-6 p-6 bg-zinc-800/50 rounded-xl border border-amber-500/30 text-center">
+                      <p className="text-zinc-300 mb-4">
+                        スライドのプレビューが見つかりません。再生成してください。
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowSlideRegenButton(false);
+                          updateState({ step: (state.workflowMode === "full-ai" ? 5 : 8) as Step });
+                        }}
+                        className="btn-primary"
+                      >
+                        🔄 スライドを再生成
+                      </button>
+                    </div>
+                  )}
 
                   <div className="flex gap-4 flex-wrap">
                     <button
@@ -4058,16 +4260,26 @@ function HomeInner() {
                           </div>
                         )}
                       </div>
-                      {/* Delete button - only show if more than 1 slide */}
-                      {state.timingMap.length > 1 && (
+                      <div className="flex flex-col gap-1">
+                        {/* Duplicate button */}
                         <button
-                          onClick={() => handleDeleteSlide(i)}
-                          className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
-                          title="このスライドを削除"
+                          onClick={() => handleDuplicateSlide(i)}
+                          className="p-2 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-900/20 rounded-lg transition-colors"
+                          title="このスライドを複製"
                         >
-                          🗑️
+                          📋
                         </button>
-                      )}
+                        {/* Delete button - only show if more than 1 slide */}
+                        {state.timingMap.length > 1 && (
+                          <button
+                            onClick={() => handleDeleteSlide(i)}
+                            className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+                            title="このスライドを削除"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -4331,15 +4543,24 @@ function HomeInner() {
                               </span>
                               <span className="text-zinc-500 text-xs">({duration.toFixed(1)}秒)</span>
                             </div>
-                            {state.timingMap.length > 1 && (
+                            <div className="flex gap-1">
                               <button
-                                onClick={() => handleDeleteSlide(i)}
-                                className="p-1 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
-                                title="このスライドを削除"
+                                onClick={() => handleDuplicateSlide(i)}
+                                className="p-1 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-900/20 rounded transition-colors"
+                                title="このスライドを複製"
                               >
-                                🗑️
+                                📋
                               </button>
-                            )}
+                              {state.timingMap.length > 1 && (
+                                <button
+                                  onClick={() => handleDeleteSlide(i)}
+                                  className="p-1 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+                                  title="このスライドを削除"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
