@@ -245,7 +245,15 @@ export function SupportChat({ errorContext, apiUrl, geminiKey }: SupportChatProp
         <>
             {/* フローティングボタン */}
             <button
-                onClick={() => (errorContext?.errorMessage ? handleOpenWithError() : setIsOpen(!isOpen))}
+                onClick={() => {
+                    if (isOpen) {
+                        setIsOpen(false);
+                    } else if (errorContext?.errorMessage && hasNewError) {
+                        handleOpenWithError();
+                    } else {
+                        setIsOpen(true);
+                    }
+                }}
                 className={`
           fixed bottom-6 right-6 z-50
           w-14 h-14 rounded-full
