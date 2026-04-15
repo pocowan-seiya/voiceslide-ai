@@ -1425,17 +1425,33 @@ CSSで表現する**質感と雰囲気**：
 .title {{ color: #FF6B6B; }}  /* 明るい赤単色 */
 ```
 
-### ⚠️ グラデーションテキストは禁止:
-`-webkit-background-clip: text` と `color: transparent` の組み合わせは**使用禁止**です。
-レンダリング環境によってテキストが完全に見えなくなるためです。
-テキストの色は必ず**不透明な単色**を使ってください。
+### ✨ グラデーションテキストは推奨（ただし正しく書くこと）:
+
+グラデーションテキストは**強い視覚効果**を生むので推奨します。
+ただし、**4 つのプロパティを必ずすべて揃えてください**。1 つでも欠けると text が消えます。
+
+```css
+.title {{
+  /* ✅ 必須 4 点セット - すべて揃える */
+  background: linear-gradient(135deg, #FFD700, #FF6B6B);  /* 1. 明るい色のグラデーション */
+  -webkit-background-clip: text;                          /* 2. webkit clip */
+  background-clip: text;                                  /* 3. 標準 clip */
+  -webkit-text-fill-color: transparent;                   /* 4. fill 透明化 */
+}}
+```
+
+⚠️ **絶対に避けるべき書き方**:
+- `color: transparent` を単独で使う（背景無しでは text が消える）
+- 上記 4 点の一部だけ書く（半端だと消える）
+- 暗いグラデーション色を使う（読めない）
 
 ### 間違った例（使用禁止！）:
 ```css
 .title {{ color: #333; }}  /* ❌ 暗い単色 */
 .title {{ color: #5D2E0C; }}  /* ❌ 茶色 */
-.title {{ background: linear-gradient(to bottom, #8B4513, #5D2E0C); }}  /* ❌ 暗いグラデーション */
-.title {{ background: linear-gradient(135deg, #2D2D2D, #444444); }}  /* ❌ 暗いグレーのグラデーション */
+.title {{ color: transparent; }}  /* ❌ 4 点セットが欠けている */
+.title {{ background: linear-gradient(to bottom, #8B4513, #5D2E0C); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}  /* ❌ 暗い色 */
+.title {{ background: linear-gradient(135deg, #2D2D2D, #444444); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}  /* ❌ 暗いグレー */
 ```
 
 # Output
@@ -2182,8 +2198,9 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
         soup_check = BS4(html, 'html.parser')
         visible_text = soup_check.get_text(strip=True)
 
-        # Check if title appears in the rendered text
-        if title and len(title) > 2 and title not in visible_text:
+        # Check if title appears in the rendered text (fuzzy: allows whitespace,
+        # full/half-width and punctuation differences -- Pro models often style titles).
+        if title and len(title) > 2 and not _title_present(title, visible_text):
             print(f"[Design Architect] WARNING: Title '{title[:30]}...' not found in slide {slide_number} HTML, attempting fix")
             # Try to find the body and inject text content
             body_tag = soup_check.find('body')
@@ -2334,10 +2351,72 @@ def inject_pip_safe_zone(html: str, facecam_position: Optional[str], facecam_siz
     return html
 
 
+def _normalize_for_match(text: str) -> str:
+    """Normalize text for fuzzy matching: strip whitespace, punctuation, full/half-width."""
+    import unicodedata
+    if not text:
+        return ""
+    # NFKC normalizes full-width to half-width
+    normalized = unicodedata.normalize("NFKC", text)
+    # Drop whitespace and common punctuation
+    drop_chars = " \t\n\r\u3000、。「」『』,.!?:;()[]{}-_=+*/\\\"'`~"
+    return "".join(c for c in normalized if c not in drop_chars).lower()
+
+
+def _title_present(title: str, visible_text: str) -> bool:
+    """
+    Check if a title is meaningfully present in the rendered text.
+    Allows for whitespace/punctuation/case differences and partial matches.
+    """
+    if not title or len(title) < 2:
+        return True
+    # Exact match wins
+    if title in visible_text:
+        return True
+    # Normalized exact match
+    n_title = _normalize_for_match(title)
+    n_visible = _normalize_for_match(visible_text)
+    if not n_title:
+        return True
+    if n_title in n_visible:
+        return True
+    # Partial match: at least 80% of characters present in order
+    if len(n_title) >= 4:
+        # Count how many chars from title appear in visible (preserving order)
+        matched = 0
+        idx = 0
+        for ch in n_title:
+            found = n_visible.find(ch, idx)
+            if found >= 0:
+                matched += 1
+                idx = found + 1
+        if matched >= len(n_title) * 0.8:
+            return True
+    return False
+
+
+def _has_valid_gradient_text(css_block: str) -> bool:
+    """
+    Detect if a CSS block (a single declaration list or selector body) is
+    a properly formed gradient-text setup. Such a block legitimately contains
+    `color: transparent` (or `-webkit-text-fill-color: transparent`) and the
+    text is rendered via `background-clip: text` over a `background:` value.
+    """
+    import re as re_mod
+    has_bg = bool(re_mod.search(r'background\s*(?:-image)?\s*:\s*[^;]*(gradient|url|linear|radial|#|rgb|hsl)', css_block, re_mod.IGNORECASE))
+    has_clip = bool(re_mod.search(r'(?:-webkit-)?background-clip\s*:\s*text', css_block, re_mod.IGNORECASE))
+    return has_bg and has_clip
+
+
 def ensure_text_visible(html: str, slide: Dict[str, Any], slide_number: int, total_slides: int, strategy: Dict[str, Any]) -> str:
     """
     Final safety net: verify the HTML contains visible text.
-    Fixes common invisible-text CSS patterns and falls back to safe HTML if needed.
+
+    Smart approach (post Pro-model fix):
+    - Preserve legitimate gradient-text CSS (background-clip: text + background gradient)
+    - Only strip transparent color when there is NO valid background-clip context
+    - Use fuzzy matching for title presence to avoid false-positive fallback
+    - Fallback to safe HTML only when text is verifiably missing
     """
     from bs4 import BeautifulSoup as BS4
     import re as re_mod
@@ -2348,58 +2427,78 @@ def ensure_text_visible(html: str, slide: Dict[str, Any], slide_number: int, tot
     slide_copy = slide.get("slide_copy", {})
     title = slide_copy.get("headline") or slide.get("title", "")
 
-    # --- Fix 1: Remove color:transparent without proper background-clip ---
+    # --- Fix 1: Smart CSS sanitization (preserve valid gradient-text) ---
+    # Process each <style> tag, splitting CSS into selector blocks so we can
+    # judge each block independently.
     style_tags = soup.find_all('style')
     for style_tag in style_tags:
         css = style_tag.string or ""
-        if "color:" in css and "transparent" in css:
-            # Replace color:transparent with color:white everywhere
-            css = re_mod.sub(r'color\s*:\s*transparent', 'color: white', css)
-            # Also remove -webkit-background-clip: text (it requires transparent)
-            css = re_mod.sub(r'-webkit-background-clip\s*:\s*text\s*;?', '', css)
-            css = re_mod.sub(r'background-clip\s*:\s*text\s*;?', '', css)
-            css = re_mod.sub(r'-webkit-text-fill-color\s*:\s*transparent\s*;?', '', css)
-            style_tag.string = css
+        if not css or "transparent" not in css:
+            continue
 
-    # Fix inline styles with color:transparent
+        # Split into { ... } blocks, preserving selectors. We work block-by-block.
+        def _sanitize_block(match):
+            selector = match.group(1)
+            block = match.group(2)
+            if "transparent" not in block:
+                return match.group(0)
+            if _has_valid_gradient_text(block):
+                # Legitimate gradient text -- keep as-is
+                return match.group(0)
+            # Strip dangerous patterns only when no valid clip context
+            new_block = re_mod.sub(r'color\s*:\s*transparent\s*;?', 'color: #ffffff;', block)
+            new_block = re_mod.sub(r'-webkit-text-fill-color\s*:\s*transparent\s*;?', '', new_block)
+            # Don't strip background-clip itself; harmless without transparent
+            return f"{selector}{{{new_block}}}"
+
+        new_css = re_mod.sub(r'([^{}]+)\{([^{}]*)\}', _sanitize_block, css)
+        style_tag.string = new_css
+
+    # Inline styles: same logic on a per-element basis
     for el in soup.find_all(style=True):
         style = el.get('style', '')
-        if 'color' in style and 'transparent' in style:
-            style = re_mod.sub(r'color\s*:\s*transparent', 'color: white', style)
-            style = re_mod.sub(r'-webkit-background-clip\s*:\s*text\s*;?', '', style)
-            style = re_mod.sub(r'background-clip\s*:\s*text\s*;?', '', style)
-            style = re_mod.sub(r'-webkit-text-fill-color\s*:\s*transparent\s*;?', '', style)
-            el['style'] = style
+        if 'transparent' not in style:
+            continue
+        if _has_valid_gradient_text(style):
+            continue  # legit gradient text
+        new_style = re_mod.sub(r'color\s*:\s*transparent\s*;?', 'color: #ffffff;', style)
+        new_style = re_mod.sub(r'-webkit-text-fill-color\s*:\s*transparent\s*;?', '', new_style)
+        el['style'] = new_style
 
-    # Fix opacity:0, visibility:hidden, display:none on text-containing elements
+    # --- Fix 2: opacity:0 / visibility:hidden / display:none on text elements ---
     for el in soup.find_all(style=True):
         style = el.get('style', '')
         text = el.get_text(strip=True)
         if text and len(text) > 2:
-            if 'opacity' in style and re_mod.search(r'opacity\s*:\s*0[^.]', style):
-                style = re_mod.sub(r'opacity\s*:\s*0([^.])', r'opacity: 1\1', style)
+            if 'opacity' in style and re_mod.search(r'opacity\s*:\s*0(?!\.\d)', style):
+                style = re_mod.sub(r'opacity\s*:\s*0(?!\.\d)', 'opacity: 1', style)
                 el['style'] = style
             if 'visibility' in style and 'hidden' in style:
                 style = style.replace('visibility: hidden', 'visibility: visible')
                 style = style.replace('visibility:hidden', 'visibility:visible')
                 el['style'] = style
+            # display:none on text elements is almost always a bug
+            if 'display' in style and re_mod.search(r'display\s*:\s*none', style):
+                style = re_mod.sub(r'display\s*:\s*none\s*;?', '', style)
+                el['style'] = style
 
     html = str(soup)
 
-    # --- Fix 2: Check if title text is present in the rendered output ---
+    # --- Fix 3: Check if title text is present (with fuzzy matching) ---
     soup2 = BS4(html, 'html.parser')
     visible_text2 = soup2.get_text(strip=True)
 
-    if title and len(title) > 2 and title not in visible_text2:
-        print(f"[TextSafety] Slide {slide_number}: title '{title[:30]}' NOT found after CSS fix, using fallback HTML")
-        return generate_fallback_html(slide, slide_number, total_slides, strategy)
-    elif not visible_text2 or len(visible_text2) < 5:
+    if not visible_text2 or len(visible_text2) < 5:
         print(f"[TextSafety] Slide {slide_number}: no visible text at all, using fallback HTML")
         return generate_fallback_html(slide, slide_number, total_slides, strategy)
-    else:
-        if title and title not in visible_text and title in visible_text2:
-            print(f"[TextSafety] Slide {slide_number}: fixed invisible text (CSS transparent/hidden)")
-        return html
+
+    if title and not _title_present(title, visible_text2):
+        print(f"[TextSafety] Slide {slide_number}: title '{title[:30]}' not found (even with fuzzy match), using fallback HTML")
+        return generate_fallback_html(slide, slide_number, total_slides, strategy)
+
+    if title and title not in visible_text and _title_present(title, visible_text2):
+        print(f"[TextSafety] Slide {slide_number}: text recovered after CSS sanitization")
+    return html
 
 
 def generate_fallback_html(
@@ -2408,35 +2507,43 @@ def generate_fallback_html(
     total_slides: int,
     strategy: Dict[str, Any]
 ) -> str:
-    """Generate fallback HTML using strategy colors"""
+    """
+    Generate fallback HTML using strategy colors.
+
+    The layout cycles per slide so even when fallback fires it does not look monotonous.
+    Variants:
+      0: Hero (centered with halo)
+      1: Sidebar (vertical accent bar + glass cards)
+      2: Diagonal split (two-tone background)
+      3: Asymmetric grid (large title left, points right)
+    """
     slide_copy = slide.get("slide_copy", {})
     style = strategy.get("design_style", {})
     colors = style.get("color_palette", {})
-    
+
     title = slide_copy.get("headline") or slide.get("title", "")
     subtitle = slide_copy.get("subheadline") or slide.get("subtitle", "")
     raw_points = slide_copy.get("bullet_points") or slide.get("points", [])
     key_message = slide_copy.get("key_message") or ""
-    
+
     primary = colors.get("primary", "#F59E0B")
     secondary = colors.get("secondary", "#8B5CF6")
     accent = colors.get("accent", "#06B6D4")
     bg_start = colors.get("background_start", "#0f172a")
     bg_end = colors.get("background_end", "#1e293b")
-    
-    points_html = ""
-    icons = ["💡", "⭐", "🎯", "✨", "🚀", "💎"]
+
+    icons = ["◆", "◇", "▶", "●", "★", "✦"]
+    variant = (slide_number - 1) % 4
+
+    # Build point list HTML
+    point_items = []
     for i, point in enumerate(raw_points):
         point_text = point if isinstance(point, str) else str(point)
         icon = icons[i % len(icons)]
-        points_html += f'''
-        <div class="point">
-            <span class="icon">{icon}</span>
-            <span class="text">{point_text}</span>
-        </div>
-        '''
-    
-    return f'''<!DOCTYPE html>
+        point_items.append((icon, point_text))
+
+    # Shared font import + base styles
+    base_head = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -2448,70 +2555,140 @@ def generate_fallback_html(
             height: {VIDEO_HEIGHT}px;
             font-family: 'Noto Sans JP', sans-serif;
             background: linear-gradient(135deg, {bg_start} 0%, {bg_end} 100%);
-            color: #fff;
-            padding: 60px 80px;
-            display: flex;
-            flex-direction: column;
+            color: #ffffff;
             position: relative;
+            overflow: hidden;
         }}
-        .title {{
-            font-size: 48px;
-            font-weight: 900;
-            margin-bottom: 16px;
-            background: linear-gradient(135deg, {primary}, {accent});
+        .gradient-text {{
+            background: linear-gradient(135deg, {primary} 0%, {accent} 100%);
             -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
             background-clip: text;
-        }}
-        .subtitle {{
-            font-size: 20px;
-            color: #94A3B8;
-            margin-bottom: 40px;
-        }}
-        .points {{
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 24px;
-        }}
-        .point {{
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            padding: 24px;
-            background: rgba(255,255,255,0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            border-left: 4px solid {primary};
-        }}
-        .icon {{ font-size: 28px; }}
-        .text {{ font-size: 18px; line-height: 1.6; }}
-        .key-message {{
-            margin-top: auto;
-            padding: 24px;
-            text-align: center;
-            font-size: 18px;
-            color: #94A3B8;
-            font-style: italic;
-            border-top: 1px solid rgba(255,255,255,0.1);
+            -webkit-text-fill-color: transparent;
         }}
         .slide-number {{
             position: absolute;
             bottom: 30px;
-            right: 40px;
-            font-size: 14px;
-            color: #64748B;
+            right: 50px;
+            font-size: 16px;
+            color: rgba(255,255,255,0.45);
+            letter-spacing: 2px;
+        }}
+        .glow {{
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.35;
+            pointer-events: none;
         }}
     </style>
-</head>
+</head>'''
+
+    sn_html = f'<div class="slide-number">{slide_number:02d} / {total_slides:02d}</div>'
+
+    if variant == 0:
+        # Hero: centered title with radial halo
+        points_html = "".join(
+            f'<div class="hero-point"><span class="icon">{ic}</span><span>{tx}</span></div>'
+            for ic, tx in point_items
+        )
+        return base_head + f'''
 <body>
-    <h1 class="title">{title}</h1>
-    {f'<p class="subtitle">{subtitle}</p>' if subtitle else ''}
-    <div class="points">
-        {points_html}
+    <div class="glow" style="width:600px;height:600px;background:{primary};top:-150px;left:-150px;"></div>
+    <div class="glow" style="width:500px;height:500px;background:{secondary};bottom:-100px;right:-100px;"></div>
+    <div style="position:relative;z-index:2;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:80px 120px;text-align:center;">
+        <h1 class="gradient-text" style="font-size:84px;font-weight:900;line-height:1.15;letter-spacing:-1px;margin-bottom:24px;max-width:90%;">{title}</h1>
+        {f'<p style="font-size:28px;color:rgba(255,255,255,0.85);margin-bottom:48px;font-weight:500;">{subtitle}</p>' if subtitle else ''}
+        <div style="display:flex;flex-direction:column;gap:18px;max-width:80%;">{points_html}</div>
+        {f'<div style="margin-top:40px;font-size:22px;color:{accent};font-style:italic;letter-spacing:1px;">「{key_message}」</div>' if key_message else ''}
     </div>
-    {f'<div class="key-message">「{key_message}」</div>' if key_message else ''}
-    <div class="slide-number">{slide_number} / {total_slides}</div>
+    <style>
+        .hero-point {{ display:flex;align-items:center;gap:18px;font-size:24px;color:rgba(255,255,255,0.92);justify-content:center; }}
+        .hero-point .icon {{ color:{primary};font-size:22px; }}
+    </style>
+    {sn_html}
+</body>
+</html>'''
+
+    elif variant == 1:
+        # Sidebar: vertical accent bar + glass cards
+        cards_html = "".join(
+            f'''<div class="card">
+                <div class="card-icon">{ic}</div>
+                <div class="card-text">{tx}</div>
+            </div>''' for ic, tx in point_items
+        )
+        return base_head + f'''
+<body>
+    <div class="glow" style="width:700px;height:700px;background:{accent};top:30%;right:-200px;"></div>
+    <div style="display:flex;height:100%;position:relative;z-index:2;">
+        <div style="width:12px;background:linear-gradient(180deg,{primary},{secondary},{accent});"></div>
+        <div style="flex:1;padding:80px 100px;display:flex;flex-direction:column;">
+            <h1 class="gradient-text" style="font-size:72px;font-weight:900;line-height:1.15;margin-bottom:18px;">{title}</h1>
+            {f'<p style="font-size:26px;color:rgba(255,255,255,0.75);margin-bottom:48px;font-weight:400;">{subtitle}</p>' if subtitle else ''}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:24px;flex:1;align-content:start;">
+                {cards_html}
+            </div>
+            {f'<div style="margin-top:32px;padding:20px 28px;background:rgba(255,255,255,0.06);border-left:4px solid {accent};font-size:22px;color:rgba(255,255,255,0.95);font-style:italic;">{key_message}</div>' if key_message else ''}
+        </div>
+    </div>
+    <style>
+        .card {{ padding:28px 32px;background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.12);border-radius:20px;display:flex;align-items:flex-start;gap:18px; }}
+        .card-icon {{ font-size:28px;color:{primary};flex-shrink:0;line-height:1.4; }}
+        .card-text {{ font-size:22px;line-height:1.55;color:rgba(255,255,255,0.95); }}
+    </style>
+    {sn_html}
+</body>
+</html>'''
+
+    elif variant == 2:
+        # Diagonal split: two-tone background
+        points_html = "".join(
+            f'<li><span style="color:{primary};font-weight:900;margin-right:14px;">{ic}</span>{tx}</li>'
+            for ic, tx in point_items
+        )
+        return base_head + f'''
+<body>
+    <div style="position:absolute;inset:0;background:linear-gradient(115deg,{bg_start} 0%,{bg_start} 45%,{secondary}40 45%,{accent}30 100%);"></div>
+    <div class="glow" style="width:550px;height:550px;background:{primary};top:-180px;right:-180px;"></div>
+    <div style="position:relative;z-index:2;height:100%;display:flex;flex-direction:column;padding:90px 110px;">
+        <div style="display:inline-block;padding:8px 22px;background:rgba(255,255,255,0.1);backdrop-filter:blur(12px);border-radius:30px;border:1px solid rgba(255,255,255,0.2);align-self:flex-start;font-size:16px;letter-spacing:3px;color:{accent};margin-bottom:32px;text-transform:uppercase;">SECTION {slide_number:02d}</div>
+        <h1 class="gradient-text" style="font-size:88px;font-weight:900;line-height:1.1;margin-bottom:20px;max-width:75%;">{title}</h1>
+        {f'<p style="font-size:28px;color:rgba(255,255,255,0.78);margin-bottom:50px;max-width:70%;">{subtitle}</p>' if subtitle else ''}
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:22px;font-size:24px;line-height:1.5;color:rgba(255,255,255,0.95);max-width:75%;">
+            {points_html}
+        </ul>
+        {f'<div style="margin-top:auto;align-self:flex-end;max-width:60%;text-align:right;font-size:26px;color:{primary};font-weight:700;font-style:italic;">— {key_message}</div>' if key_message else ''}
+    </div>
+    {sn_html}
+</body>
+</html>'''
+
+    else:
+        # Asymmetric grid: 5/7 split
+        points_html = "".join(
+            f'''<div class="grid-point">
+                <div style="font-size:20px;color:{accent};font-weight:900;margin-bottom:6px;">{ic} POINT {i+1:02d}</div>
+                <div style="font-size:22px;color:rgba(255,255,255,0.95);line-height:1.5;">{tx}</div>
+            </div>''' for i, (ic, tx) in enumerate(point_items)
+        )
+        return base_head + f'''
+<body>
+    <div class="glow" style="width:600px;height:600px;background:{secondary};bottom:-200px;left:-150px;"></div>
+    <div style="display:grid;grid-template-columns:5fr 7fr;height:100%;position:relative;z-index:2;">
+        <div style="padding:90px 60px 90px 100px;display:flex;flex-direction:column;justify-content:center;border-right:1px solid rgba(255,255,255,0.1);">
+            <div style="font-size:18px;color:{primary};letter-spacing:4px;margin-bottom:24px;font-weight:700;">{slide_number:02d} — {total_slides:02d}</div>
+            <h1 class="gradient-text" style="font-size:76px;font-weight:900;line-height:1.1;margin-bottom:18px;">{title}</h1>
+            {f'<p style="font-size:24px;color:rgba(255,255,255,0.78);font-weight:400;line-height:1.5;">{subtitle}</p>' if subtitle else ''}
+            {f'<div style="margin-top:40px;padding:20px 0 0 0;border-top:1px solid rgba(255,255,255,0.15);font-size:22px;color:{accent};font-style:italic;">「{key_message}」</div>' if key_message else ''}
+        </div>
+        <div style="padding:90px 100px 90px 80px;display:flex;flex-direction:column;justify-content:center;gap:32px;">
+            {points_html}
+        </div>
+    </div>
+    <style>
+        .grid-point {{ padding:24px 28px;background:rgba(255,255,255,0.05);border-left:3px solid {primary};border-radius:0 14px 14px 0; }}
+    </style>
+    {sn_html}
 </body>
 </html>'''
 
