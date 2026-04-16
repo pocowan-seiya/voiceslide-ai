@@ -480,6 +480,7 @@ function HomeInner() {
                 timing_map: data.timing_map,
                 aspect_ratio: s.aspectRatio || "landscape",
                 step: adjustedStep,
+                slide_previews: validPreviews.length > 0 ? validPreviews : (restoredPreviews || []),
               }),
             });
             if (restoreRes.ok) {

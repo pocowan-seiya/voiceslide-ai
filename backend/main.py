@@ -2635,6 +2635,7 @@ class RestoreProjectRequest(BaseModel):
     timing_map: Optional[list] = None
     aspect_ratio: Optional[str] = "landscape"
     step: Optional[int] = None
+    slide_previews: Optional[List[str]] = None  # Slide preview URLs from frontend
 
 @app.post("/api/restore-project")
 async def restore_project(
@@ -2687,12 +2688,45 @@ async def restore_project(
         "gemini": x_gemini_key or "",
     }
 
-    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)})")
+    # Recover slide images from previous job's directory
+    # Frontend sends slide_previews like ["/outputs/{old_job_id}_slides/slide_001.png", ...]
+    recovered_slides = 0
+    if request.slide_previews and len(request.slide_previews) > 0:
+        import re as _re
+        import glob as _glob
+        # Extract old job_id from first preview URL
+        # Pattern: /outputs/{uuid}_slides/slide_NNN.png
+        old_job_match = _re.search(
+            r'/outputs/([0-9a-f-]{36})_slides/',
+            request.slide_previews[0]
+        )
+        if old_job_match:
+            old_job_id = old_job_match.group(1)
+            old_slides_dir = os.path.join(OUTPUT_DIR, f"{old_job_id}_slides")
+            new_slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+
+            if os.path.isdir(old_slides_dir):
+                # Copy slide images to new job's directory so video generation can find them
+                os.makedirs(new_slides_dir, exist_ok=True)
+                slide_files = sorted(_glob.glob(os.path.join(old_slides_dir, "slide_*.png")))
+                for src in slide_files:
+                    dst = os.path.join(new_slides_dir, os.path.basename(src))
+                    shutil.copy2(src, dst)
+                    pipeline.slide_images.append(dst)
+                recovered_slides = len(slide_files)
+                print(f"[Restore] ✓ Copied {recovered_slides} slide images from {old_job_id} → {job_id}")
+            else:
+                print(f"[Restore] ⚠ Old slides dir not found: {old_slides_dir}")
+        else:
+            print(f"[Restore] ⚠ Could not parse old job_id from slide_previews: {request.slide_previews[0][:80]}")
+
+    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides})")
 
     return {
         "job_id": job_id,
         "status": "restored",
-        "message": "Project restored successfully"
+        "message": "Project restored successfully",
+        "slides_recovered": recovered_slides
     }
 
 
