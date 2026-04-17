@@ -75,6 +75,7 @@ interface JobState {
     removed_fillers: number;
     total_removed_seconds: number;
   } | null;
+  audioMissing: boolean;  // True when restored project has placeholder audio (user must re-upload)
 }
 
 const HYBRID_STEPS = [
@@ -126,6 +127,7 @@ function HomeInner() {
     isProcessing: false,
     error: null,
     cleanupInfo: null,
+    audioMissing: false,
   });
 
   const [editedTranscript, setEditedTranscript] = useState<string>("");
@@ -463,6 +465,7 @@ function HomeInner() {
         let restoredJobId = data.job_id;
         const apiKeys = getAPIKeys();
         let backendRestoreFailed = false;
+        let restoredAudioMissing = false;  // True if backend returned placeholder audio
 
         if (adjustedStep >= 4 && (data.outline || data.polished_outline)) {
           try {
@@ -486,7 +489,8 @@ function HomeInner() {
             if (restoreRes.ok) {
               const restoreData = await restoreRes.json();
               restoredJobId = restoreData.job_id;
-              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}`);
+              restoredAudioMissing = restoreData.audio_recovered === false;
+              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, audio_recovered=${restoreData.audio_recovered}`);
             } else {
               console.error(`[Restore] Backend restore failed: ${restoreRes.status}`);
               backendRestoreFailed = true;
@@ -513,6 +517,7 @@ function HomeInner() {
             ? "バックエンドの復元に失敗しました。スライドの再生成や動画生成を行うには、ページを再読み込みしてください。"
             : null,
           videoUrl: data.video_url,
+          audioMissing: restoredAudioMissing,
         }));
 
         if (s.audioSettings) setAudioSettings(s.audioSettings);
@@ -1610,6 +1615,28 @@ function HomeInner() {
   };
 
   // Step 10: Generate Video (with edited timing if available)
+  // Re-upload audio for a restored project whose original audio was lost.
+  const handleReuploadAudio = async (file: File) => {
+    if (!state.jobId) return;
+    updateState({ isProcessing: true, error: null });
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${API_URL}/api/reupload-audio/${state.jobId}`, {
+        method: "POST",
+        headers: getAPIHeaders(),
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "再アップロードに失敗しました");
+      updateState({ audioMissing: false, isProcessing: false, error: null });
+      console.log("[Reupload] ✓ Audio re-uploaded:", data.audio_path);
+    } catch (err: any) {
+      console.error("[Reupload] Error:", err.message);
+      updateState({ error: err.message, isProcessing: false });
+    }
+  };
+
   const handleGenerateVideo = async () => {
     updateState({ isProcessing: true });
 
@@ -1638,7 +1665,20 @@ function HomeInner() {
       const data = await res.json();
       console.log('[Video] response status:', res.status);
       console.log('[Video] response timing_map:', data.timing_map?.length || 0, 'items');
-      if (!res.ok) throw new Error(data.detail || "Video generation failed");
+
+      // 409: audio file was lost (placeholder WAV). Prompt re-upload instead of producing a broken video.
+      if (res.status === 409 && data.detail?.error_code === "audio_placeholder") {
+        updateState({
+          audioMissing: true,
+          isProcessing: false,
+          error: data.detail.message || "音声ファイルが失われています。再アップロードしてください。",
+        });
+        return;
+      }
+
+      if (!res.ok) throw new Error(
+        typeof data.detail === "string" ? data.detail : (data.detail?.message || "Video generation failed")
+      );
 
       updateState({
         videoUrl: `${API_URL}${data.video_url}?t=${Date.now()}`,
@@ -1956,6 +1996,7 @@ function HomeInner() {
       isProcessing: false,
       error: null,
       cleanupInfo: null,
+      audioMissing: false,
     });
     setEditText("");
     setIsEditingTranscript(false);
@@ -3451,11 +3492,35 @@ function HomeInner() {
                     </div>
                   )}
 
+                  {state.audioMissing && (
+                    <div className="mb-6 p-6 bg-zinc-800/50 rounded-xl border border-amber-500/40 text-center">
+                      <p className="text-amber-300 font-semibold mb-2">⚠️ 音声ファイルが失われています</p>
+                      <p className="text-zinc-400 text-sm mb-4">
+                        プロジェクトを再開した際に元の音声ファイルが見つかりませんでした。<br />
+                        動画を生成するには音声を再アップロードしてください。
+                      </p>
+                      <label className="btn-primary inline-flex cursor-pointer">
+                        {state.isProcessing ? "アップロード中..." : "🎙️ 音声を再アップロード"}
+                        <input
+                          type="file"
+                          accept=".mp3,.wav,.m4a,.mp4,.mov,.webm,.avi,.mkv,audio/*,video/*"
+                          disabled={state.isProcessing}
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleReuploadAudio(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
                   <div className="flex gap-4 flex-wrap">
                     <button
                       onClick={handleGenerateVideo}
-                      disabled={state.isProcessing}
+                      disabled={state.isProcessing || state.audioMissing}
                       className="btn-primary flex-1"
+                      title={state.audioMissing ? "音声を再アップロードしてください" : ""}
                     >
                       {state.isProcessing ? "動画生成中..." : "🎬 動画を生成"}
                     </button>
@@ -4285,7 +4350,31 @@ function HomeInner() {
                   );
                 })}
               </div>
-              <button onClick={handleGenerateVideo} disabled={state.isProcessing} className="btn-primary w-full">
+              {state.audioMissing && (
+                <div className="mb-4 p-4 bg-zinc-800/50 rounded-xl border border-amber-500/40 text-center">
+                  <p className="text-amber-300 font-semibold mb-2 text-sm">⚠️ 音声ファイルが失われています</p>
+                  <label className="btn-primary inline-flex cursor-pointer">
+                    {state.isProcessing ? "アップロード中..." : "🎙️ 音声を再アップロード"}
+                    <input
+                      type="file"
+                      accept=".mp3,.wav,.m4a,.mp4,.mov,.webm,.avi,.mkv,audio/*,video/*"
+                      disabled={state.isProcessing}
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleReuploadAudio(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+              <button
+                onClick={handleGenerateVideo}
+                disabled={state.isProcessing || state.audioMissing}
+                className="btn-primary w-full"
+                title={state.audioMissing ? "音声を再アップロードしてください" : ""}
+              >
                 {state.isProcessing ? "処理中..." : "🎬 動画を生成"}
               </button>
             </div>

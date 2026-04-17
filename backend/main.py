@@ -700,6 +700,76 @@ async def upload_audio(file: UploadFile = File(...)):
     }
 
 
+@app.post("/api/reupload-audio/{job_id}")
+async def reupload_audio(job_id: str, file: UploadFile = File(...)):
+    """Re-upload audio for a restored project whose original audio was lost
+    (e.g. after Railway redeploy wiped the filesystem).
+
+    Keeps the existing job_id so all other project state stays intact.
+    Replaces any placeholder WAV with the real audio file.
+    """
+    audio_ext = [".mp3", ".wav", ".m4a"]
+    video_ext = [".mp4", ".mov", ".webm", ".avi", ".mkv"]
+    allowed_ext = audio_ext + video_ext
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(400, "対応形式: MP3, WAV, M4A, MP4, MOV, WebM")
+
+    # Job must already exist (from restore-project)
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found. Please restore the project first.")
+
+    upload_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+    with open(upload_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    is_video = ext in video_ext
+    if is_video:
+        audio_path = os.path.join(UPLOAD_DIR, f"{job_id}.wav")
+        import subprocess
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", upload_path,
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", "44100",
+            "-ac", "1",
+            audio_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"[Reupload] FFmpeg audio extraction error: {result.stderr[:200]}")
+            raise HTTPException(500, "動画から音声を抽出できませんでした")
+        print(f"[Reupload] Extracted audio from video: {audio_path}")
+    else:
+        audio_path = upload_path
+
+    # Remove any placeholder WAV left over from restore
+    placeholder = os.path.join(UPLOAD_DIR, f"{job_id}_placeholder.wav")
+    if os.path.exists(placeholder):
+        try:
+            os.remove(placeholder)
+            print(f"[Reupload] Removed placeholder: {placeholder}")
+        except OSError:
+            pass
+
+    # Update pipeline to point at the new audio
+    pipeline = get_or_create_pipeline(job_id)
+    pipeline.audio_path = audio_path
+    jobs[job_id]["audio_path"] = audio_path
+    if is_video and not getattr(pipeline, "facecam_video_path", None):
+        pipeline.facecam_video_path = upload_path
+        print(f"[Reupload] Auto-set face cam video: {upload_path}")
+
+    print(f"[Reupload] ✓ Audio re-uploaded for job {job_id}: {audio_path}")
+    return {
+        "job_id": job_id,
+        "message": "音声を再アップロードしました",
+        "is_video": is_video,
+        "audio_path": audio_path,
+    }
+
+
 # ========== STEP 2: Transcribe ==========
 
 @app.post("/api/transcribe/{job_id}")
@@ -2546,7 +2616,22 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     
     if not pipeline.slide_images:
         raise HTTPException(500, "スライド画像が見つかりません。スライドを先に生成してください。")
-    
+
+    # Refuse to generate a broken video if the audio is just a placeholder.
+    # Placeholder audio is created by restore-project when the original
+    # audio file is no longer on disk (e.g. after Railway redeploy).
+    # Rather than producing a silent 60s video that looks "complete",
+    # return a clear error so the frontend can prompt the user to re-upload.
+    if pipeline.audio_path and "_placeholder.wav" in pipeline.audio_path and os.path.exists(pipeline.audio_path):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "audio_placeholder",
+                "message": "音声ファイルが失われています。プロジェクト再開後の動画生成には音声の再アップロードが必要です。",
+                "action": "reupload_audio",
+            },
+        )
+
     # If no timing provided and no timing_map exists, generate it from outline
     if not update and not pipeline.timing_map:
         print("[Video] Generating timing map from outline...")
@@ -2694,6 +2779,7 @@ async def restore_project(
 
     # --- Recover audio file from old job ---
     audio_path = None
+    audio_recovered = False  # True if real user audio was found; False if placeholder
     if old_job_id:
         # Try common audio extensions in the old job's uploads
         for ext in [".wav", ".mp3", ".m4a"]:
@@ -2703,6 +2789,7 @@ async def restore_project(
                 new_audio = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
                 shutil.copy2(candidate, new_audio)
                 audio_path = new_audio
+                audio_recovered = True
                 print(f"[Restore] ✓ Recovered audio from {old_job_id}{ext} → {job_id}{ext}")
                 break
             # Also try _trimmed variant
@@ -2714,24 +2801,28 @@ async def restore_project(
                 base_audio = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
                 shutil.copy2(trimmed, base_audio)
                 audio_path = base_audio
+                audio_recovered = True
                 print(f"[Restore] ✓ Recovered trimmed audio from {old_job_id} → {job_id}")
                 break
 
     if not audio_path:
-        # Fallback: create a valid silent WAV file
-        # Calculate duration from timing_map if available
-        total_duration = 60.0  # default 60s
+        # Fallback: create a PLACEHOLDER WAV (marked by filename suffix).
+        # The video-generation endpoint will refuse to proceed with a placeholder
+        # and prompt the user to re-upload audio. We create a valid WAV so the
+        # pipeline doesn't crash on construction, but we mark it clearly.
+        total_duration = 60.0
         if request.timing_map:
             max_end = max(
                 (t.get("end_time", 0) for t in request.timing_map),
                 default=60.0
             )
             if max_end > 0:
-                total_duration = max_end + 1.0  # +1s buffer
+                total_duration = max_end + 1.0
 
         audio_path = os.path.join(UPLOAD_DIR, f"{job_id}_placeholder.wav")
         _create_silent_wav(audio_path, total_duration)
-        print(f"[Restore] ⚠ No old audio found, created silent WAV ({total_duration:.1f}s)")
+        audio_recovered = False
+        print(f"[Restore] ⚠ No old audio found, created PLACEHOLDER WAV ({total_duration:.1f}s) - user must re-upload")
 
     # Initialize pipeline with saved state
     pipeline = get_or_create_pipeline(job_id, audio_path)
@@ -2787,13 +2878,14 @@ async def restore_project(
     elif request.slide_previews:
         print(f"[Restore] ⚠ Could not parse old job_id from slide_previews: {request.slide_previews[0][:80]}")
 
-    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides}, audio={'recovered' if old_job_id else 'silent'})")
+    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides}, audio={'recovered' if audio_recovered else 'placeholder'})")
 
     return {
         "job_id": job_id,
         "status": "restored",
         "message": "Project restored successfully",
-        "slides_recovered": recovered_slides
+        "slides_recovered": recovered_slides,
+        "audio_recovered": audio_recovered,  # False if placeholder — frontend should prompt re-upload
     }
 
 
