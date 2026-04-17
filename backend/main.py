@@ -2626,6 +2626,37 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
 
 # ========== Project Restore ==========
 
+def _create_silent_wav(path: str, duration: float = 60.0):
+    """Create a valid silent WAV file with the given duration.
+    Uses raw PCM format: 16-bit, mono, 44100 Hz."""
+    import struct
+    sample_rate = 44100
+    num_channels = 1
+    bits_per_sample = 16
+    num_samples = int(sample_rate * duration)
+    data_size = num_samples * num_channels * (bits_per_sample // 8)
+
+    with open(path, "wb") as f:
+        # RIFF header
+        f.write(b"RIFF")
+        f.write(struct.pack("<I", 36 + data_size))  # file size - 8
+        f.write(b"WAVE")
+        # fmt chunk
+        f.write(b"fmt ")
+        f.write(struct.pack("<I", 16))  # chunk size
+        f.write(struct.pack("<H", 1))   # PCM format
+        f.write(struct.pack("<H", num_channels))
+        f.write(struct.pack("<I", sample_rate))
+        f.write(struct.pack("<I", sample_rate * num_channels * bits_per_sample // 8))  # byte rate
+        f.write(struct.pack("<H", num_channels * bits_per_sample // 8))  # block align
+        f.write(struct.pack("<H", bits_per_sample))
+        # data chunk
+        f.write(b"data")
+        f.write(struct.pack("<I", data_size))
+        # Silence = all zeros
+        f.write(b"\x00" * data_size)
+
+
 class RestoreProjectRequest(BaseModel):
     """Request body for restoring a project from saved state"""
     transcript: str = ""
@@ -2646,16 +2677,64 @@ async def restore_project(
     x_openrouter_key: Optional[str] = Header(None),
 ):
     """Restore a pipeline from saved project data (no audio file needed for slide generation)"""
+    import re as _re
+    import glob as _glob
+
     job_id = str(uuid.uuid4())
 
-    # Create a dummy audio path (not needed for slide generation)
-    dummy_audio_path = os.path.join(UPLOAD_DIR, f"{job_id}_placeholder.wav")
-    # Create an empty file so pipeline doesn't crash
-    with open(dummy_audio_path, "wb") as f:
-        f.write(b"")
+    # --- Extract old_job_id from slide preview URLs ---
+    old_job_id = None
+    if request.slide_previews and len(request.slide_previews) > 0:
+        old_job_match = _re.search(
+            r'/outputs/([0-9a-f-]{36})_slides/',
+            request.slide_previews[0]
+        )
+        if old_job_match:
+            old_job_id = old_job_match.group(1)
+
+    # --- Recover audio file from old job ---
+    audio_path = None
+    if old_job_id:
+        # Try common audio extensions in the old job's uploads
+        for ext in [".wav", ".mp3", ".m4a"]:
+            candidate = os.path.join(UPLOAD_DIR, f"{old_job_id}{ext}")
+            if os.path.exists(candidate):
+                # Copy to new job_id so pipeline references are correct
+                new_audio = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+                shutil.copy2(candidate, new_audio)
+                audio_path = new_audio
+                print(f"[Restore] ✓ Recovered audio from {old_job_id}{ext} → {job_id}{ext}")
+                break
+            # Also try _trimmed variant
+            trimmed = os.path.join(UPLOAD_DIR, f"{old_job_id}_trimmed{ext}")
+            if os.path.exists(trimmed):
+                new_audio = os.path.join(UPLOAD_DIR, f"{job_id}_trimmed{ext}")
+                shutil.copy2(trimmed, new_audio)
+                # Also need a base audio — use trimmed as base too
+                base_audio = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+                shutil.copy2(trimmed, base_audio)
+                audio_path = base_audio
+                print(f"[Restore] ✓ Recovered trimmed audio from {old_job_id} → {job_id}")
+                break
+
+    if not audio_path:
+        # Fallback: create a valid silent WAV file
+        # Calculate duration from timing_map if available
+        total_duration = 60.0  # default 60s
+        if request.timing_map:
+            max_end = max(
+                (t.get("end_time", 0) for t in request.timing_map),
+                default=60.0
+            )
+            if max_end > 0:
+                total_duration = max_end + 1.0  # +1s buffer
+
+        audio_path = os.path.join(UPLOAD_DIR, f"{job_id}_placeholder.wav")
+        _create_silent_wav(audio_path, total_duration)
+        print(f"[Restore] ⚠ No old audio found, created silent WAV ({total_duration:.1f}s)")
 
     # Initialize pipeline with saved state
-    pipeline = get_or_create_pipeline(job_id, dummy_audio_path)
+    pipeline = get_or_create_pipeline(job_id, audio_path)
     pipeline.raw_transcript = request.transcript
     pipeline.polished_transcript = request.polished_transcript
     pipeline.raw_outline = request.outline
@@ -2688,39 +2767,27 @@ async def restore_project(
         "gemini": x_gemini_key or "",
     }
 
-    # Recover slide images from previous job's directory
-    # Frontend sends slide_previews like ["/outputs/{old_job_id}_slides/slide_001.png", ...]
+    # --- Recover slide images from old job ---
     recovered_slides = 0
-    if request.slide_previews and len(request.slide_previews) > 0:
-        import re as _re
-        import glob as _glob
-        # Extract old job_id from first preview URL
-        # Pattern: /outputs/{uuid}_slides/slide_NNN.png
-        old_job_match = _re.search(
-            r'/outputs/([0-9a-f-]{36})_slides/',
-            request.slide_previews[0]
-        )
-        if old_job_match:
-            old_job_id = old_job_match.group(1)
-            old_slides_dir = os.path.join(OUTPUT_DIR, f"{old_job_id}_slides")
-            new_slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+    if old_job_id:
+        old_slides_dir = os.path.join(OUTPUT_DIR, f"{old_job_id}_slides")
+        new_slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
 
-            if os.path.isdir(old_slides_dir):
-                # Copy slide images to new job's directory so video generation can find them
-                os.makedirs(new_slides_dir, exist_ok=True)
-                slide_files = sorted(_glob.glob(os.path.join(old_slides_dir, "slide_*.png")))
-                for src in slide_files:
-                    dst = os.path.join(new_slides_dir, os.path.basename(src))
-                    shutil.copy2(src, dst)
-                    pipeline.slide_images.append(dst)
-                recovered_slides = len(slide_files)
-                print(f"[Restore] ✓ Copied {recovered_slides} slide images from {old_job_id} → {job_id}")
-            else:
-                print(f"[Restore] ⚠ Old slides dir not found: {old_slides_dir}")
+        if os.path.isdir(old_slides_dir):
+            os.makedirs(new_slides_dir, exist_ok=True)
+            slide_files = sorted(_glob.glob(os.path.join(old_slides_dir, "slide_*.png")))
+            for src in slide_files:
+                dst = os.path.join(new_slides_dir, os.path.basename(src))
+                shutil.copy2(src, dst)
+                pipeline.slide_images.append(dst)
+            recovered_slides = len(slide_files)
+            print(f"[Restore] ✓ Copied {recovered_slides} slide images from {old_job_id} → {job_id}")
         else:
-            print(f"[Restore] ⚠ Could not parse old job_id from slide_previews: {request.slide_previews[0][:80]}")
+            print(f"[Restore] ⚠ Old slides dir not found: {old_slides_dir}")
+    elif request.slide_previews:
+        print(f"[Restore] ⚠ Could not parse old job_id from slide_previews: {request.slide_previews[0][:80]}")
 
-    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides})")
+    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides}, audio={'recovered' if old_job_id else 'silent'})")
 
     return {
         "job_id": job_id,
