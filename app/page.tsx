@@ -76,6 +76,11 @@ interface JobState {
     total_removed_seconds: number;
   } | null;
   audioMissing: boolean;  // True when restored project has placeholder audio (user must re-upload)
+  // 48h video cache (backend owns these columns; UI communicates "not saved")
+  videoStoragePath: string | null;
+  videoCachedAt: string | null;
+  videoMissing: boolean;        // cache expired on restore — drives "動画を再生成" banner on step 9
+  videoJustGenerated: boolean;  // set right after successful generation; gates download-confirm modal
 }
 
 const HYBRID_STEPS = [
@@ -138,6 +143,10 @@ function HomeInner() {
     error: null,
     cleanupInfo: null,
     audioMissing: false,
+    videoStoragePath: null,
+    videoCachedAt: null,
+    videoMissing: false,
+    videoJustGenerated: false,
   });
 
   const [editedTranscript, setEditedTranscript] = useState<string>("");
@@ -477,6 +486,8 @@ function HomeInner() {
         const apiKeys = getAPIKeys();
         let backendRestoreFailed = false;
         let restoredAudioMissing = false;  // True if backend returned placeholder audio
+        let restoredVideoUrl: string | null = data.video_url ?? null;
+        let restoredVideoMissing = false;  // True if cache expired / unavailable and user was on step 10
 
         if (adjustedStep >= 4 && (data.outline || data.polished_outline)) {
           try {
@@ -496,13 +507,27 @@ function HomeInner() {
                 step: adjustedStep,
                 slide_previews: validPreviews.length > 0 ? validPreviews : (restoredPreviews || []),
                 audio_storage_path: s.audioStoragePath || null,  // Phase 2: recover audio from Storage
+                video_storage_path: data.video_storage_path || null,  // 48h cache
+                video_cached_at: data.video_cached_at || null,
               }),
             });
             if (restoreRes.ok) {
               const restoreData = await restoreRes.json();
               restoredJobId = restoreData.job_id;
               restoredAudioMissing = restoreData.audio_recovered === false;
-              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, audio_recovered=${restoreData.audio_recovered}`);
+
+              // Video cache handling: backend coerces step to 9 if the cache is gone.
+              if (typeof restoreData.step === "number") {
+                adjustedStep = restoreData.step as Step;
+              }
+              if (restoreData.video_recovered && restoreData.video_url) {
+                // Silent restore — new container has a playable MP4 at the new job_id.
+                restoredVideoUrl = `${API_URL}${restoreData.video_url}?t=${Date.now()}`;
+              } else if (restoreData.video_expired) {
+                restoredVideoUrl = null;
+                restoredVideoMissing = true;
+              }
+              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, audio_recovered=${restoreData.audio_recovered}, video_recovered=${restoreData.video_recovered}, video_expired=${restoreData.video_expired}`);
             } else {
               console.error(`[Restore] Backend restore failed: ${restoreRes.status}`);
               backendRestoreFailed = true;
@@ -528,8 +553,12 @@ function HomeInner() {
           error: backendRestoreFailed
             ? "バックエンドの復元に失敗しました。スライドの再生成や動画生成を行うには、ページを再読み込みしてください。"
             : null,
-          videoUrl: data.video_url,
+          videoUrl: restoredVideoUrl,
           audioMissing: restoredAudioMissing,
+          videoStoragePath: data.video_storage_path ?? null,
+          videoCachedAt: data.video_cached_at ?? null,
+          videoMissing: restoredVideoMissing,
+          videoJustGenerated: false,  // always false on restore; only true after a fresh generation this session
         }));
 
         if (s.audioStoragePath) setAudioStoragePath(s.audioStoragePath);
@@ -1694,6 +1723,8 @@ function HomeInner() {
         method: "POST",
         headers: {
           ...getAPIHeaders(),
+          ...(userId ? { "x-user-id": userId } : {}),
+          ...(projectId ? { "x-project-id": projectId } : {}),
           ...(body ? { "Content-Type": "application/json" } : {}),
         },
         body,
@@ -1720,6 +1751,8 @@ function HomeInner() {
         videoUrl: `${API_URL}${data.video_url}?t=${Date.now()}`,
         step: 10,
         isProcessing: false,
+        videoMissing: false,
+        videoJustGenerated: true,  // arm the "did you download?" modal for this session
         // バックエンドが+10秒反映済みのtiming_mapを返す
         ...(data.timing_map ? { timingMap: data.timing_map } : {}),
       });
@@ -2033,10 +2066,41 @@ function HomeInner() {
       error: null,
       cleanupInfo: null,
       audioMissing: false,
+      videoStoragePath: null,
+      videoCachedAt: null,
+      videoMissing: false,
+      videoJustGenerated: false,
     });
     setEditText("");
     setIsEditingTranscript(false);
     setEditedTranscript("");
+  };
+
+  // Modal that gates "back to My Projects" right after a fresh video generation.
+  // UI says "videos are NOT saved" — this nudges users to download before leaving.
+  // (Internally we do cache for 48h, but we don't surface that window to users.)
+  const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+
+  const handleBackToProjects = () => {
+    if (state.videoJustGenerated) {
+      setShowDownloadConfirm(true);
+    } else {
+      handleReset();
+    }
+  };
+
+  const handleConfirmDownloadAndLeave = async () => {
+    if (state.videoUrl && state.jobId) {
+      await handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`);
+    }
+    setShowDownloadConfirm(false);
+    updateState({ videoJustGenerated: false });
+    // Stay on the current page — user explicitly asked to download, not to leave.
+  };
+
+  const handleLeaveWithoutDownload = () => {
+    setShowDownloadConfirm(false);
+    handleReset();
   };
 
   // 前のステップに戻る（状態を適切にリセット）
@@ -2266,6 +2330,45 @@ function HomeInner() {
         className="hidden"
         onChange={handleReplaceSlideFileSelected}
       />
+
+      {/* Download-before-leaving confirmation modal (shown only when returning to
+          "My Projects" immediately after a fresh video generation). */}
+      {showDownloadConfirm && (
+        <div
+          className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4"
+          onClick={() => setShowDownloadConfirm(false)}
+        >
+          <div
+            className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold mb-2 text-white">動画をダウンロードしましたか？</h3>
+            <p className="text-sm text-zinc-400 mb-6">
+              この動画は保存されないため、一度戻ると再生成が必要になる場合があります。
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleConfirmDownloadAndLeave}
+                className="btn-primary w-full text-base"
+              >
+                ⬇️ ダウンロード
+              </button>
+              <button
+                onClick={handleLeaveWithoutDownload}
+                className="btn-secondary w-full"
+              >
+                OK、戻る
+              </button>
+              <button
+                onClick={() => setShowDownloadConfirm(false)}
+                className="text-zinc-500 hover:text-zinc-300 text-sm py-2"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Slide Zoom Modal */}
       {zoomedSlide !== null && state.slidePreviews.length > 0 && (
@@ -4248,6 +4351,16 @@ function HomeInner() {
             <div>
               <h2 className="text-2xl font-bold mb-4 gradient-text">🤖 AIマッピング結果</h2>
 
+              {/* 動画キャッシュ期限切れバナー（プロジェクト再開時、保存されていた動画が見つからない場合） */}
+              {state.videoMissing && (
+                <div className="mb-4 p-4 bg-zinc-800/50 rounded-xl border border-amber-500/40">
+                  <p className="text-amber-300 font-semibold mb-1 text-sm">⚠️ 動画は保存されていません</p>
+                  <p className="text-zinc-400 text-xs">
+                    プロジェクトを再開しましたが、前回生成した動画は保持されていません。下のボタンから動画を再生成してください。
+                  </p>
+                </div>
+              )}
+
               {/* 合計時間の表示 */}
               <div className="mb-4 p-3 bg-zinc-900 rounded-lg flex items-center justify-between">
                 <span className="text-sm text-zinc-400">音声の長さ:</span>
@@ -4405,13 +4518,16 @@ function HomeInner() {
                   </label>
                 </div>
               )}
+              <p className="text-xs text-zinc-500 mb-3 text-center">
+                ℹ️ 動画は保存されません。生成後にダウンロードしてください。
+              </p>
               <button
                 onClick={handleGenerateVideo}
                 disabled={state.isProcessing || state.audioMissing}
                 className="btn-primary w-full"
                 title={state.audioMissing ? "音声を再アップロードしてください" : ""}
               >
-                {state.isProcessing ? "処理中..." : "🎬 動画を生成"}
+                {state.isProcessing ? "処理中..." : (state.videoMissing ? "🎬 動画を再生成" : "🎬 動画を生成")}
               </button>
             </div>
           )}
@@ -4424,14 +4540,27 @@ function HomeInner() {
                 <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
               </div>
 
-              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-6 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} />
+              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-4 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} />
+
+              {/* 動画は保存されないため、ダウンロードを強く促す。 */}
+              {state.videoJustGenerated && (
+                <div className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5 text-center">
+                  <p className="text-amber-300 text-sm font-semibold">
+                    ⚠️ この動画は保存されません。必ずダウンロードしてください。
+                  </p>
+                </div>
+              )}
 
               <div className="flex flex-wrap justify-center gap-3 mb-8">
                 <button
-                  onClick={() => handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`)}
-                  className="btn-primary"
+                  onClick={() => {
+                    handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`);
+                    // a download click is strong evidence the user captured the file
+                    updateState({ videoJustGenerated: false });
+                  }}
+                  className="btn-primary text-lg px-8 py-4 shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-400/30 animate-pulse hover:animate-none"
                 >
-                  📥 動画をダウンロード
+                  ⬇️ 動画をダウンロード
                 </button>
                 <button
                   onClick={() => {
@@ -4443,7 +4572,7 @@ function HomeInner() {
                 >
                   🖼️ スライド画像一括DL
                 </button>
-                <button onClick={handleReset} className="btn-secondary">
+                <button onClick={handleBackToProjects} className="btn-secondary">
                   🔄 新規作成
                 </button>
               </div>

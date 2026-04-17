@@ -157,10 +157,65 @@ async def cleanup_old_jobs():
             
             if jobs_to_delete:
                 print(f"[Cleanup] Removed {len(jobs_to_delete)} old jobs")
-        
+
         except Exception as e:
             print(f"[Cleanup] Error: {e}")
-        
+
+        # --- 48h video cache sweep (independent of in-memory job cleanup) ---
+        # Wrapped in its own try block so a Supabase outage never kills the
+        # parent loop. Orphan Storage objects are recoverable — we prioritize
+        # clearing DB columns so resumes don't attempt stale paths.
+        try:
+            import httpx as _httpx
+            from datetime import timezone as _tz, timedelta as _td
+            from services.supabase_storage import (
+                is_configured, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, delete_video,
+            )
+            if is_configured():
+                cutoff = (datetime.now(_tz.utc) - _td(hours=48)).isoformat()
+                async with _httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.get(
+                        f"{SUPABASE_URL}/rest/v1/projects",
+                        params={
+                            "select": "id,video_storage_path,video_cached_at",
+                            "video_cached_at": f"lt.{cutoff}",
+                            "video_storage_path": "not.is.null",
+                        },
+                        headers={
+                            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                        },
+                    )
+                    expired = resp.json() if resp.status_code == 200 else []
+                    if expired:
+                        print(f"[Cleanup] Found {len(expired)} expired video cache entries")
+                    for row in expired:
+                        pid = row.get("id")
+                        path = row.get("video_storage_path")
+                        if not pid or not path:
+                            continue
+                        try:
+                            await delete_video(path)
+                        except Exception as e:
+                            print(f"[Cleanup] Storage delete failed for {pid}: {e}")
+                            # still clear columns below so future restores don't point at it
+                        try:
+                            await client.patch(
+                                f"{SUPABASE_URL}/rest/v1/projects",
+                                params={"id": f"eq.{pid}"},
+                                headers={
+                                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                                    "Content-Type": "application/json",
+                                    "Prefer": "return=minimal",
+                                },
+                                json={"video_storage_path": None, "video_cached_at": None},
+                            )
+                        except Exception as e:
+                            print(f"[Cleanup] PATCH clear failed for {pid}: {e}")
+        except Exception as e:
+            print(f"[Cleanup] video cache sweep error (non-fatal): {e}")
+
         # Wait before next cleanup cycle
         await asyncio.sleep(CLEANUP_INTERVAL_HOURS * 3600)
 
@@ -2622,8 +2677,53 @@ async def delete_facecam(job_id: str):
 
 # ========== STEP 10: Generate Video ==========
 
+async def _cache_video_to_storage(local_mp4: str, user_id: str, project_id: str):
+    """Fire-and-forget: upload the generated video to Supabase Storage for 48h cache,
+    then PATCH projects.video_storage_path / video_cached_at.
+
+    The user-facing UI tells people "videos are NOT saved" — this cache is an
+    invisible recovery mechanism for the common "I forgot to download" case.
+    All failures are logged, never raised, so perceived latency is unchanged.
+    """
+    import httpx as _httpx
+    from datetime import timezone as _tz
+    try:
+        from services.supabase_storage import (
+            upload_video, is_configured, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+        )
+        if not is_configured():
+            return
+        storage_path = await upload_video(local_mp4, user_id, project_id)
+        if not storage_path:
+            return
+        now_iso = datetime.now(_tz.utc).isoformat()
+        async with _httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.patch(
+                f"{SUPABASE_URL}/rest/v1/projects",
+                params={"id": f"eq.{project_id}"},
+                headers={
+                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                },
+                json={"video_storage_path": storage_path, "video_cached_at": now_iso},
+            )
+        if r.status_code in (200, 204):
+            print(f"[VideoCache] ✓ cached {storage_path} for project {project_id}")
+        else:
+            print(f"[VideoCache] ✗ PATCH failed: {r.status_code} — {r.text[:200]}")
+    except Exception as e:
+        print(f"[VideoCache] ✗ cache failed (non-fatal): {type(e).__name__}: {e}")
+
+
 @app.post("/api/generate-video/{job_id}")
-async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
+async def generate_video(
+    job_id: str,
+    update: Optional[TimingUpdate] = None,
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
+):
     """Step 10: Generate final video"""
     pipeline = get_or_create_pipeline(job_id)
     
@@ -2706,7 +2806,14 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["video_url"] = result["video_url"]
-    
+
+    # Fire-and-forget 48h Supabase Storage cache. Silently no-op if the
+    # request didn't include user/project headers or Storage isn't configured.
+    if x_user_id and x_project_id:
+        local_mp4 = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
+        if os.path.exists(local_mp4):
+            asyncio.create_task(_cache_video_to_storage(local_mp4, x_user_id, x_project_id))
+
     # Get timing map for frontend timeline editor
     timing_map_data = None
     if edited:
@@ -2797,6 +2904,11 @@ class RestoreProjectRequest(BaseModel):
     step: Optional[int] = None
     slide_previews: Optional[List[str]] = None  # Slide preview URLs from frontend
     audio_storage_path: Optional[str] = None  # Phase 2: Supabase Storage path for audio
+    # 48h video cache — present if the project's last generation was cached.
+    # video_expired vs video_recovered is determined server-side by comparing
+    # video_cached_at against a 48h window.
+    video_storage_path: Optional[str] = None
+    video_cached_at: Optional[str] = None  # ISO8601 UTC
 
 @app.post("/api/restore-project")
 async def restore_project(
@@ -2885,6 +2997,42 @@ async def restore_project(
         audio_recovered = False
         print(f"[Restore] ⚠ No old audio found, created PLACEHOLDER WAV ({total_duration:.1f}s) - user must re-upload")
 
+    # --- Recover video (48h Supabase Storage cache) ---
+    # UI-facing: we tell users "videos are NOT saved". This silent cache is a
+    # recovery mechanism only; if it expired or is missing, we rewind the step
+    # to 9 so the frontend renders the "動画を再生成" flow.
+    video_recovered = False
+    video_url_out: Optional[str] = None
+    video_expired = False
+    if request.video_storage_path:
+        from datetime import timezone as _tz
+        age_ok = False
+        if request.video_cached_at:
+            try:
+                cached = datetime.fromisoformat(request.video_cached_at.replace("Z", "+00:00"))
+                age_hours = (datetime.now(_tz.utc) - cached).total_seconds() / 3600
+                age_ok = age_hours <= 48
+            except Exception as e:
+                print(f"[Restore] Could not parse video_cached_at={request.video_cached_at!r}: {e}")
+
+        if age_ok:
+            try:
+                from services.supabase_storage import download_video as storage_download_video
+                candidate_mp4 = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
+                if await storage_download_video(request.video_storage_path, candidate_mp4):
+                    if os.path.exists(candidate_mp4) and os.path.getsize(candidate_mp4) > 1024:
+                        video_recovered = True
+                        video_url_out = f"/video/{job_id}"
+                        print(f"[Restore] ✓ Recovered video from Supabase Storage: {request.video_storage_path}")
+                    else:
+                        print(f"[Restore] ⚠ Video downloaded but file looks empty/corrupt: {candidate_mp4}")
+            except Exception as e:
+                print(f"[Restore] Video download failed (will fall through to regenerate): {e}")
+
+        if not video_recovered:
+            # Cache was present but unusable (expired or download failed)
+            video_expired = True
+
     # Initialize pipeline with saved state
     pipeline = get_or_create_pipeline(job_id, audio_path)
     pipeline.raw_transcript = request.transcript
@@ -2901,6 +3049,12 @@ async def restore_project(
     if request.step is not None and 1 <= request.step <= 10:
         restore_step = request.step
 
+    # If the user was on the video screen (step 10) but the video cache is
+    # gone, rewind to step 9 (slide preview / generate-video). The frontend
+    # uses this to render the "動画は保存されていません" banner + regenerate CTA.
+    if restore_step == 10 and not video_recovered:
+        restore_step = 9
+
     # Initialize job tracking with API keys
     jobs[job_id] = {
         "id": job_id,
@@ -2911,6 +3065,9 @@ async def restore_project(
         "gemini_model": x_gemini_model or "gemini-3-flash-preview",
         "openrouter_key": x_openrouter_key or "",
     }
+    if video_recovered and video_url_out:
+        jobs[job_id]["video_url"] = video_url_out
+        jobs[job_id]["status"] = "completed"
     job_timestamps[job_id] = datetime.now()
 
     # Store API keys for this job
@@ -2945,8 +3102,12 @@ async def restore_project(
         "job_id": job_id,
         "status": "restored",
         "message": "Project restored successfully",
+        "step": restore_step,  # may have been coerced down to 9 if video cache expired
         "slides_recovered": recovered_slides,
         "audio_recovered": audio_recovered,  # False if placeholder — frontend should prompt re-upload
+        "video_recovered": video_recovered,
+        "video_url": video_url_out,  # None if not recovered — frontend must regenerate
+        "video_expired": video_expired,  # True only if project had a cache but it's gone
     }
 
 
