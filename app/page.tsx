@@ -516,18 +516,21 @@ function HomeInner() {
               restoredJobId = restoreData.job_id;
               restoredAudioMissing = restoreData.audio_recovered === false;
 
-              // Video cache handling: backend coerces step to 9 if the cache is gone.
-              if (typeof restoreData.step === "number") {
-                adjustedStep = restoreData.step as Step;
-              }
               if (restoreData.video_recovered && restoreData.video_url) {
                 // Silent restore — new container has a playable MP4 at the new job_id.
                 restoredVideoUrl = `${API_URL}${restoreData.video_url}?t=${Date.now()}`;
               } else if (restoreData.video_expired) {
+                // 動画キャッシュ期限切れ: ユーザーがビデオ画面 (step 10) にいた場合、
+                // スライド生成完了画面まで戻す（動画を再生成できるよう）。
+                //   hybrid  → step 8 (スライド読み込み完了 → AIマッピング → 動画)
+                //   full-ai → step 6 (スライド生成完了 → 動画)
                 restoredVideoUrl = null;
                 restoredVideoMissing = true;
+                if (adjustedStep === 10) {
+                  adjustedStep = (data.workflow_mode === "full-ai" ? 6 : 8) as Step;
+                }
               }
-              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, audio_recovered=${restoreData.audio_recovered}, video_recovered=${restoreData.video_recovered}, video_expired=${restoreData.video_expired}`);
+              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, audio_recovered=${restoreData.audio_recovered}, video_recovered=${restoreData.video_recovered}, video_expired=${restoreData.video_expired}, coerced_step=${adjustedStep}`);
             } else {
               console.error(`[Restore] Backend restore failed: ${restoreRes.status}`);
               backendRestoreFailed = true;
@@ -2089,18 +2092,15 @@ function HomeInner() {
     }
   };
 
-  const handleConfirmDownloadAndLeave = async () => {
-    if (state.videoUrl && state.jobId) {
-      await handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`);
-    }
-    setShowDownloadConfirm(false);
-    updateState({ videoJustGenerated: false });
-    // Stay on the current page — user explicitly asked to download, not to leave.
-  };
-
-  const handleLeaveWithoutDownload = () => {
+  // はい → 戻る（プロジェクトをリセット）
+  const handleConfirmLeave = () => {
     setShowDownloadConfirm(false);
     handleReset();
+  };
+
+  // いいえ → このページに留まる（ユーザーがダウンロードできるよう）
+  const handleCancelLeave = () => {
+    setShowDownloadConfirm(false);
   };
 
   // 前のステップに戻る（状態を適切にリセット）
@@ -2331,39 +2331,34 @@ function HomeInner() {
         onChange={handleReplaceSlideFileSelected}
       />
 
-      {/* Download-before-leaving confirmation modal (shown only when returning to
-          "My Projects" immediately after a fresh video generation). */}
+      {/* 戻る前の確認モーダル：動画は保存されないことを伝え、はい/いいえで判断してもらう。
+          「いいえ」を選べばダウンロード操作のためにこの画面に留まる。 */}
       {showDownloadConfirm && (
         <div
           className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4"
-          onClick={() => setShowDownloadConfirm(false)}
+          onClick={handleCancelLeave}
         >
           <div
             className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl max-w-md w-full p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-xl font-bold mb-2 text-white">動画をダウンロードしましたか？</h3>
+            <h3 className="text-xl font-bold mb-2 text-white">この動画は保存されません</h3>
             <p className="text-sm text-zinc-400 mb-6">
-              この動画は保存されないため、一度戻ると再生成が必要になる場合があります。
+              戻ると動画は残らず、再度開いた際は再生成が必要になります。<br />
+              ダウンロードせずに戻ってもよろしいですか？
             </p>
-            <div className="flex flex-col gap-2">
+            <div className="flex gap-3">
               <button
-                onClick={handleConfirmDownloadAndLeave}
-                className="btn-primary w-full text-base"
+                onClick={handleCancelLeave}
+                className="btn-secondary flex-1"
               >
-                ⬇️ ダウンロード
+                いいえ
               </button>
               <button
-                onClick={handleLeaveWithoutDownload}
-                className="btn-secondary w-full"
+                onClick={handleConfirmLeave}
+                className="btn-primary flex-1"
               >
-                OK、戻る
-              </button>
-              <button
-                onClick={() => setShowDownloadConfirm(false)}
-                className="text-zinc-500 hover:text-zinc-300 text-sm py-2"
-              >
-                キャンセル
+                はい
               </button>
             </div>
           </div>
@@ -4351,16 +4346,6 @@ function HomeInner() {
             <div>
               <h2 className="text-2xl font-bold mb-4 gradient-text">🤖 AIマッピング結果</h2>
 
-              {/* 動画キャッシュ期限切れバナー（プロジェクト再開時、保存されていた動画が見つからない場合） */}
-              {state.videoMissing && (
-                <div className="mb-4 p-4 bg-zinc-800/50 rounded-xl border border-amber-500/40">
-                  <p className="text-amber-300 font-semibold mb-1 text-sm">⚠️ 動画は保存されていません</p>
-                  <p className="text-zinc-400 text-xs">
-                    プロジェクトを再開しましたが、前回生成した動画は保持されていません。下のボタンから動画を再生成してください。
-                  </p>
-                </div>
-              )}
-
               {/* 合計時間の表示 */}
               <div className="mb-4 p-3 bg-zinc-900 rounded-lg flex items-center justify-between">
                 <span className="text-sm text-zinc-400">音声の長さ:</span>
@@ -4518,16 +4503,13 @@ function HomeInner() {
                   </label>
                 </div>
               )}
-              <p className="text-xs text-zinc-500 mb-3 text-center">
-                ℹ️ 動画は保存されません。生成後にダウンロードしてください。
-              </p>
               <button
                 onClick={handleGenerateVideo}
                 disabled={state.isProcessing || state.audioMissing}
                 className="btn-primary w-full"
                 title={state.audioMissing ? "音声を再アップロードしてください" : ""}
               >
-                {state.isProcessing ? "処理中..." : (state.videoMissing ? "🎬 動画を再生成" : "🎬 動画を生成")}
+                {state.isProcessing ? "処理中..." : "🎬 動画を生成"}
               </button>
             </div>
           )}
@@ -4540,16 +4522,7 @@ function HomeInner() {
                 <h2 className="text-3xl font-bold mt-4 mb-6 gradient-text">完成しました！</h2>
               </div>
 
-              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-4 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} />
-
-              {/* 動画は保存されないため、ダウンロードを強く促す。 */}
-              {state.videoJustGenerated && (
-                <div className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5 text-center">
-                  <p className="text-amber-300 text-sm font-semibold">
-                    ⚠️ この動画は保存されません。必ずダウンロードしてください。
-                  </p>
-                </div>
-              )}
+              <video key={state.videoUrl} src={state.videoUrl} controls className={`rounded-xl mb-6 ${aspectRatio === "portrait" ? "max-h-[60vh] mx-auto" : "w-full"}`} />
 
               <div className="flex flex-wrap justify-center gap-3 mb-8">
                 <button

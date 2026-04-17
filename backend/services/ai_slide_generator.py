@@ -3466,12 +3466,72 @@ def remove_caption_text(html: str) -> str:
 
 _slide_data_cache: Dict[str, Dict[str, Any]] = {}
 
+
+# The cache is in-memory, so it dies with the Python process. For project-
+# restore to work across Railway redeploys AND across different job_ids, we
+# also persist it next to the slide images at {OUTPUT_DIR}/{job_id}_slides/slide_data.json.
+# restore-project copies that file from old job dir to new job dir, then calls
+# load_slide_data_from_disk() to rehydrate the cache.
+
+def _slide_data_json_path(job_id: str) -> Optional[str]:
+    try:
+        from config import OUTPUT_DIR
+        slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        return os.path.join(slides_dir, "slide_data.json")
+    except Exception:
+        return None
+
+
+def _persist_slide_data(job_id: str):
+    """Write the in-memory slide_data for this job to disk (best-effort).
+    Skips silently if the slides dir doesn't exist (e.g. in unit tests)."""
+    path = _slide_data_json_path(job_id)
+    if not path:
+        return
+    slides_dir = os.path.dirname(path)
+    if not os.path.isdir(slides_dir):
+        return
+    data = _slide_data_cache.get(job_id)
+    if not data:
+        return
+    try:
+        import json
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    except Exception as e:
+        print(f"[SlideData] ✗ Persist failed for {job_id}: {e}")
+
+
+def load_slide_data_from_disk(job_id: str) -> bool:
+    """Rehydrate _slide_data_cache for job_id from its on-disk JSON.
+    Called from restore-project after copying slide_data.json to the new job dir.
+    Returns True iff the cache was populated."""
+    path = _slide_data_json_path(job_id)
+    if not path or not os.path.exists(path):
+        return False
+    try:
+        import json
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or "slides" not in data:
+            print(f"[SlideData] ✗ Unexpected schema in {path}")
+            return False
+        _slide_data_cache[job_id] = data
+        return True
+    except Exception as e:
+        print(f"[SlideData] ✗ Load failed for {job_id}: {e}")
+        return False
+
+
 def save_slide_data(job_id: str, slides: List[Dict], strategy: Dict):
     """Save slide data and strategy for later feedback editing"""
     _slide_data_cache[job_id] = {
         "slides": slides,
         "strategy": strategy
     }
+    _persist_slide_data(job_id)
 
 def get_slide_data(job_id: str) -> Optional[Dict[str, Any]]:
     """Get saved slide data"""
@@ -3481,6 +3541,7 @@ def save_html_contents(job_id: str, html_contents: List[str]):
     """Save generated HTML contents"""
     if job_id in _slide_data_cache:
         _slide_data_cache[job_id]["html_contents"] = html_contents
+        _persist_slide_data(job_id)
 
 def load_html_contents(job_id: str) -> List[str]:
     """Load saved HTML contents for a job"""
@@ -3504,6 +3565,7 @@ def update_html_content(job_id: str, slide_number: int, html: str):
         idx = slide_number - 1
         if 0 <= idx < len(_slide_data_cache[job_id]["html_contents"]):
             _slide_data_cache[job_id]["html_contents"][idx] = html
+            _persist_slide_data(job_id)
 
 
 # =============================================================================

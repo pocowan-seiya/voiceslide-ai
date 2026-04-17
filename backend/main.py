@@ -3049,11 +3049,10 @@ async def restore_project(
     if request.step is not None and 1 <= request.step <= 10:
         restore_step = request.step
 
-    # If the user was on the video screen (step 10) but the video cache is
-    # gone, rewind to step 9 (slide preview / generate-video). The frontend
-    # uses this to render the "動画は保存されていません" banner + regenerate CTA.
-    if restore_step == 10 and not video_recovered:
-        restore_step = 9
+    # NOTE: we intentionally do NOT coerce restore_step when the video cache is
+    # expired. The frontend knows the workflow_mode (hybrid vs full-ai) and
+    # rewinds to the appropriate "slides complete" step itself: step 8 for
+    # hybrid, step 6 for full-ai. Backend just signals `video_expired`.
 
     # Initialize job tracking with API keys
     jobs[job_id] = {
@@ -3076,7 +3075,10 @@ async def restore_project(
         "gemini": x_gemini_key or "",
     }
 
-    # --- Recover slide images from old job ---
+    # --- Recover slide images + slide metadata from old job ---
+    # Slide editing (feedback endpoint) needs the in-memory _slide_data_cache
+    # populated for the NEW job_id. We persist that cache to JSON alongside
+    # the images and copy+rehydrate it here so post-restore edits work.
     recovered_slides = 0
     if old_job_id:
         old_slides_dir = os.path.join(OUTPUT_DIR, f"{old_job_id}_slides")
@@ -3091,6 +3093,25 @@ async def restore_project(
                 pipeline.slide_images.append(dst)
             recovered_slides = len(slide_files)
             print(f"[Restore] ✓ Copied {recovered_slides} slide images from {old_job_id} → {job_id}")
+
+            # Copy the slide_data.json (slides metadata + strategy + HTML contents)
+            # so the feedback/edit endpoints can find it under the new job_id.
+            old_slide_data = os.path.join(old_slides_dir, "slide_data.json")
+            if os.path.exists(old_slide_data):
+                new_slide_data = os.path.join(new_slides_dir, "slide_data.json")
+                try:
+                    shutil.copy2(old_slide_data, new_slide_data)
+                    from services.ai_slide_generator import load_slide_data_from_disk
+                    if load_slide_data_from_disk(job_id):
+                        print(f"[Restore] ✓ Recovered slide_data.json and rehydrated cache for {job_id}")
+                    else:
+                        print(f"[Restore] ⚠ Copied slide_data.json but failed to rehydrate cache")
+                except Exception as e:
+                    print(f"[Restore] ⚠ Failed to copy slide_data.json: {e}")
+            else:
+                # Older jobs predate disk persistence — edits on those restores won't work
+                # until the user regenerates slides. Fine as a graceful degradation.
+                print(f"[Restore] ⚠ No slide_data.json in old job (pre-persistence job)")
         else:
             print(f"[Restore] ⚠ Old slides dir not found: {old_slides_dir}")
     elif request.slide_previews:
