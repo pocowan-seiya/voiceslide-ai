@@ -631,24 +631,34 @@ async def upload_reference_image(
 # ========== STEP 1: Upload Audio ==========
 
 @app.post("/api/upload-audio")
-async def upload_audio(file: UploadFile = File(...)):
-    """Step 1: Upload audio or video file. For video, audio is auto-extracted."""
+async def upload_audio(
+    file: UploadFile = File(...),
+    x_user_id: Optional[str] = Header(None),
+    x_project_id: Optional[str] = Header(None),
+):
+    """Step 1: Upload audio or video file. For video, audio is auto-extracted.
+
+    When `x-user-id` and `x-project-id` headers are provided, the extracted
+    audio is also uploaded to Supabase Storage for persistence across
+    Railway redeploys. The storage path is returned in the response as
+    `audio_storage_path`.
+    """
     audio_ext = [".mp3", ".wav", ".m4a"]
     video_ext = [".mp4", ".mov", ".webm", ".avi", ".mkv"]
     allowed_ext = audio_ext + video_ext
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in allowed_ext:
         raise HTTPException(400, f"対応形式: MP3, WAV, M4A, MP4, MOV, WebM")
-    
+
     job_id = str(uuid.uuid4())
     upload_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
-    
+
     with open(upload_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    
+
     is_video = ext in video_ext
     facecam_auto_set = False
-    
+
     if is_video:
         # Extract audio from video using FFmpeg
         audio_path = os.path.join(UPLOAD_DIR, f"{job_id}.wav")
@@ -666,12 +676,12 @@ async def upload_audio(file: UploadFile = File(...)):
         if result.returncode != 0:
             print(f"[Upload] FFmpeg audio extraction error: {result.stderr[:200]}")
             raise HTTPException(500, "動画から音声を抽出できませんでした")
-        
+
         print(f"[Upload] Extracted audio from video: {audio_path}")
         facecam_auto_set = True
     else:
         audio_path = upload_path
-    
+
     # Initialize job
     jobs[job_id] = {
         "id": job_id,
@@ -680,33 +690,55 @@ async def upload_audio(file: UploadFile = File(...)):
         "audio_path": audio_path,
         "created_at": datetime.now().isoformat()
     }
-    
+
     # Track job timestamp for cleanup
     job_timestamps[job_id] = datetime.now()
-    
+
     # Initialize pipeline
     pipeline = get_or_create_pipeline(job_id, audio_path)
-    
+
     # Auto-set face cam if video was uploaded
     if facecam_auto_set:
         pipeline.facecam_video_path = upload_path
         print(f"[Upload] Auto-set face cam video: {upload_path}")
-    
+
+    # Upload audio to Supabase Storage for persistence across redeploys.
+    # Only runs if both user_id and project_id are provided and Supabase
+    # credentials are configured on the backend.
+    audio_storage_path: Optional[str] = None
+    if x_user_id and x_project_id:
+        try:
+            from services.supabase_storage import upload_audio as storage_upload
+            audio_storage_path = await storage_upload(
+                audio_path, x_user_id, x_project_id, ext=os.path.splitext(audio_path)[1]
+            )
+        except Exception as e:
+            print(f"[Upload] Storage upload failed (non-fatal): {e}")
+
     return {
         "job_id": job_id,
         "message": "動画アップロード完了" if is_video else "音声アップロード完了",
         "is_video": is_video,
-        "facecam_auto_set": facecam_auto_set
+        "facecam_auto_set": facecam_auto_set,
+        "audio_storage_path": audio_storage_path,  # None if Storage not configured
     }
 
 
 @app.post("/api/reupload-audio/{job_id}")
-async def reupload_audio(job_id: str, file: UploadFile = File(...)):
+async def reupload_audio(
+    job_id: str,
+    file: UploadFile = File(...),
+    x_user_id: Optional[str] = Header(None),
+    x_project_id: Optional[str] = Header(None),
+):
     """Re-upload audio for a restored project whose original audio was lost
     (e.g. after Railway redeploy wiped the filesystem).
 
     Keeps the existing job_id so all other project state stays intact.
     Replaces any placeholder WAV with the real audio file.
+
+    When user_id + project_id are provided, also uploads to Supabase Storage
+    so the next restore won't need a manual re-upload.
     """
     audio_ext = [".mp3", ".wav", ".m4a"]
     video_ext = [".mp4", ".mov", ".webm", ".avi", ".mkv"]
@@ -761,12 +793,24 @@ async def reupload_audio(job_id: str, file: UploadFile = File(...)):
         pipeline.facecam_video_path = upload_path
         print(f"[Reupload] Auto-set face cam video: {upload_path}")
 
+    # Also push to Supabase Storage so future restores can recover this audio.
+    audio_storage_path: Optional[str] = None
+    if x_user_id and x_project_id:
+        try:
+            from services.supabase_storage import upload_audio as storage_upload
+            audio_storage_path = await storage_upload(
+                audio_path, x_user_id, x_project_id, ext=os.path.splitext(audio_path)[1]
+            )
+        except Exception as e:
+            print(f"[Reupload] Storage upload failed (non-fatal): {e}")
+
     print(f"[Reupload] ✓ Audio re-uploaded for job {job_id}: {audio_path}")
     return {
         "job_id": job_id,
         "message": "音声を再アップロードしました",
         "is_video": is_video,
         "audio_path": audio_path,
+        "audio_storage_path": audio_storage_path,
     }
 
 
@@ -2752,6 +2796,7 @@ class RestoreProjectRequest(BaseModel):
     aspect_ratio: Optional[str] = "landscape"
     step: Optional[int] = None
     slide_previews: Optional[List[str]] = None  # Slide preview URLs from frontend
+    audio_storage_path: Optional[str] = None  # Phase 2: Supabase Storage path for audio
 
 @app.post("/api/restore-project")
 async def restore_project(
@@ -2777,10 +2822,26 @@ async def restore_project(
         if old_job_match:
             old_job_id = old_job_match.group(1)
 
-    # --- Recover audio file from old job ---
+    # --- Recover audio file (priority: Supabase Storage → old job_id copy → placeholder) ---
     audio_path = None
     audio_recovered = False  # True if real user audio was found; False if placeholder
-    if old_job_id:
+
+    # Priority 1: Supabase Storage (Phase 2 — survives Railway redeploys)
+    if request.audio_storage_path:
+        try:
+            from services.supabase_storage import download_audio as storage_download, storage_path_ext
+            ext = storage_path_ext(request.audio_storage_path)
+            candidate = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+            ok = await storage_download(request.audio_storage_path, candidate)
+            if ok and os.path.exists(candidate) and os.path.getsize(candidate) > 100:
+                audio_path = candidate
+                audio_recovered = True
+                print(f"[Restore] ✓ Recovered audio from Supabase Storage: {request.audio_storage_path}")
+        except Exception as e:
+            print(f"[Restore] Storage download failed (will fall back): {e}")
+
+    # Priority 2: Old job_id on same Railway container (Phase 1 fallback)
+    if not audio_path and old_job_id:
         # Try common audio extensions in the old job's uploads
         for ext in [".wav", ".mp3", ".m4a"]:
             candidate = os.path.join(UPLOAD_DIR, f"{old_job_id}{ext}")

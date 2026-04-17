@@ -52,6 +52,7 @@ export interface ProjectSettings {
   bgmMixed?: boolean;
   facecamUploaded?: boolean;
   slidePreviews?: string[];
+  audioStoragePath?: string;  // Phase 2: Supabase Storage path (e.g. "{user_id}/{project_id}/audio.wav")
 }
 
 export interface UserSettings {

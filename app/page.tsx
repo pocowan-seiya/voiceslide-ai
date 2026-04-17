@@ -111,6 +111,16 @@ function HomeInner() {
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [isRestoringProject, setIsRestoringProject] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  // Supabase Storage path for the uploaded audio (Phase 2 persistence)
+  const [audioStoragePath, setAudioStoragePath] = useState<string | null>(null);
+
+  // Fetch userId once on mount so we can pass it in upload headers for Storage persistence
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.id) setUserId(data.user.id);
+    }).catch(() => {});
+  }, [supabase]);
 
   const [state, setState] = useState<JobState>({
     jobId: null,
@@ -356,6 +366,7 @@ function HomeInner() {
         settings: {
           ...settings,
           slidePreviews: currentState.slidePreviews,
+          audioStoragePath: audioStoragePath,  // Phase 2: persist Storage path
         },
       }).eq("id", projectId);
       setLastSavedAt(new Date());
@@ -371,7 +382,7 @@ function HomeInner() {
     } finally {
       setIsSavingProject(false);
     }
-  }, [projectId, supabase]);
+  }, [projectId, supabase, audioStoragePath]);
 
   // ページロード時: URLの ?project= からプロジェクトを復元
   useEffect(() => {
@@ -484,6 +495,7 @@ function HomeInner() {
                 aspect_ratio: s.aspectRatio || "landscape",
                 step: adjustedStep,
                 slide_previews: validPreviews.length > 0 ? validPreviews : (restoredPreviews || []),
+                audio_storage_path: s.audioStoragePath || null,  // Phase 2: recover audio from Storage
               }),
             });
             if (restoreRes.ok) {
@@ -520,6 +532,7 @@ function HomeInner() {
           audioMissing: restoredAudioMissing,
         }));
 
+        if (s.audioStoragePath) setAudioStoragePath(s.audioStoragePath);
         if (s.audioSettings) setAudioSettings(s.audioSettings);
         if (s.slideSettings) setSlideSettings(s.slideSettings);
         if (s.selectedColorTheme !== undefined) setSelectedColorTheme(s.selectedColorTheme);
@@ -620,6 +633,7 @@ function HomeInner() {
         settings: {
           ...settings,
           slidePreviews: currentState.slidePreviews,
+          audioStoragePath: audioStoragePath,
         },
       });
 
@@ -698,9 +712,16 @@ function HomeInner() {
     const formData = new FormData();
     formData.append("file", file);
 
+    // Phase 2: pass user_id + project_id so the backend can persist the audio
+    // to Supabase Storage and we can recover it later after Railway redeploys.
+    const storageHeaders: Record<string, string> = {};
+    if (userId) storageHeaders["x-user-id"] = userId;
+    if (projectId) storageHeaders["x-project-id"] = projectId;
+
     try {
       const res = await fetch(`${API_URL}/api/upload-audio`, {
         method: "POST",
+        headers: storageHeaders,
         body: formData,
       });
       const data = await res.json();
@@ -711,6 +732,13 @@ function HomeInner() {
         setFacecamUploaded(true);
         setFacecamFile(file);
         console.log('[Upload] Video uploaded — face cam auto-set');
+      }
+
+      if (data.audio_storage_path) {
+        setAudioStoragePath(data.audio_storage_path);
+        console.log('[Upload] ✓ Audio persisted to Supabase Storage:', data.audio_storage_path);
+      } else {
+        console.warn('[Upload] Audio NOT persisted to Storage (missing user/project or backend not configured)');
       }
 
       updateState({ jobId: data.job_id, step: 2, isProcessing: false });
@@ -1622,13 +1650,21 @@ function HomeInner() {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      const headers: Record<string, string> = { ...(getAPIHeaders() as Record<string, string>) };
+      if (userId) headers["x-user-id"] = userId;
+      if (projectId) headers["x-project-id"] = projectId;
+
       const res = await fetch(`${API_URL}/api/reupload-audio/${state.jobId}`, {
         method: "POST",
-        headers: getAPIHeaders(),
+        headers,
         body: formData,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "再アップロードに失敗しました");
+      if (data.audio_storage_path) {
+        setAudioStoragePath(data.audio_storage_path);
+        console.log("[Reupload] ✓ Audio persisted to Supabase Storage:", data.audio_storage_path);
+      }
       updateState({ audioMissing: false, isProcessing: false, error: null });
       console.log("[Reupload] ✓ Audio re-uploaded:", data.audio_path);
     } catch (err: any) {
