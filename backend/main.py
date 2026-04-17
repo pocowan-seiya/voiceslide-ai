@@ -2561,10 +2561,28 @@ async def upload_slides(
     jobs[job_id]["status"] = "processing"
     
     result = await pipeline.step_upload_slides(slides_path, file_type)
-    
+
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["slide_count"] = result["slide_count"]
-    
+
+    # Populate _slide_data_cache so post-restore slide edits work.
+    # Hybrid slides have no AI-generated HTML (the "slide" is the user's own
+    # image), but the cache entry is still required so get_slide_data() doesn't
+    # return None. Strategy is minimal; slides carry just the index + content.
+    try:
+        from services.ai_slide_generator import save_slide_data
+        hybrid_slides = [
+            {"number": i + 1, "content": c if isinstance(c, str) else str(c)}
+            for i, c in enumerate(result.get("slide_contents", []))
+        ]
+        save_slide_data(
+            job_id,
+            hybrid_slides,
+            {"mode": "hybrid", "file_type": file_type, "slide_count": result["slide_count"]},
+        )
+    except Exception as e:
+        print(f"[UploadSlides] save_slide_data failed (non-fatal): {e}")
+
     return {
         "job_id": job_id,
         "step": 8,

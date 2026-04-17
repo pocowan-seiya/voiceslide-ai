@@ -3474,32 +3474,46 @@ _slide_data_cache: Dict[str, Dict[str, Any]] = {}
 # load_slide_data_from_disk() to rehydrate the cache.
 
 def _slide_data_json_path(job_id: str) -> Optional[str]:
+    """Resolve the on-disk JSON path for a job's slide data. Note: `os` isn't
+    imported at module level in this file (only inside specific functions), so
+    we import it here explicitly — an earlier version relied on implicit
+    availability and silently crashed with NameError swallowed by the caller."""
+    import os as _os
     try:
         from config import OUTPUT_DIR
-        slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
-        return os.path.join(slides_dir, "slide_data.json")
-    except Exception:
+        slides_dir = _os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        return _os.path.join(slides_dir, "slide_data.json")
+    except Exception as e:
+        print(f"[SlideData] ✗ path resolve failed for {job_id}: {e}")
         return None
 
 
 def _persist_slide_data(job_id: str):
     """Write the in-memory slide_data for this job to disk (best-effort).
-    Skips silently if the slides dir doesn't exist (e.g. in unit tests)."""
+    Uses JSON so it survives Railway redeploys AND so restore-project can
+    rehydrate the cache under a new job_id. The strategy dict may contain
+    arbitrary values — we fall back to `default=str` so non-JSON-serializable
+    extras (e.g. sets, custom objects) don't silently drop the whole file."""
+    import os as _os
     path = _slide_data_json_path(job_id)
     if not path:
+        print(f"[SlideData] ✗ Cannot resolve disk path for {job_id}")
         return
-    slides_dir = os.path.dirname(path)
-    if not os.path.isdir(slides_dir):
+    slides_dir = _os.path.dirname(path)
+    if not _os.path.isdir(slides_dir):
+        # Tests, or save called before slides_dir was created — skip silently.
         return
     data = _slide_data_cache.get(job_id)
     if not data:
         return
     try:
-        import json
         tmp_path = path + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-        os.replace(tmp_path, path)
+            json.dump(data, f, ensure_ascii=False, default=str)
+        _os.replace(tmp_path, path)
+        slide_count = len(data.get("slides", []))
+        html_count = len(data.get("html_contents", []))
+        print(f"[SlideData] ✓ Persisted {job_id} → {path} (slides={slide_count}, html={html_count})")
     except Exception as e:
         print(f"[SlideData] ✗ Persist failed for {job_id}: {e}")
 
@@ -3508,17 +3522,24 @@ def load_slide_data_from_disk(job_id: str) -> bool:
     """Rehydrate _slide_data_cache for job_id from its on-disk JSON.
     Called from restore-project after copying slide_data.json to the new job dir.
     Returns True iff the cache was populated."""
+    import os as _os
     path = _slide_data_json_path(job_id)
-    if not path or not os.path.exists(path):
+    if not path:
+        print(f"[SlideData] ✗ Cannot resolve disk path for {job_id}")
+        return False
+    if not _os.path.exists(path):
         return False
     try:
-        import json
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict) or "slides" not in data:
-            print(f"[SlideData] ✗ Unexpected schema in {path}")
+            keys = list(data.keys()) if isinstance(data, dict) else type(data).__name__
+            print(f"[SlideData] ✗ Unexpected schema in {path}: keys={keys}")
             return False
         _slide_data_cache[job_id] = data
+        slide_count = len(data.get("slides", []))
+        html_count = len(data.get("html_contents", []))
+        print(f"[SlideData] ✓ Loaded {job_id} ← {path} (slides={slide_count}, html={html_count})")
         return True
     except Exception as e:
         print(f"[SlideData] ✗ Load failed for {job_id}: {e}")
