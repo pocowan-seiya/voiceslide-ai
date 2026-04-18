@@ -119,6 +119,10 @@ function HomeInner() {
   const [userId, setUserId] = useState<string | null>(null);
   // Supabase Storage path for the uploaded audio (Phase 2 persistence)
   const [audioStoragePath, setAudioStoragePath] = useState<string | null>(null);
+  // Warning shown when audio upload to Supabase Storage failed (vs intentional skip).
+  // Only set on `status === "failed"` from the backend so the user knows the
+  // current session works but the next restore may require re-upload.
+  const [audioPersistWarning, setAudioPersistWarning] = useState<string | null>(null);
 
   // Fetch userId once on mount so we can pass it in upload headers for Storage persistence
   useEffect(() => {
@@ -768,8 +772,21 @@ function HomeInner() {
       if (data.audio_storage_path) {
         setAudioStoragePath(data.audio_storage_path);
         console.log('[Upload] ✓ Audio persisted to Supabase Storage:', data.audio_storage_path);
+        setAudioPersistWarning(null);
       } else {
-        console.warn('[Upload] Audio NOT persisted to Storage (missing user/project or backend not configured)');
+        const status = data.audio_storage_status || "unknown";
+        const detail = data.audio_storage_detail || "";
+        console.warn(`[Upload] Audio NOT persisted (status=${status}, detail=${detail})`);
+        // Only WARN the user if the failure is unexpected. 'skipped' covers
+        // "no creds configured on backend" which isn't actionable from the
+        // frontend, so we stay quiet there.
+        if (status === "failed") {
+          setAudioPersistWarning(
+            "音声をクラウドに保存できませんでした。このセッション中は問題なく利用できますが、ブラウザを閉じた後の再開では音声の再アップロードが必要になる可能性があります。"
+          );
+        } else {
+          setAudioPersistWarning(null);
+        }
       }
 
       updateState({ jobId: data.job_id, step: 2, isProcessing: false });
@@ -1724,7 +1741,13 @@ function HomeInner() {
       if (!res.ok) throw new Error(data.detail || "再アップロードに失敗しました");
       if (data.audio_storage_path) {
         setAudioStoragePath(data.audio_storage_path);
+        setAudioPersistWarning(null);
         console.log("[Reupload] ✓ Audio persisted to Supabase Storage:", data.audio_storage_path);
+      } else if (data.audio_storage_status === "failed") {
+        setAudioPersistWarning(
+          "音声をクラウドに保存できませんでした。次回プロジェクトを開いた時に再アップロードが必要になる可能性があります。"
+        );
+        console.warn(`[Reupload] Audio NOT persisted (detail=${data.audio_storage_detail || ""})`);
       }
       updateState({ audioMissing: false, isProcessing: false, error: null });
       console.log("[Reupload] ✓ Audio re-uploaded:", data.audio_path);
@@ -2539,6 +2562,21 @@ function HomeInner() {
             <p className="text-red-400">❌ {state.error}</p>
             <button onClick={handleReset} className="btn-secondary mt-2 text-sm">
               やり直す
+            </button>
+          </div>
+        )}
+
+        {/* Audio persistence warning — only shown when backend reported a real
+            failure (vs. intentional skip). Tells the user their work is fine
+            for this session but may need re-upload after a long break. */}
+        {audioPersistWarning && (
+          <div className="glass rounded-xl p-4 mb-6 border-l-4 border-amber-500">
+            <p className="text-amber-400 text-sm">⚠️ {audioPersistWarning}</p>
+            <button
+              onClick={() => setAudioPersistWarning(null)}
+              className="btn-secondary mt-2 text-xs"
+            >
+              閉じる
             </button>
           </div>
         )}

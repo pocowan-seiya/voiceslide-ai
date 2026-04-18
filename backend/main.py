@@ -121,22 +121,36 @@ async def cleanup_old_jobs():
                     jobs_to_delete.append(job_id)
             
             # Delete old jobs
+            # NOTE: this loop is the ONLY place that frees per-job state. If a
+            # cache lives keyed by job_id, it MUST be popped here or memory
+            # leaks linearly with usage (eventually OOMing the process).
             for job_id in jobs_to_delete:
                 print(f"[Cleanup] Removing old job: {job_id}")
-                
-                # Clean memory
+
+                # Clean memory caches in main.py
                 jobs.pop(job_id, None)
                 api_keys.pop(job_id, None)
                 slide_progress.pop(job_id, None)
                 slide_history.pop(job_id, None)
                 job_timestamps.pop(job_id, None)
-                
-                # Clean pipeline
+
+                # Clean memory caches in services/ai_slide_generator.py
+                # (Previously these were never freed → memory leak. Discovered
+                # during the Phase-1 architectural audit.)
+                try:
+                    from services.ai_slide_generator import _slide_data_cache, _used_layouts_cache
+                    _slide_data_cache.pop(job_id, None)
+                    _used_layouts_cache.pop(job_id, None)
+                except Exception as e:
+                    print(f"[Cleanup] Failed to pop ai_slide_generator caches for {job_id}: {e}")
+
+                # Clean pipeline (use specific Exception type so failures are visible
+                # — bare `except: pass` was hiding genuine errors)
                 try:
                     delete_pipeline(job_id)
-                except:
-                    pass
-                
+                except Exception as e:
+                    print(f"[Cleanup] delete_pipeline failed for {job_id}: {e}")
+
                 # Clean disk (output files)
                 for suffix in ["_slides", "_user_images", "_reference"]:
                     dir_path = os.path.join(OUTPUT_DIR, f"{job_id}{suffix}")
@@ -146,14 +160,14 @@ async def cleanup_old_jobs():
                             print(f"[Cleanup] Deleted directory: {dir_path}")
                         except Exception as e:
                             print(f"[Cleanup] Failed to delete {dir_path}: {e}")
-                
+
                 # Clean uploads
                 upload_dir = os.path.join(UPLOAD_DIR, job_id)
                 if os.path.exists(upload_dir):
                     try:
                         shutil.rmtree(upload_dir)
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"[Cleanup] Failed to delete uploads {upload_dir}: {e}")
             
             if jobs_to_delete:
                 print(f"[Cleanup] Removed {len(jobs_to_delete)} old jobs")
@@ -685,6 +699,69 @@ async def upload_reference_image(
 
 # ========== STEP 1: Upload Audio ==========
 
+_AUDIO_STORAGE_RETRY_DELAYS_SEC = (1, 4, 12)  # exponential backoff between attempts
+
+
+async def _upload_audio_to_storage_with_retry(
+    audio_path: str,
+    user_id: Optional[str],
+    project_id: Optional[str],
+    log_prefix: str = "[AudioStorage]",
+) -> tuple:
+    """Upload audio to Supabase Storage with explicit status reporting + retry.
+
+    Returns (storage_path or None, status, detail) where status is one of:
+      - 'persisted': uploaded successfully, path is set
+      - 'skipped'  : intentionally not attempted (no creds / no headers)
+      - 'failed'   : attempts exhausted; user should be warned
+
+    The previous implementation just returned None on failure, which was
+    indistinguishable from "intentionally skipped" — the frontend then
+    silently saved a project with no audioStoragePath, and 24h later the
+    restore couldn't recover audio. Now the frontend can show a clear
+    warning when status == 'failed'.
+    """
+    import asyncio as _asyncio
+
+    if not user_id or not project_id:
+        return (None, "skipped", "missing_user_or_project_id")
+
+    try:
+        from services.supabase_storage import upload_audio as storage_upload, is_configured
+    except Exception as e:
+        print(f"{log_prefix} ✗ storage import failed: {e}")
+        return (None, "failed", "import_error")
+
+    if not is_configured():
+        print(f"{log_prefix} skipped (Supabase not configured)")
+        return (None, "skipped", "supabase_not_configured")
+
+    last_err: Optional[str] = None
+    for attempt, delay_before in enumerate(((0,) + _AUDIO_STORAGE_RETRY_DELAYS_SEC)):
+        if delay_before:
+            await _asyncio.sleep(delay_before)
+        attempt_num = attempt + 1
+        try:
+            storage_path = await storage_upload(
+                audio_path, user_id, project_id, ext=os.path.splitext(audio_path)[1]
+            )
+            if storage_path:
+                print(f"{log_prefix} ✓ attempt {attempt_num}: persisted to {storage_path}")
+                return (storage_path, "persisted", "")
+            last_err = "upload_returned_none"
+            print(f"{log_prefix} attempt {attempt_num} ✗ upload returned None")
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            print(f"{log_prefix} attempt {attempt_num} ✗ exception: {last_err}")
+
+    print(
+        f"{log_prefix} ✗ GAVE UP after {len(_AUDIO_STORAGE_RETRY_DELAYS_SEC) + 1} attempts: "
+        f"last_err={last_err}. Audio is on local disk but NOT persisted — next "
+        f"restore after Railway redeploy will fail to recover this audio."
+    )
+    return (None, "failed", last_err or "unknown")
+
+
 @app.post("/api/upload-audio")
 async def upload_audio(
     file: UploadFile = File(...),
@@ -758,17 +835,14 @@ async def upload_audio(
         print(f"[Upload] Auto-set face cam video: {upload_path}")
 
     # Upload audio to Supabase Storage for persistence across redeploys.
-    # Only runs if both user_id and project_id are provided and Supabase
-    # credentials are configured on the backend.
-    audio_storage_path: Optional[str] = None
-    if x_user_id and x_project_id:
-        try:
-            from services.supabase_storage import upload_audio as storage_upload
-            audio_storage_path = await storage_upload(
-                audio_path, x_user_id, x_project_id, ext=os.path.splitext(audio_path)[1]
-            )
-        except Exception as e:
-            print(f"[Upload] Storage upload failed (non-fatal): {e}")
+    # We track WHY the upload didn't happen (vs just returning None) so the
+    # frontend can show a clear warning if the user's work isn't durably saved.
+    audio_storage_path, audio_storage_status, audio_storage_detail = (
+        await _upload_audio_to_storage_with_retry(
+            audio_path, x_user_id, x_project_id, log_prefix="[Upload]"
+        )
+    )
+    jobs[job_id]["audio_storage_status"] = audio_storage_status
 
     return {
         "job_id": job_id,
@@ -776,6 +850,8 @@ async def upload_audio(
         "is_video": is_video,
         "facecam_auto_set": facecam_auto_set,
         "audio_storage_path": audio_storage_path,  # None if Storage not configured
+        "audio_storage_status": audio_storage_status,  # 'persisted' | 'failed' | 'skipped'
+        "audio_storage_detail": audio_storage_detail,  # Why, if not 'persisted'
     }
 
 
@@ -849,15 +925,12 @@ async def reupload_audio(
         print(f"[Reupload] Auto-set face cam video: {upload_path}")
 
     # Also push to Supabase Storage so future restores can recover this audio.
-    audio_storage_path: Optional[str] = None
-    if x_user_id and x_project_id:
-        try:
-            from services.supabase_storage import upload_audio as storage_upload
-            audio_storage_path = await storage_upload(
-                audio_path, x_user_id, x_project_id, ext=os.path.splitext(audio_path)[1]
-            )
-        except Exception as e:
-            print(f"[Reupload] Storage upload failed (non-fatal): {e}")
+    audio_storage_path, audio_storage_status, audio_storage_detail = (
+        await _upload_audio_to_storage_with_retry(
+            audio_path, x_user_id, x_project_id, log_prefix="[Reupload]"
+        )
+    )
+    jobs[job_id]["audio_storage_status"] = audio_storage_status
 
     print(f"[Reupload] ✓ Audio re-uploaded for job {job_id}: {audio_path}")
     return {
@@ -866,6 +939,8 @@ async def reupload_audio(
         "is_video": is_video,
         "audio_path": audio_path,
         "audio_storage_path": audio_storage_path,
+        "audio_storage_status": audio_storage_status,
+        "audio_storage_detail": audio_storage_detail,
     }
 
 
@@ -2695,44 +2770,103 @@ async def delete_facecam(job_id: str):
 
 # ========== STEP 10: Generate Video ==========
 
-async def _cache_video_to_storage(local_mp4: str, user_id: str, project_id: str):
-    """Fire-and-forget: upload the generated video to Supabase Storage for 48h cache,
+_VIDEO_CACHE_RETRY_DELAYS_SEC = (2, 8, 30)  # exponential backoff between retry attempts
+
+
+async def _cache_video_to_storage(
+    local_mp4: str,
+    user_id: str,
+    project_id: str,
+    job_id: Optional[str] = None,
+):
+    """Upload the generated video to Supabase Storage for the 48h cache,
     then PATCH projects.video_storage_path / video_cached_at.
 
-    The user-facing UI tells people "videos are NOT saved" — this cache is an
-    invisible recovery mechanism for the common "I forgot to download" case.
-    All failures are logged, never raised, so perceived latency is unchanged.
+    Runs as a background task (fire-and-forget from caller's perspective)
+    so video generation latency isn't impacted, but internally retries up to
+    3 times with exponential backoff on transient errors. Every attempt is
+    logged with a structured `[VideoCache]` prefix so failures are auditable
+    in Railway logs (the previous version silently swallowed failures, which
+    was the root cause of the "video disappears after 48h" reports).
+
+    `jobs[job_id]["video_cache_status"]` is updated when known so other
+    endpoints can report cache health.
     """
+    import asyncio as _asyncio
     import httpx as _httpx
     from datetime import timezone as _tz
+
+    def _set_status(status: str, detail: str = ""):
+        if job_id and job_id in jobs:
+            jobs[job_id]["video_cache_status"] = status
+            if detail:
+                jobs[job_id]["video_cache_detail"] = detail
+
     try:
         from services.supabase_storage import (
             upload_video, is_configured, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
         )
-        if not is_configured():
-            return
-        storage_path = await upload_video(local_mp4, user_id, project_id)
-        if not storage_path:
-            return
-        now_iso = datetime.now(_tz.utc).isoformat()
-        async with _httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.patch(
-                f"{SUPABASE_URL}/rest/v1/projects",
-                params={"id": f"eq.{project_id}"},
-                headers={
-                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-                    "Content-Type": "application/json",
-                    "Prefer": "return=minimal",
-                },
-                json={"video_storage_path": storage_path, "video_cached_at": now_iso},
-            )
-        if r.status_code in (200, 204):
-            print(f"[VideoCache] ✓ cached {storage_path} for project {project_id}")
-        else:
-            print(f"[VideoCache] ✗ PATCH failed: {r.status_code} — {r.text[:200]}")
     except Exception as e:
-        print(f"[VideoCache] ✗ cache failed (non-fatal): {type(e).__name__}: {e}")
+        print(f"[VideoCache] ✗ import failed for project={project_id}: {e}")
+        _set_status("error", "import_failed")
+        return
+
+    if not is_configured():
+        print(f"[VideoCache] skipped (Supabase not configured) for project={project_id}")
+        _set_status("skipped", "not_configured")
+        return
+
+    _set_status("uploading")
+    last_err: Optional[str] = None
+
+    for attempt, delay_before in enumerate(((0,) + _VIDEO_CACHE_RETRY_DELAYS_SEC)):
+        if delay_before:
+            await _asyncio.sleep(delay_before)
+        attempt_num = attempt + 1
+        try:
+            storage_path = await upload_video(local_mp4, user_id, project_id)
+            if not storage_path:
+                last_err = "upload_returned_none"
+                print(f"[VideoCache] attempt {attempt_num} ✗ upload returned None for project={project_id}")
+                continue
+
+            now_iso = datetime.now(_tz.utc).isoformat()
+            async with _httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.patch(
+                    f"{SUPABASE_URL}/rest/v1/projects",
+                    params={"id": f"eq.{project_id}"},
+                    headers={
+                        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                    json={"video_storage_path": storage_path, "video_cached_at": now_iso},
+                )
+            if r.status_code in (200, 204):
+                print(f"[VideoCache] ✓ attempt {attempt_num}: cached {storage_path} for project={project_id}")
+                _set_status("cached", storage_path)
+                return
+            else:
+                last_err = f"patch_status_{r.status_code}"
+                print(
+                    f"[VideoCache] attempt {attempt_num} ✗ PATCH failed for project={project_id}: "
+                    f"{r.status_code} — {r.text[:200]}"
+                )
+                # Non-2xx PATCH usually means project_id wrong / RLS blocked / bad payload.
+                # Retrying won't help for those cases — bail early instead of burning attempts.
+                if r.status_code in (400, 403, 404, 422):
+                    break
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            print(f"[VideoCache] attempt {attempt_num} ✗ exception for project={project_id}: {last_err}")
+
+    print(
+        f"[VideoCache] ✗ GAVE UP after {len(_VIDEO_CACHE_RETRY_DELAYS_SEC) + 1} attempts for "
+        f"project={project_id}: last_err={last_err}. Video stays playable from local disk; "
+        f"DB cache columns remain NULL so next restore will prompt regeneration."
+    )
+    _set_status("failed", last_err or "unknown")
 
 
 @app.post("/api/generate-video/{job_id}")
@@ -2825,12 +2959,26 @@ async def generate_video(
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["video_url"] = result["video_url"]
 
-    # Fire-and-forget 48h Supabase Storage cache. Silently no-op if the
-    # request didn't include user/project headers or Storage isn't configured.
+    # Background 48h Supabase Storage cache (with internal retry). Failures
+    # are logged loudly via [VideoCache] prefix and tracked in
+    # jobs[job_id]["video_cache_status"] for diagnosis. We don't await here
+    # because a failed cache shouldn't block the user from playing/downloading
+    # the video that's already on local disk.
     if x_user_id and x_project_id:
         local_mp4 = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
         if os.path.exists(local_mp4):
-            asyncio.create_task(_cache_video_to_storage(local_mp4, x_user_id, x_project_id))
+            jobs[job_id]["video_cache_status"] = "pending"
+            asyncio.create_task(
+                _cache_video_to_storage(local_mp4, x_user_id, x_project_id, job_id=job_id)
+            )
+        else:
+            print(f"[VideoCache] ✗ cannot cache: local file missing at {local_mp4}")
+            jobs[job_id]["video_cache_status"] = "skipped"
+            jobs[job_id]["video_cache_detail"] = "local_file_missing"
+    elif x_user_id is None or x_project_id is None:
+        # Anonymous/legacy session — caching silently skipped, but log it
+        # so we know how often this path is hit.
+        print(f"[VideoCache] skipped for job={job_id}: missing user_id={bool(x_user_id)} project_id={bool(x_project_id)}")
 
     # Get timing map for frontend timeline editor
     timing_map_data = None
