@@ -3135,7 +3135,19 @@ async def restore_project(
     elif request.slide_previews:
         print(f"[Restore] ⚠ Could not parse old job_id from slide_previews: {request.slide_previews[0][:80]}")
 
-    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides}, audio={'recovered' if audio_recovered else 'placeholder'})")
+    # Build the authoritative slide_previews list for the NEW job_id.
+    # IMPORTANT: this supersedes whatever the frontend had stored. The previous
+    # approach relied on the frontend HEAD-checking saved URLs (which pointed at
+    # the OLD job_id on potentially-recycled container disk), producing a flaky
+    # "some 404, some 200" result → "4 slides became 2". Now we return the
+    # ground truth from what was just copied into new_slides_dir.
+    new_slides_dir_path = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+    restored_slide_previews: List[str] = []
+    if os.path.isdir(new_slides_dir_path):
+        for p in sorted(_glob.glob(os.path.join(new_slides_dir_path, "slide_*.png"))):
+            restored_slide_previews.append(f"/outputs/{job_id}_slides/{os.path.basename(p)}")
+
+    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides}, previews_returned={len(restored_slide_previews)}, audio={'recovered' if audio_recovered else 'placeholder'})")
 
     return {
         "job_id": job_id,
@@ -3143,6 +3155,7 @@ async def restore_project(
         "message": "Project restored successfully",
         "step": restore_step,  # may have been coerced down to 9 if video cache expired
         "slides_recovered": recovered_slides,
+        "slide_previews": restored_slide_previews,  # Authoritative URLs under the new job_id
         "audio_recovered": audio_recovered,  # False if placeholder — frontend should prompt re-upload
         "video_recovered": video_recovered,
         "video_url": video_url_out,  # None if not recovered — frontend must regenerate

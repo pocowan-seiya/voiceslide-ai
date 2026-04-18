@@ -416,15 +416,12 @@ function HomeInner() {
         setProjectName(data.name);
 
         const s = data.settings ?? {};
-        const restoredPreviews: string[] = s.slidePreviews ?? [];
+        const storedPreviews: string[] = s.slidePreviews ?? [];
 
-        // スライドプレビューURLの検証
-        let validPreviews = restoredPreviews;
         let adjustedStep = data.step as Step;
 
         // スライド生成ステップの判定（full-aiは6以降、hybridは9以降）
         const slideCompleteStep = data.workflow_mode === "full-ai" ? 6 : 9;
-        const slideGenStep = data.workflow_mode === "full-ai" ? 5 : 8;
 
         // --- 復元データの妥当性チェック ---
         // step >= 4（アウトライン以降）なのに outline が null/undefined/非object → step=3 に戻す
@@ -442,48 +439,22 @@ function HomeInner() {
           adjustedStep = 4 as Step;
         }
 
-        // スライド生成済みステップなのにプレビューが無い → 巻き戻さず再生成ボタンを表示
+        // IMPORTANT: we previously HEAD-checked each stored preview URL to
+        // filter out dead ones. That's unreliable — the URLs point at the OLD
+        // job_id's ephemeral container path, and partial 404s caused
+        // "4 slides → 2 slides" on restore. Now we trust the backend's
+        // `/api/restore-project` response, which rebuilds the slide dir under
+        // the NEW job_id and returns the authoritative URL list.
+        //
+        // finalPreviews is set from the backend response below; storedPreviews
+        // is only used as a hint to tell the backend the old job_id it should
+        // copy from.
+        let finalPreviews: string[] = [];
         let needsSlideRegeneration = false;
-        if (data.step >= slideCompleteStep && restoredPreviews.length === 0) {
-          console.warn("[Restore] No slide previews saved, showing regeneration button");
-          needsSlideRegeneration = true;
-        }
-
-        // プレビューURLがあっても画像が消えている場合 → 壊れたURLのみ除外
-        if (restoredPreviews.length > 0 && data.step >= slideCompleteStep) {
-          try {
-            const checkResults = await Promise.allSettled(
-              restoredPreviews.map((url) =>
-                fetch(url, { method: "HEAD" }).then((res) => res.ok)
-              )
-            );
-            const checked = restoredPreviews.filter((_, i) => {
-              const result = checkResults[i];
-              return result.status === "fulfilled" && result.value === true;
-            });
-            if (checked.length === 0) {
-              console.warn("[Restore] All slide previews expired, showing regeneration button");
-              validPreviews = [];
-              needsSlideRegeneration = true;
-            } else if (checked.length < restoredPreviews.length) {
-              console.warn(`[Restore] ${restoredPreviews.length - checked.length} slide previews expired, keeping ${checked.length} valid`);
-              validPreviews = checked;
-            }
-          } catch {
-            console.warn("[Restore] Slide preview URL check failed, showing regeneration button");
-            validPreviews = [];
-            needsSlideRegeneration = true;
-          }
-        }
-
-        if (needsSlideRegeneration) {
-          setShowSlideRegenButton(true);
-        }
 
         // バックエンドのパイプラインを復元（スライド再生成に必要）
         // APIキーも一緒に渡してバックエンドに保存する
         let restoredJobId = data.job_id;
-        const apiKeys = getAPIKeys();
         let backendRestoreFailed = false;
         let restoredAudioMissing = false;  // True if backend returned placeholder audio
         let restoredVideoUrl: string | null = data.video_url ?? null;
@@ -505,7 +476,7 @@ function HomeInner() {
                 timing_map: data.timing_map,
                 aspect_ratio: s.aspectRatio || "landscape",
                 step: adjustedStep,
-                slide_previews: validPreviews.length > 0 ? validPreviews : (restoredPreviews || []),
+                slide_previews: storedPreviews,  // backend uses the first one to parse old_job_id
                 audio_storage_path: s.audioStoragePath || null,  // Phase 2: recover audio from Storage
                 video_storage_path: data.video_storage_path || null,  // 48h cache
                 video_cached_at: data.video_cached_at || null,
@@ -515,6 +486,17 @@ function HomeInner() {
               const restoreData = await restoreRes.json();
               restoredJobId = restoreData.job_id;
               restoredAudioMissing = restoreData.audio_recovered === false;
+
+              // Authoritative slide previews from backend (under new job_id)
+              const backendPreviews: string[] = Array.isArray(restoreData.slide_previews)
+                ? restoreData.slide_previews
+                : [];
+              if (backendPreviews.length > 0) {
+                finalPreviews = backendPreviews.map((p: string) => `${API_URL}${p}`);
+              } else if (adjustedStep >= slideCompleteStep) {
+                // Backend couldn't recover any slide images — prompt regeneration.
+                needsSlideRegeneration = true;
+              }
 
               if (restoreData.video_recovered && restoreData.video_url) {
                 // Silent restore — new container has a playable MP4 at the new job_id.
@@ -530,7 +512,7 @@ function HomeInner() {
                   adjustedStep = (data.workflow_mode === "full-ai" ? 6 : 8) as Step;
                 }
               }
-              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, audio_recovered=${restoreData.audio_recovered}, video_recovered=${restoreData.video_recovered}, video_expired=${restoreData.video_expired}, coerced_step=${adjustedStep}`);
+              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, slides_recovered=${restoreData.slides_recovered}, previews=${backendPreviews.length}, audio_recovered=${restoreData.audio_recovered}, video_recovered=${restoreData.video_recovered}, video_expired=${restoreData.video_expired}, coerced_step=${adjustedStep}`);
             } else {
               console.error(`[Restore] Backend restore failed: ${restoreRes.status}`);
               backendRestoreFailed = true;
@@ -539,6 +521,15 @@ function HomeInner() {
             console.error("[Restore] Backend restore network error:", e);
             backendRestoreFailed = true;
           }
+        }
+
+        // Step was slide-complete or later but no previews came back — banner up.
+        if (adjustedStep >= slideCompleteStep && finalPreviews.length === 0 && storedPreviews.length > 0) {
+          console.warn("[Restore] Slide step reached but no previews recovered from backend — showing regen button");
+          needsSlideRegeneration = true;
+        }
+        if (needsSlideRegeneration) {
+          setShowSlideRegenButton(true);
         }
 
         setState((prev) => ({
@@ -551,8 +542,11 @@ function HomeInner() {
           outline: data.outline,
           polishedOutline: data.polished_outline,
           timingMap: data.timing_map ?? [],
-          slideCount: validPreviews.length > 0 ? data.slide_count : 0,
-          slidePreviews: validPreviews,
+          // Trust the authoritative count from DB when we have real previews,
+          // otherwise fall back to the actual preview array length.
+          // This avoids showing "4 slides" while rendering only 2.
+          slideCount: finalPreviews.length > 0 ? Math.max(data.slide_count ?? 0, finalPreviews.length) : 0,
+          slidePreviews: finalPreviews,
           error: backendRestoreFailed
             ? "バックエンドの復元に失敗しました。スライドの再生成や動画生成を行うには、ページを再読み込みしてください。"
             : null,
