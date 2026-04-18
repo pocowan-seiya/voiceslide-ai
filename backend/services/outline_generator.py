@@ -546,9 +546,9 @@ async def generate_outline(
     slide_count_mode: str = "auto",
     custom_slide_count: int = 10,
     audio_duration: float = None,  # 実際の音声長（指定がなければセグメントから推定）
-    model_name: str = "gemini-3-flash-preview",
+    model_name: str = "gemini-2.5-flash",
     openrouter_key: str = None,
-    openrouter_model: str = "google/gemini-3-flash",
+    openrouter_model: str = "google/gemini-2.5-flash",
 ) -> Dict[str, Any]:
     """
     高精度タイムスタンプ同期のスライドアウトラインを生成
@@ -631,7 +631,7 @@ async def generate_outline(
     
     try:
         # Use specified model or auto-detect
-        if model_name != "gemini-3-flash-preview":
+        if model_name != "gemini-2.5-flash":
             actual_model = model_name
         else:
             actual_model = get_available_gemini_model(key)
@@ -684,7 +684,7 @@ async def generate_outline(
     return result
 
 
-async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash", gemini_key: Optional[str] = None) -> Dict[str, Any]:
+async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-2.5-flash", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-2.5-flash", gemini_key: Optional[str] = None) -> Dict[str, Any]:
     """
     アウトラインのタイムスタンプ精度を維持しながらブラッシュアップ
     """
@@ -702,7 +702,7 @@ async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-fl
     try:
         from services.transcription import get_available_gemini_model
         key = gemini_key or GEMINI_API_KEY
-        if model_name != "gemini-3-flash-preview":
+        if model_name != "gemini-2.5-flash":
             actual_model = model_name
         else:
             actual_model = get_available_gemini_model(key)

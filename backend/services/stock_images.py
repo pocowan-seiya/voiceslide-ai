@@ -13,7 +13,7 @@ from config import GEMINI_API_KEY
 async def generate_slide_image(
     prompt: str,
     gemini_key: Optional[str] = None,
-    model_name: str = "gemini-3-flash-preview"
+    model_name: str = "gemini-2.5-flash"
 ) -> Optional[Dict[str, str]]:
     """
     Generate an image using Gemini Imagen

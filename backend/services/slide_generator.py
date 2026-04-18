@@ -193,7 +193,7 @@ def format_transcript_with_segments(transcript: str, segments: List[Dict[str, An
     return "\n".join(lines)
 
 
-async def generate_outline_with_gemini(transcript: str, model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
+async def generate_outline_with_gemini(transcript: str, model_name: str = "gemini-2.5-flash") -> Dict[str, Any]:
     """
     Generate outline using Gemini
     """
@@ -233,7 +233,7 @@ async def generate_outline_with_gpt4(transcript: str) -> Dict[str, Any]:
     return json.loads(response.choices[0].message.content)
 
 
-async def generate_slides_with_gemini(outline_json: str, model_name: str = "gemini-3-flash-preview") -> List[Dict[str, Any]]:
+async def generate_slides_with_gemini(outline_json: str, model_name: str = "gemini-2.5-flash") -> List[Dict[str, Any]]:
     """
     Generate detailed slides using Gemini
     """

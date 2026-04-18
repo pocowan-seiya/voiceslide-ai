@@ -163,7 +163,7 @@ def create_professional_background(theme: Dict, slide_index: int, total_slides: 
     return image.convert("RGB")
 
 
-async def generate_slide_illustration(title: str, points: List[str], description: str, model_name: str = "gemini-3-flash-preview") -> Image.Image:
+async def generate_slide_illustration(title: str, points: List[str], description: str, model_name: str = "gemini-2.5-flash") -> Image.Image:
     """
     Generate an illustration for the slide using Gemini
     """

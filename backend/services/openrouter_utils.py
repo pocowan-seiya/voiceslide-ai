@@ -11,6 +11,14 @@ from typing import Any, Optional, List, Dict
 from openai import AsyncOpenAI
 
 
+# Known-working Gemini flash-class fallback. Used when a caller specifies
+# a model ID that OpenRouter rejects as invalid (e.g. misspelled, unreleased,
+# or provisioned for a different account). Keeps the pipeline alive rather
+# than failing the whole user request — Polish/Outline/Slide all still run,
+# just on a different model.
+OPENROUTER_SAFE_FALLBACK_MODEL = "google/gemini-2.5-flash"
+
+
 async def openrouter_generate(
     model_name: str,
     prompt: Any,
@@ -25,13 +33,18 @@ async def openrouter_generate(
     Compatible interface with safe_gemini_generate for easy swapping.
 
     Args:
-        model_name: OpenRouter model ID (e.g., "google/gemini-3-flash", "anthropic/claude-opus-4-6")
+        model_name: OpenRouter model ID (e.g., "google/gemini-2.5-flash", "anthropic/claude-opus-4-6")
         prompt: Text prompt or list of message dicts
         key: OpenRouter API key
         max_retries: Max retry attempts
         json_mode: If True, request JSON response format
         max_tokens: Maximum tokens in response
         temperature: Sampling temperature (0.0-2.0)
+
+    If the supplied `model_name` is rejected as invalid by OpenRouter (400),
+    we log loudly and retry ONCE with OPENROUTER_SAFE_FALLBACK_MODEL so the
+    user's workflow keeps moving. This protects against stale model IDs
+    stored in user_settings from before OpenRouter deprecated them.
     """
     print(f"[OpenRouter] Generating with model={model_name}, json_mode={json_mode}, max_tokens={max_tokens}, temperature={temperature}")
     client = AsyncOpenAI(
@@ -54,11 +67,15 @@ async def openrouter_generate(
 
     delays = [10, 30, 60, 120, 240]
     last_err = None
+    # Track whether we've already swapped to the fallback model so we don't
+    # retry forever or fall back from the fallback.
+    tried_fallback = False
+    current_model = model_name
 
     for attempt in range(max_retries):
         try:
             kwargs: Dict[str, Any] = {
-                "model": model_name,
+                "model": current_model,
                 "messages": messages,
                 "max_tokens": max_tokens,
             }
@@ -71,7 +88,7 @@ async def openrouter_generate(
 
             content = response.choices[0].message.content
             if content is None:
-                print(f"[OpenRouter] Empty response from {model_name} (attempt {attempt+1})")
+                print(f"[OpenRouter] Empty response from {current_model} (attempt {attempt+1})")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2)
                     continue
@@ -85,14 +102,32 @@ async def openrouter_generate(
 
             is_rate_limit = any(x in err_str for x in ["429", "rate_limit", "Rate limit", "quota"])
             is_busy = any(x in err_str for x in ["503", "502", "Service Unavailable", "overloaded"])
+            # 400 "is not a valid model ID" — caller passed a stale or
+            # misspelled model. Swap to the safe fallback and retry ONCE.
+            is_invalid_model = (
+                "400" in err_str
+                and "not a valid model ID" in err_str
+                and not tried_fallback
+                and current_model != OPENROUTER_SAFE_FALLBACK_MODEL
+            )
+
+            if is_invalid_model:
+                print(
+                    f"[OpenRouter] ✗ model {current_model!r} rejected as invalid by OpenRouter. "
+                    f"Falling back to {OPENROUTER_SAFE_FALLBACK_MODEL!r}. "
+                    f"Update your settings to pick a currently-supported model."
+                )
+                current_model = OPENROUTER_SAFE_FALLBACK_MODEL
+                tried_fallback = True
+                continue  # retry immediately with the fallback model
 
             if (is_rate_limit or is_busy) and attempt < max_retries - 1:
                 wait_time = delays[attempt] + random.uniform(0, 5)
-                print(f"[OpenRouter:{model_name}] Rate limit/busy (attempt {attempt+1}/{max_retries}). Waiting {wait_time:.1f}s...")
+                print(f"[OpenRouter:{current_model}] Rate limit/busy (attempt {attempt+1}/{max_retries}). Waiting {wait_time:.1f}s...")
                 await asyncio.sleep(wait_time)
                 continue
             else:
-                print(f"[OpenRouter] Error ({model_name}): {type(e).__name__}: {err_str[:200]}")
+                print(f"[OpenRouter] Error ({current_model}): {type(e).__name__}: {err_str[:200]}")
                 raise e
 
     raise last_err
@@ -102,8 +137,8 @@ async def smart_generate(
     prompt: Any,
     gemini_key: Optional[str] = None,
     openrouter_key: Optional[str] = None,
-    gemini_model: str = "gemini-3-flash-preview",
-    openrouter_model: str = "google/gemini-3-flash",
+    gemini_model: str = "gemini-2.5-flash",
+    openrouter_model: str = "google/gemini-2.5-flash",
     max_retries: int = 5,
     json_mode: bool = False,
     config: Any = None,

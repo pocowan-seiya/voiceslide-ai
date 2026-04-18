@@ -22,9 +22,9 @@ async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: O
             openrouter_key = _openrouter_key_var.get(None)
             if openrouter_key and not openrouter_model:
                 if use_design_model:
-                    openrouter_model = _openrouter_design_model_var.get('google/gemini-3-flash')
+                    openrouter_model = _openrouter_design_model_var.get('google/gemini-2.5-flash')
                 else:
-                    openrouter_model = _openrouter_model_var.get('google/gemini-3-flash')
+                    openrouter_model = _openrouter_model_var.get('google/gemini-2.5-flash')
         except (ImportError, LookupError):
             pass
 

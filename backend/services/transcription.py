@@ -126,7 +126,7 @@ def get_available_gemini_model(api_key: str) -> str:
     print(f"[Gemini] Configuring with key: {str(api_key)[:10]}...{str(api_key)[-4:]}")
     if not api_key:
         print("[Gemini] No API key provided to get_available_gemini_model")
-        return "gemini-3-flash-preview"
+        return "gemini-2.5-flash"
     
     # Try to list available models
     try:
@@ -138,8 +138,11 @@ def get_available_gemini_model(api_key: str) -> str:
         
         print(f"[Gemini] Available models: {available_models[:10]}")
         
-        # Prefer gemini-3-flash-preview first for consistency
-        preferred = ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-pro']
+        # Preference order — Google rolls models over ~every 6 months, so we
+        # list stable non-preview IDs and let the substring check pick the best.
+        # gemini-2.5-flash is current (verified in the user's live API); older
+        # versions are fallbacks if the account isn't upgraded.
+        preferred = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-pro']
         for pref in preferred:
             for avail in available_models:
                 if pref in avail:
@@ -257,7 +260,7 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None, model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash") -> str:
+async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None, model_name: str = "gemini-2.5-flash", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-2.5-flash") -> str:
     """Polishes the transcript for readability and alignment with a reference script."""
     key = gemini_key or GEMINI_API_KEY
     
@@ -270,7 +273,7 @@ async def polish_transcript(text: str, gemini_key: Optional[str] = None, origina
 
     try:
         # Use specified model or auto-detect
-        if model_name != "gemini-3-flash-preview":
+        if model_name != "gemini-2.5-flash":
             actual_model = model_name
         else:
             actual_model = get_available_gemini_model(key)

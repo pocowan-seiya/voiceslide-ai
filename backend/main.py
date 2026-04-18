@@ -1523,8 +1523,8 @@ async def polish_transcript(
 
     edited = update.transcript if update else None
     original_script = update.original_script if update else None
-    gemini_model = jobs[job_id].get("gemini_model", "gemini-3-flash-preview")
-    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script, model_name=gemini_model, openrouter_key=x_openrouter_key, openrouter_model=x_openrouter_model or "google/gemini-3-flash")
+    gemini_model = jobs[job_id].get("gemini_model", "gemini-2.5-flash")
+    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script, model_name=gemini_model, openrouter_key=x_openrouter_key, openrouter_model=x_openrouter_model or "google/gemini-2.5-flash")
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["polished_transcript"] = result["polished_transcript"]
@@ -1574,7 +1574,7 @@ async def generate_outline(
     }
 
     # Start background processing
-    gemini_model = jobs[job_id].get("gemini_model", "gemini-3-flash-preview")
+    gemini_model = jobs[job_id].get("gemini_model", "gemini-2.5-flash")
     background_tasks.add_task(
         run_outline_background,
         job_id,
@@ -1591,7 +1591,7 @@ async def generate_outline(
     }
 
 
-async def run_outline_background(job_id: str, gemini_key: Optional[str], model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: Optional[str] = None):
+async def run_outline_background(job_id: str, gemini_key: Optional[str], model_name: str = "gemini-2.5-flash", openrouter_key: Optional[str] = None, openrouter_model: Optional[str] = None):
     """Background task for outline generation"""
     try:
         pipeline = get_or_create_pipeline(job_id)
@@ -1610,7 +1610,7 @@ async def run_outline_background(job_id: str, gemini_key: Optional[str], model_n
             custom_slide_count=custom_slide_count,
             model_name=model_name,
             openrouter_key=openrouter_key,
-            openrouter_model=openrouter_model or "google/gemini-3-flash",
+            openrouter_model=openrouter_model or "google/gemini-2.5-flash",
         )
         
         jobs[job_id]["outline_status"] = "completed"
@@ -1679,11 +1679,11 @@ async def polish_outline(
 
     # OpenRouter params from header or stored in job
     openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
-    openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash")
+    openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-2.5-flash")
 
     # Gemini params from header or stored in job
     gemini_key = x_gemini_key or jobs.get(job_id, {}).get("gemini_key", "")
-    gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+    gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-2.5-flash")
 
     edited = update.outline if update else None
     result = await pipeline.step_polish_outline(
@@ -1779,10 +1779,10 @@ async def generate_slides_endpoint(
             }
         
         # Generate completely custom HTML/CSS for each slide using AI Design Architect
-        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-2.5-flash")
         openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
-        openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash")
-        openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-3-flash")
+        openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-2.5-flash")
+        openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-2.5-flash")
         image_paths = await generate_all_custom_slides(
             slides=slides,
             job_id=job_id,
@@ -1894,10 +1894,10 @@ async def generate_slides_batch_endpoint(
             video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
             
             # Generate batch of slides
-            gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+            gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-2.5-flash")
             openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
-            openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash")
-            openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-3-flash")
+            openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-2.5-flash")
+            openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-2.5-flash")
             image_paths = await generate_all_custom_slides(
                 slides=slides,
                 job_id=job_id,
@@ -2453,7 +2453,7 @@ async def slide_feedback_endpoint(
         pipeline = get_or_create_pipeline(job_id)
         video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
         
-        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-2.5-flash")
         result = await regenerate_slide_with_feedback(
             job_id=job_id,
             slide_number=request.slide_number,
@@ -2515,7 +2515,7 @@ async def regenerate_image_endpoint(
         pipeline = get_or_create_pipeline(job_id)
         video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
 
-        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-2.5-flash")
         result = await regenerate_slide_illustration(
             job_id=job_id,
             slide_number=request.slide_number,
@@ -3235,7 +3235,7 @@ async def restore_project(
         "status": "restored",
         "created_at": datetime.now().isoformat(),
         "gemini_key": x_gemini_key or "",
-        "gemini_model": x_gemini_model or "gemini-3-flash-preview",
+        "gemini_model": x_gemini_model or "gemini-2.5-flash",
         "openrouter_key": x_openrouter_key or "",
     }
     if video_recovered and video_url_out:
@@ -3532,7 +3532,7 @@ async def support_chat(
     
     try:
         genai.configure(api_key=gemini_key)
-        support_model = x_gemini_model or "gemini-3-flash-preview"
+        support_model = x_gemini_model or "gemini-2.5-flash"
         model = genai.GenerativeModel(support_model)
 
         # Build conversation context

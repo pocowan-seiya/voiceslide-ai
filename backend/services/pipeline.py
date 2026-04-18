@@ -117,9 +117,9 @@ class HybridPipeline:
         edited_transcript: Optional[str] = None,
         gemini_key: Optional[str] = None,
         original_script: Optional[str] = None,
-        model_name: str = "gemini-3-flash-preview",
+        model_name: str = "gemini-2.5-flash",
         openrouter_key: Optional[str] = None,
-        openrouter_model: str = "google/gemini-3-flash",
+        openrouter_model: str = "google/gemini-2.5-flash",
     ) -> Dict[str, Any]:
         """Polish and improve the transcript"""
         text_to_polish = edited_transcript or self.raw_transcript
@@ -146,9 +146,9 @@ class HybridPipeline:
         gemini_key: Optional[str] = None,
         slide_count_mode: str = "auto",
         custom_slide_count: int = 10,
-        model_name: str = "gemini-3-flash-preview",
+        model_name: str = "gemini-2.5-flash",
         openrouter_key: Optional[str] = None,
-        openrouter_model: str = "google/gemini-3-flash",
+        openrouter_model: str = "google/gemini-2.5-flash",
     ) -> Dict[str, Any]:
         """Generate slide outline from transcript"""
         transcript = edited_transcript or self.polished_transcript or self.raw_transcript
@@ -184,7 +184,7 @@ class HybridPipeline:
         }
     
     # Step 5: Outline Brush-up
-    async def step_polish_outline(self, edited_outline: Optional[Dict] = None, model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash", gemini_key: Optional[str] = None) -> Dict[str, Any]:
+    async def step_polish_outline(self, edited_outline: Optional[Dict] = None, model_name: str = "gemini-2.5-flash", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-2.5-flash", gemini_key: Optional[str] = None) -> Dict[str, Any]:
         """Brush up and improve the outline"""
         outline_to_polish = edited_outline or self.raw_outline
 
@@ -227,7 +227,7 @@ class HybridPipeline:
         }
     
     # Step 9: AI Auto-Mapping (or use outline timestamps if available)
-    async def step_map_slides(self, model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
+    async def step_map_slides(self, model_name: str = "gemini-2.5-flash") -> Dict[str, Any]:
         """Map slides to audio - uses outline timestamps if available, otherwise AI mapping"""
         
         # First, try to use timing from the outline (already determined during outline generation)

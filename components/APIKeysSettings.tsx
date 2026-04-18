@@ -4,32 +4,40 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { UserSettings } from "@/lib/supabase/types";
 
+// Model IDs MUST match what Google / OpenRouter actually serve.
+//
+// History note: earlier versions listed `gemini-3-flash-preview` and
+// `google/gemini-3-flash` as the defaults. Neither of those exist on the
+// live APIs, which caused every Polish/Outline call to fail with 400
+// "is not a valid model ID". Backend now has a safe fallback, but the
+// dropdown should only offer currently-supported IDs.
 const GEMINI_MODELS = [
-    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
-    { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (推奨)" },
+    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (旧)" },
 ];
 
 const OPENROUTER_TEXT_MODELS = [
-    { id: "google/gemini-3-flash", label: "Gemini 3 Flash (Google)" },
+    { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash (推奨)" },
+    { id: "google/gemini-2.5-pro-preview", label: "Gemini 2.5 Pro (Google)" },
     { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview (Google)" },
     { id: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (Google)" },
     { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
     { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
     { id: "openai/gpt-4.1", label: "GPT-4.1 (OpenAI)" },
     { id: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini (OpenAI)" },
-    { id: "google/gemini-2.5-pro-preview", label: "Gemini 2.5 Pro (Google)" },
     { id: "deepseek/deepseek-r1", label: "DeepSeek R1" },
 ];
 
 const OPENROUTER_DESIGN_MODELS = [
-    { id: "google/gemini-3-flash", label: "Gemini 3 Flash (Google)" },
+    { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash (推奨)" },
+    { id: "google/gemini-2.5-pro-preview", label: "Gemini 2.5 Pro (Google)" },
     { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview (Google)" },
     { id: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (Google)" },
     { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
     { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
     { id: "openai/gpt-4.1", label: "GPT-4.1 (OpenAI)" },
     { id: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini (OpenAI)" },
-    { id: "google/gemini-2.5-pro-preview", label: "Gemini 2.5 Pro (Google)" },
     { id: "deepseek/deepseek-r1", label: "DeepSeek R1" },
 ];
 
@@ -40,10 +48,10 @@ interface APIKeysSettingsProps {
 export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
     const [openaiKey, setOpenaiKey] = useState("");
     const [geminiKey, setGeminiKey] = useState("");
-    const [geminiModel, setGeminiModel] = useState("gemini-3-flash-preview");
+    const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
     const [openrouterKey, setOpenrouterKey] = useState("");
-    const [openrouterModel, setOpenrouterModel] = useState("google/gemini-3-flash");
-    const [openrouterDesignModel, setOpenrouterDesignModel] = useState("google/gemini-3-flash");
+    const [openrouterModel, setOpenrouterModel] = useState("google/gemini-2.5-flash");
+    const [openrouterDesignModel, setOpenrouterDesignModel] = useState("google/gemini-2.5-flash");
     const [showOpenai, setShowOpenai] = useState(false);
     const [showGemini, setShowGemini] = useState(false);
     const [showOpenrouter, setShowOpenrouter] = useState(false);
@@ -71,20 +79,20 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                 // Supabaseにキーがある → それを使う
                 setOpenaiKey(data.openai_key || "");
                 setGeminiKey(data.gemini_key || "");
-                setGeminiModel(data.gemini_model || "gemini-3-flash-preview");
+                setGeminiModel(data.gemini_model || "gemini-2.5-flash");
                 setOpenrouterKey(data.openrouter_key || "");
-                setOpenrouterModel(data.openrouter_model || "google/gemini-3-flash");
-                setOpenrouterDesignModel(data.openrouter_design_model || "google/gemini-3-flash");
+                setOpenrouterModel(data.openrouter_model || "google/gemini-2.5-flash");
+                setOpenrouterDesignModel(data.openrouter_design_model || "google/gemini-2.5-flash");
                 // localStorageにもバックアップ
-                syncToLocalStorage(data.openai_key, data.gemini_key, data.gemini_model, data.openrouter_key || "", data.openrouter_model || "google/gemini-3-flash", data.openrouter_design_model || "google/gemini-3-flash");
+                syncToLocalStorage(data.openai_key, data.gemini_key, data.gemini_model, data.openrouter_key || "", data.openrouter_model || "google/gemini-2.5-flash", data.openrouter_design_model || "google/gemini-2.5-flash");
             } else {
                 // Supabaseにキーが無い → localStorageから移行
                 const localOpenai = localStorage.getItem("voiceslide_openai_key") || "";
                 const localGemini = localStorage.getItem("voiceslide_gemini_key") || "";
-                const localModel = localStorage.getItem("voiceslide_gemini_model") || "gemini-3-flash-preview";
+                const localModel = localStorage.getItem("voiceslide_gemini_model") || "gemini-2.5-flash";
                 const localOpenrouter = localStorage.getItem("voiceslide_openrouter_key") || "";
-                const localOpenrouterModel = localStorage.getItem("voiceslide_openrouter_model") || "google/gemini-3-flash";
-                const localOpenrouterDesignModel = localStorage.getItem("voiceslide_openrouter_design_model") || "google/gemini-3-flash";
+                const localOpenrouterModel = localStorage.getItem("voiceslide_openrouter_model") || "google/gemini-2.5-flash";
+                const localOpenrouterDesignModel = localStorage.getItem("voiceslide_openrouter_design_model") || "google/gemini-2.5-flash";
                 setOpenaiKey(localOpenai);
                 setGeminiKey(localGemini);
                 setGeminiModel(localModel);
@@ -109,10 +117,10 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
             // 未ログイン: localStorageから読み込み（フォールバック）
             setOpenaiKey(localStorage.getItem("voiceslide_openai_key") || "");
             setGeminiKey(localStorage.getItem("voiceslide_gemini_key") || "");
-            setGeminiModel(localStorage.getItem("voiceslide_gemini_model") || "gemini-3-flash-preview");
+            setGeminiModel(localStorage.getItem("voiceslide_gemini_model") || "gemini-2.5-flash");
             setOpenrouterKey(localStorage.getItem("voiceslide_openrouter_key") || "");
-            setOpenrouterModel(localStorage.getItem("voiceslide_openrouter_model") || "google/gemini-3-flash");
-            setOpenrouterDesignModel(localStorage.getItem("voiceslide_openrouter_design_model") || "google/gemini-3-flash");
+            setOpenrouterModel(localStorage.getItem("voiceslide_openrouter_model") || "google/gemini-2.5-flash");
+            setOpenrouterDesignModel(localStorage.getItem("voiceslide_openrouter_design_model") || "google/gemini-2.5-flash");
         }
         setIsLoading(false);
     };
@@ -120,10 +128,10 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
     const syncToLocalStorage = (openai: string, gemini: string, model: string, openrouter: string, openrouterModel: string, openrouterDesignModel: string) => {
         localStorage.setItem("voiceslide_openai_key", openai);
         localStorage.setItem("voiceslide_gemini_key", gemini);
-        localStorage.setItem("voiceslide_gemini_model", model || "gemini-3-flash-preview");
+        localStorage.setItem("voiceslide_gemini_model", model || "gemini-2.5-flash");
         localStorage.setItem("voiceslide_openrouter_key", openrouter);
-        localStorage.setItem("voiceslide_openrouter_model", openrouterModel || "google/gemini-3-flash");
-        localStorage.setItem("voiceslide_openrouter_design_model", openrouterDesignModel || "google/gemini-3-flash");
+        localStorage.setItem("voiceslide_openrouter_model", openrouterModel || "google/gemini-2.5-flash");
+        localStorage.setItem("voiceslide_openrouter_design_model", openrouterDesignModel || "google/gemini-2.5-flash");
     };
 
     const handleSave = async () => {
@@ -164,10 +172,10 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
         localStorage.removeItem("voiceslide_openrouter_design_model");
         setOpenaiKey("");
         setGeminiKey("");
-        setGeminiModel("gemini-3-flash-preview");
+        setGeminiModel("gemini-2.5-flash");
         setOpenrouterKey("");
-        setOpenrouterModel("google/gemini-3-flash");
-        setOpenrouterDesignModel("google/gemini-3-flash");
+        setOpenrouterModel("google/gemini-2.5-flash");
+        setOpenrouterDesignModel("google/gemini-2.5-flash");
 
         // Supabaseからもクリア
         const supabase = createClient();
@@ -177,10 +185,10 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
                 user_id: user.id,
                 openai_key: "",
                 gemini_key: "",
-                gemini_model: "gemini-3-flash-preview",
+                gemini_model: "gemini-2.5-flash",
                 openrouter_key: "",
-                openrouter_model: "google/gemini-3-flash",
-                openrouter_design_model: "google/gemini-3-flash",
+                openrouter_model: "google/gemini-2.5-flash",
+                openrouter_design_model: "google/gemini-2.5-flash",
             }, { onConflict: "user_id" });
         }
     };

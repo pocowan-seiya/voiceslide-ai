@@ -153,7 +153,7 @@ async def get_design_decision(
     bullet_count: int,
     key_message: str,
     slide_role: str,
-    model_name: str = "gemini-3-flash-preview"
+    model_name: str = "gemini-2.5-flash"
 ) -> Dict[str, Any]:
     """
     Geminiを使用してスライドのデザイン決定を取得
