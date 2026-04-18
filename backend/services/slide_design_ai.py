@@ -130,7 +130,7 @@ async def analyze_slide_design(
     slide_number: int,
     total_slides: int,
     gemini_key: Optional[str] = None,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Analyze slide content and determine optimal design
@@ -293,7 +293,7 @@ def get_fallback_design(slide: Dict, slide_number: int, total_slides: int) -> Di
 async def generate_background_image(
     prompt: str,
     gemini_key: Optional[str] = None,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> Optional[bytes]:
     """
     Generate background image using Gemini

@@ -21,7 +21,7 @@ async def map_slides_to_audio(
     slides: List[Dict[str, Any]],
     segments: List[Dict[str, Any]],
     total_duration: float,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> List[Dict[str, Any]]:
     """
     高精度AIマッピング - スライドと音声セグメントを内容ベースで同期

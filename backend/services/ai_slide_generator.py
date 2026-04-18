@@ -22,8 +22,8 @@ from services.ai_utils import safe_gemini_generate
 
 # Context vars for OpenRouter routing (set per-request, read by safe_gemini_generate)
 _openrouter_key_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar('_openrouter_key', default=None)
-_openrouter_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_model', default='google/gemini-2.5-flash')
-_openrouter_design_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_design_model', default='google/gemini-2.5-flash')
+_openrouter_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_model', default='google/gemini-3-flash-preview')
+_openrouter_design_model_var: contextvars.ContextVar[str] = contextvars.ContextVar('_openrouter_design_model', default='google/gemini-3-flash-preview')
 
 # ── Playwright browser pool ──
 # Re-use a single browser instance across requests to eliminate 3-5s startup cost.
@@ -526,7 +526,7 @@ async def polish_copy_for_illustration(
     total_slides: int,
     strategy: Dict[str, Any],
     gemini_key: str,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, str]:
     """
     Polish slide copy for illustration mode using AI.
@@ -1629,7 +1629,7 @@ async def generate_design_strategy(
     copy_style_request: Optional[str] = None,
     facecam_position: Optional[str] = None,
     facecam_size: Optional[int] = None,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Step 1 & 2: Analyze content and define design strategy
@@ -1817,7 +1817,7 @@ async def generate_slide_html(
     video_height: int = VIDEO_HEIGHT,
     facecam_position: Optional[str] = None,
     facecam_size: Optional[int] = None,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> str:
     """
     Step 3: Generate individual slide HTML based on strategy.
@@ -2715,10 +2715,10 @@ async def generate_all_custom_slides(
     video_height: int = VIDEO_HEIGHT,  # Dynamic video height (for portrait support)
     facecam_position: Optional[str] = None,  # PiP position for text avoidance
     facecam_size: Optional[int] = None,  # PiP size
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = "gemini-3-flash-preview",
     openrouter_key: Optional[str] = None,  # OpenRouter API key (priority over Gemini)
-    openrouter_model: str = "google/gemini-2.5-flash",  # OpenRouter model ID (text generation)
-    openrouter_design_model: str = "google/gemini-2.5-flash",  # OpenRouter model ID (HTML design)
+    openrouter_model: str = "google/gemini-3-flash-preview",  # OpenRouter model ID (text generation)
+    openrouter_design_model: str = "google/gemini-3-flash-preview",  # OpenRouter model ID (HTML design)
 ) -> List[str]:
     """
     Generate all slides using the AI Design Architect approach
@@ -3281,7 +3281,7 @@ VALIDATION_PROMPT = """あなたはスライドの**厳格な**品質検証担�
 async def validate_slide_screenshot(
     image_path: str,
     gemini_key: Optional[str] = None,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Validate a slide screenshot using Gemini Vision
@@ -3334,7 +3334,7 @@ async def validate_and_regenerate_slide(
     slides_dir: str,
     gemini_key: Optional[str] = None,
     max_retries: int = 2,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> tuple:
     """
     Validate a slide and regenerate if needed.
@@ -3738,7 +3738,7 @@ async def self_review_slide(
     strategy: Dict[str, Any],
     gemini_key: Optional[str] = None,
     additional_feedback: Optional[str] = None,  # Additional fix instructions from validation
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> str:
     """
     AI self-reviews and improves a slide before showing to user
@@ -3906,7 +3906,7 @@ async def regenerate_slide_with_feedback(
     video_height: int = VIDEO_HEIGHT,
     facecam_position: Optional[str] = None,
     facecam_size: Optional[int] = None,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Regenerate a single slide based on user feedback (supports image uploads)
@@ -4435,7 +4435,7 @@ async def regenerate_slide_illustration(
     gemini_key: Optional[str] = None,
     video_width: int = VIDEO_WIDTH,
     video_height: int = VIDEO_HEIGHT,
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Regenerate ONLY the illustration image for a specific slide based on feedback.

@@ -103,7 +103,7 @@ async def copy_images(source_path: str, output_dir: str) -> List[str]:
     return image_paths
 
 
-async def analyze_slide_image(image_path: str, slide_number: int, model_name: str = "gemini-2.5-flash") -> Dict[str, Any]:
+async def analyze_slide_image(image_path: str, slide_number: int, model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
     """
     Gemini Visionでスライド画像を詳細分析
     マッピング精度向上のため、より多くの情報を抽出
