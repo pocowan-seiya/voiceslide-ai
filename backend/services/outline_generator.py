@@ -94,9 +94,12 @@ def repair_and_parse_json(text: str, source: str = "API") -> Dict[str, Any]:
                 result = json.loads(truncated)
                 print(f"[{source}] JSON truncated and repaired at position {end_pos}")
                 return result
-            except:
+            except json.JSONDecodeError:
+                # This truncation point didn't produce valid JSON — try the next
+                # candidate position. Silent continue is intentional: we expect
+                # most positions to fail, only one will succeed.
                 continue
-        
+
         raise ValueError(f"Could not repair JSON from {source}")
 
 

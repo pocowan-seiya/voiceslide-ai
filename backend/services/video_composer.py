@@ -749,6 +749,10 @@ def get_video_info(video_path: str) -> Dict[str, Any]:
             "height": stream.get("height", 1080),
             "duration": float(stream.get("duration", 0))
         }
-    except:
+    except Exception as e:
+        # ffprobe / file read can fail for many reasons (corrupt file, missing
+        # ffmpeg, malformed JSON, etc.) — fall back to safe defaults but log so
+        # we know the downstream video used estimated dimensions rather than real.
+        print(f"[VideoComposer] ffprobe metadata fallback (1920x1080, 0s): {type(e).__name__}: {e}")
         return {"width": 1920, "height": 1080, "duration": 0}
 

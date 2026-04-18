@@ -222,8 +222,10 @@ def _transcribe_sync(audio_path: str, openai_key: Optional[str] = None) -> Dict[
         if compressed_path and os.path.exists(compressed_path):
             try:
                 os.remove(compressed_path)
-            except:
-                pass
+            except OSError as e:
+                # Temp file may have been deleted by another process or by
+                # OS cleanup — log so we notice if disk usage starts climbing.
+                print(f"[Transcribe] failed to remove temp file {compressed_path}: {e}")
 
 
 async def transcribe_audio(audio_path: str, openai_key: Optional[str] = None) -> Dict[str, Any]:

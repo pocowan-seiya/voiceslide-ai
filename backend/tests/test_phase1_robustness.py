@@ -250,3 +250,87 @@ def test_audio_storage_retries_until_success():
         assert attempts["n"] == 3
         assert status == "persisted"
         assert path == "user/proj/audio.wav"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2.1: per-job mutex protects _slide_data_cache from concurrent writes
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_save_html_contents_does_not_lose_writes():
+    """Two threads writing to the same job's html_contents must serialize.
+    Without the per-job lock, the slower thread's edit would silently disappear
+    (the dict assignment + JSON write race on the same key)."""
+    import threading
+    import tempfile
+    import shutil
+    from services.ai_slide_generator import save_slide_data, save_html_contents, _slide_data_cache
+
+    job_id = "concurrent-edit-001"
+    # Need a real slides dir so _persist_slide_data writes to disk
+    tmp = tempfile.mkdtemp(prefix="vs_lock_")
+    slides_dir = os.path.join(tmp, f"{job_id}_slides")
+    os.makedirs(slides_dir, exist_ok=True)
+
+    try:
+        with patch("config.OUTPUT_DIR", tmp):
+            save_slide_data(job_id, [{"number": 1}, {"number": 2}], {})
+
+            results = []
+
+            def writer(html_a: str, html_b: str, idx: int):
+                # Each thread does many writes to maximize race chance
+                for _ in range(50):
+                    save_html_contents(job_id, [html_a, html_b])
+                results.append(idx)
+
+            t1 = threading.Thread(target=writer, args=("<A>v1</A>", "<B>v1</B>", 1))
+            t2 = threading.Thread(target=writer, args=("<A>v2</A>", "<B>v2</B>", 2))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+            # Both threads completed without exception
+            assert len(results) == 2
+
+            # Final cache state is one consistent pair (not interleaved)
+            final = _slide_data_cache[job_id]["html_contents"]
+            assert len(final) == 2
+            # Both elements should come from the SAME thread's last write
+            # (i.e. either both v1 or both v2). Without the lock, you could
+            # see [<A>v1</A>, <B>v2</B>] which is mixed.
+            v1 = final[0].count("v1")
+            v2 = final[0].count("v2")
+            assert v1 + v2 == 1, f"first slot has weird value: {final[0]}"
+            second_v1 = final[1].count("v1")
+            second_v2 = final[1].count("v2")
+            assert second_v1 + second_v2 == 1
+            # Both slots must come from the same thread
+            assert (v1 == second_v1) and (v2 == second_v2), (
+                f"interleaved write detected: {final}"
+            )
+    finally:
+        _slide_data_cache.pop(job_id, None)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_release_slide_data_lock_drops_entry():
+    """cleanup_old_jobs calls release_slide_data_lock — without it, every
+    job_id ever seen would leak a Lock object forever."""
+    from services.ai_slide_generator import (
+        save_slide_data, _slide_data_locks, release_slide_data_lock, _slide_data_cache,
+    )
+
+    job_id = "lock-release-001"
+    # save creates the lock entry on first access
+    save_slide_data(job_id, [], {})
+    assert job_id in _slide_data_locks
+
+    release_slide_data_lock(job_id)
+    assert job_id not in _slide_data_locks
+
+    # Calling release on a non-existent job_id is a no-op (not an error)
+    release_slide_data_lock("never-existed")
+
+    _slide_data_cache.pop(job_id, None)

@@ -138,9 +138,17 @@ async def cleanup_old_jobs():
                 # (Previously these were never freed → memory leak. Discovered
                 # during the Phase-1 architectural audit.)
                 try:
-                    from services.ai_slide_generator import _slide_data_cache, _used_layouts_cache
+                    from services.ai_slide_generator import (
+                        _slide_data_cache,
+                        _used_layouts_cache,
+                        release_slide_data_lock,
+                    )
                     _slide_data_cache.pop(job_id, None)
                     _used_layouts_cache.pop(job_id, None)
+                    # The per-job mutex itself also leaks otherwise — Lock
+                    # objects don't get GC'd because they live in the
+                    # _slide_data_locks dict. Phase 2.1 added them.
+                    release_slide_data_lock(job_id)
                 except Exception as e:
                     print(f"[Cleanup] Failed to pop ai_slide_generator caches for {job_id}: {e}")
 

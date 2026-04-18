@@ -3133,8 +3133,12 @@ Concept to illustrate: """
                             try:
                                 if _browser_instance:
                                     await _browser_instance.close()
-                            except:
-                                pass
+                            except Exception as close_err:
+                                # Browser was already dead/disconnected; release the
+                                # reference and continue. Logging is intentional —
+                                # this used to be silent and made browser pool
+                                # leaks impossible to diagnose.
+                                print(f"[BrowserPool] close() ignored: {type(close_err).__name__}: {close_err}")
                             _browser_instance = None
                         await asyncio.sleep(1)
                         browser = await get_pooled_browser()
@@ -3158,16 +3162,22 @@ Concept to illustrate: """
                     print(f"[Render] Attempt {render_attempt + 1} failed: {str(render_error)[:80]}")
                     try:
                         await page.close()
-                    except:
-                        pass
+                    except Exception as page_close_err:
+                        # Page may have already been closed by the failed render —
+                        # log so we can spot a real problem (e.g. browser hang).
+                        print(f"[Render] page.close() ignored: {type(page_close_err).__name__}")
                     if render_attempt < 2:
                         # Restart browser via pool
                         async with _browser_pool_lock:
                             try:
                                 if _browser_instance:
                                     await _browser_instance.close()
-                            except:
-                                pass
+                            except Exception as close_err:
+                                # Browser was already dead/disconnected; release the
+                                # reference and continue. Logging is intentional —
+                                # this used to be silent and made browser pool
+                                # leaks impossible to diagnose.
+                                print(f"[BrowserPool] close() ignored: {type(close_err).__name__}: {close_err}")
                             _browser_instance = None
                         await asyncio.sleep(1)
                         browser = await get_pooled_browser()
@@ -3464,7 +3474,37 @@ def remove_caption_text(html: str) -> str:
 # Slide Data Storage (for feedback editing)
 # =============================================================================
 
+import threading as _threading
+
 _slide_data_cache: Dict[str, Dict[str, Any]] = {}
+
+# Per-job lock so concurrent edits (e.g. two browser tabs editing different
+# slides of the same job) don't clobber each other. Without this, two parallel
+# `save_html_contents` calls would race on the dict + JSON write, and the
+# slower one's edit silently disappears.
+#
+# The locks themselves are tracked in a dict, guarded by a meta-lock. Cleanup
+# is responsible for releasing the per-job lock entry when a job ages out (see
+# release_slide_data_lock + main.cleanup_old_jobs).
+_slide_data_locks: Dict[str, _threading.Lock] = {}
+_slide_data_locks_meta = _threading.Lock()
+
+
+def _get_slide_data_lock(job_id: str) -> _threading.Lock:
+    """Return the per-job lock, creating it on first access."""
+    with _slide_data_locks_meta:
+        lock = _slide_data_locks.get(job_id)
+        if lock is None:
+            lock = _threading.Lock()
+            _slide_data_locks[job_id] = lock
+        return lock
+
+
+def release_slide_data_lock(job_id: str) -> None:
+    """Drop the lock entry for a job. Called from cleanup_old_jobs so we
+    don't leak Lock objects forever as job_ids accumulate."""
+    with _slide_data_locks_meta:
+        _slide_data_locks.pop(job_id, None)
 
 
 # The cache is in-memory, so it dies with the Python process. For project-
@@ -3547,22 +3587,33 @@ def load_slide_data_from_disk(job_id: str) -> bool:
 
 
 def save_slide_data(job_id: str, slides: List[Dict], strategy: Dict):
-    """Save slide data and strategy for later feedback editing"""
-    _slide_data_cache[job_id] = {
-        "slides": slides,
-        "strategy": strategy
-    }
-    _persist_slide_data(job_id)
+    """Save slide data and strategy for later feedback editing.
+
+    Holds the per-job lock so concurrent writes don't race on the
+    dict + JSON file. Lock is fast: assignment + ~100KB JSON write.
+    """
+    with _get_slide_data_lock(job_id):
+        _slide_data_cache[job_id] = {
+            "slides": slides,
+            "strategy": strategy,
+        }
+        _persist_slide_data(job_id)
 
 def get_slide_data(job_id: str) -> Optional[Dict[str, Any]]:
-    """Get saved slide data"""
+    """Get saved slide data.
+
+    Reads are not locked: dict lookups are atomic in CPython, and a
+    stale-by-one-write read is acceptable for the feedback endpoint
+    (the next call sees the latest data).
+    """
     return _slide_data_cache.get(job_id)
 
 def save_html_contents(job_id: str, html_contents: List[str]):
-    """Save generated HTML contents"""
-    if job_id in _slide_data_cache:
-        _slide_data_cache[job_id]["html_contents"] = html_contents
-        _persist_slide_data(job_id)
+    """Replace the full html_contents list for a job."""
+    with _get_slide_data_lock(job_id):
+        if job_id in _slide_data_cache:
+            _slide_data_cache[job_id]["html_contents"] = html_contents
+            _persist_slide_data(job_id)
 
 def load_html_contents(job_id: str) -> List[str]:
     """Load saved HTML contents for a job"""
@@ -3581,12 +3632,14 @@ def get_html_content(job_id: str, slide_number: int) -> Optional[str]:
     return None
 
 def update_html_content(job_id: str, slide_number: int, html: str):
-    """Update HTML content for a specific slide"""
-    if job_id in _slide_data_cache and "html_contents" in _slide_data_cache[job_id]:
-        idx = slide_number - 1
-        if 0 <= idx < len(_slide_data_cache[job_id]["html_contents"]):
-            _slide_data_cache[job_id]["html_contents"][idx] = html
-            _persist_slide_data(job_id)
+    """Update one slide's HTML in-place. Locked because two tabs editing
+    different slides of the same job would otherwise race on the same list."""
+    with _get_slide_data_lock(job_id):
+        if job_id in _slide_data_cache and "html_contents" in _slide_data_cache[job_id]:
+            idx = slide_number - 1
+            if 0 <= idx < len(_slide_data_cache[job_id]["html_contents"]):
+                _slide_data_cache[job_id]["html_contents"][idx] = html
+                _persist_slide_data(job_id)
 
 
 # =============================================================================

@@ -376,10 +376,14 @@ function HomeInner() {
         job_id: currentState.jobId,
         status: currentState.videoUrl ? "completed" : "draft",
         video_url: currentState.videoUrl,
+        // Phase 2.3: dual-write to top-level column + JSONB. Column is the
+        // new authoritative location (matches video_storage_path pattern);
+        // JSONB write is kept so older clients still see the value.
+        audio_storage_path: audioStoragePath,
         settings: {
           ...settings,
           slidePreviews: currentState.slidePreviews,
-          audioStoragePath: audioStoragePath,  // Phase 2: persist Storage path
+          audioStoragePath: audioStoragePath,
         },
       }).eq("id", projectId);
       setLastSavedAt(new Date());
@@ -421,6 +425,11 @@ function HomeInner() {
 
         const s = data.settings ?? {};
         const storedPreviews: string[] = s.slidePreviews ?? [];
+        // Phase 2.3: top-level column is the authoritative source;
+        // settings.audioStoragePath is the legacy fallback for projects
+        // saved before the migration ran.
+        const resolvedAudioStoragePath: string | null =
+          data.audio_storage_path ?? s.audioStoragePath ?? null;
 
         let adjustedStep = data.step as Step;
 
@@ -481,7 +490,7 @@ function HomeInner() {
                 aspect_ratio: s.aspectRatio || "landscape",
                 step: adjustedStep,
                 slide_previews: storedPreviews,  // backend uses the first one to parse old_job_id
-                audio_storage_path: s.audioStoragePath || null,  // Phase 2: recover audio from Storage
+                audio_storage_path: resolvedAudioStoragePath,  // Phase 2.3: column → settings fallback
                 video_storage_path: data.video_storage_path || null,  // 48h cache
                 video_cached_at: data.video_cached_at || null,
               }),
@@ -562,7 +571,7 @@ function HomeInner() {
           videoJustGenerated: false,  // always false on restore; only true after a fresh generation this session
         }));
 
-        if (s.audioStoragePath) setAudioStoragePath(s.audioStoragePath);
+        if (resolvedAudioStoragePath) setAudioStoragePath(resolvedAudioStoragePath);
         if (s.audioSettings) setAudioSettings(s.audioSettings);
         if (s.slideSettings) setSlideSettings(s.slideSettings);
         if (s.selectedColorTheme !== undefined) setSelectedColorTheme(s.selectedColorTheme);
@@ -662,6 +671,8 @@ function HomeInner() {
         job_id: currentState.jobId,
         status: currentState.videoUrl ? "completed" : "draft",
         video_url: currentState.videoUrl,
+        // Phase 2.3: dual-write to column + JSONB.
+        audio_storage_path: audioStoragePathRef.current,
         settings: {
           ...settings,
           slidePreviews: currentState.slidePreviews,
