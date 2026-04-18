@@ -624,9 +624,11 @@ function HomeInner() {
   const stateRef = useRef(state);
   const settingsRef = useRef(buildSettings());
   const projectIdRef = useRef(projectId);
+  const audioStoragePathRef = useRef(audioStoragePath);
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { settingsRef.current = buildSettings(); }, [buildSettings]);
   useEffect(() => { projectIdRef.current = projectId; }, [projectId]);
+  useEffect(() => { audioStoragePathRef.current = audioStoragePath; }, [audioStoragePath]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -659,7 +661,10 @@ function HomeInner() {
         settings: {
           ...settings,
           slidePreviews: currentState.slidePreviews,
-          audioStoragePath: audioStoragePath,
+          // Use ref instead of closure: this useEffect has deps=[] so the
+          // closure captures the INITIAL audioStoragePath (typically null).
+          // The ref is updated every time the state changes.
+          audioStoragePath: audioStoragePathRef.current,
         },
       });
 
@@ -1155,14 +1160,44 @@ function HomeInner() {
               message: `スライド ${statusData.batch_start}-${statusData.batch_end} 完了`
             });
 
+            const newSlidePreviews = statusData.slide_previews.map((p: string) => `${API_URL}${p}`);
+            const newStep = (statusData.is_complete ? 6 : 5) as Step;
+
             updateState({
               slideCount: statusData.batch_end,
-              slidePreviews: statusData.slide_previews.map((p: string) => `${API_URL}${p}`),
-              step: statusData.is_complete ? 6 as Step : 5 as Step,
+              slidePreviews: newSlidePreviews,
+              step: newStep,
               isProcessing: isPreviewMode.current ? false : !statusData.is_complete,
             });
             setSelectedSlide(null);
             setSlideFeedback("");
+
+            // CRITICAL: explicitly persist the new slide URLs RIGHT NOW.
+            // Relying solely on the autosave useEffect was racing against
+            // user navigation: clicking back to dashboard via the header's
+            // <a href> triggers a hard nav, which can abort the in-flight
+            // Supabase write. As a result, the DB kept stale slide URLs
+            // pointing at a previous session's job_id, and on next restore
+            // the backend couldn't find any slides → "0 slides" state.
+            // Awaiting the save here guarantees the URLs are durably
+            // persisted before the user can navigate away.
+            if (projectId) {
+              try {
+                const baseState = stateRef.current;
+                await saveProject(
+                  {
+                    ...baseState,
+                    slideCount: statusData.batch_end,
+                    slidePreviews: newSlidePreviews,
+                    step: newStep,
+                  },
+                  buildSettings()
+                );
+                console.log(`[GenerateSlides] ✓ Persisted ${newSlidePreviews.length} slide URLs (job=${baseState.jobId})`);
+              } catch (e) {
+                console.error("[GenerateSlides] Save failed (autosave will retry):", e);
+              }
+            }
 
             // Auto-continue to next batch if not complete
             if (!statusData.is_complete && statusData.next_start && !isPreviewMode.current) {
@@ -2304,6 +2339,18 @@ function HomeInner() {
         isSaving={isSavingProject}
         projectName={projectName}
         projectId={projectId}
+        onBeforeNavigate={async () => {
+          // Flush a final save with the freshest state before leaving for
+          // the dashboard. Without this, an in-flight Supabase write can
+          // be aborted by the navigation, leaving the DB pointing at a
+          // previous session's slide URLs (= "0 slides" on next restore).
+          if (!projectId) return;
+          try {
+            await saveProject(stateRef.current, settingsRef.current);
+          } catch (e) {
+            console.error("[Header.onBeforeNavigate] save failed:", e);
+          }
+        }}
       />
 
       {/* API Keys Settings Modal */}
