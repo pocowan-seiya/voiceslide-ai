@@ -266,3 +266,131 @@ describe("normal data restore maintains correct step", () => {
     expect(result.needsSlideRegeneration).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. Video recovery decision logic.
+//
+// Mirrors the branch in app/page.tsx that decides whether to trust the DB's
+// stored video_url, rewind the step, or show the "動画が保存されていませんでした"
+// banner. We test the logic independent of React so regressions are caught
+// even without rendering the full restore flow.
+//
+// Contract (see app/page.tsx restore useEffect):
+//   - video_recovered && video_url  → use the recovered URL, no rewind
+//   - video_expired                 → clear URL, rewind step 10 → 8/6, set missing
+//   - step==10 && !video_storage_path (defensive race-window catch)
+//                                   → clear URL, rewind step 10 → 8/6, set missing
+//   - step==10 else                 → clear URL, rewind step 10 → 8/6 (defensive)
+// ---------------------------------------------------------------------------
+
+interface VideoRestoreInput {
+  adjustedStep: number;
+  workflowMode: "full-ai" | "hybrid" | null;
+  data: { video_url?: string | null; video_storage_path?: string | null };
+  restoreData: {
+    video_recovered?: boolean;
+    video_url?: string | null;
+    video_expired?: boolean;
+  };
+}
+
+function computeVideoRestore(input: VideoRestoreInput) {
+  let restoredVideoUrl: string | null = input.data.video_url ?? null;
+  let restoredVideoMissing = false;
+  let adjustedStep = input.adjustedStep;
+  const { restoreData, data, workflowMode } = input;
+
+  if (restoreData.video_recovered && restoreData.video_url) {
+    restoredVideoUrl = `API${restoreData.video_url}?t=0`;
+  } else if (
+    restoreData.video_expired ||
+    (adjustedStep === 10 && !data.video_storage_path)
+  ) {
+    restoredVideoUrl = null;
+    restoredVideoMissing = true;
+    if (adjustedStep === 10) {
+      adjustedStep = workflowMode === "full-ai" ? 6 : 8;
+    }
+  } else if (adjustedStep === 10) {
+    restoredVideoUrl = null;
+    restoredVideoMissing = true;
+    adjustedStep = workflowMode === "full-ai" ? 6 : 8;
+  }
+  return { restoredVideoUrl, restoredVideoMissing, adjustedStep };
+}
+
+describe("video restore decision logic", () => {
+  it("uses recovered url when backend confirms recovery", () => {
+    const r = computeVideoRestore({
+      adjustedStep: 10,
+      workflowMode: "full-ai",
+      data: { video_url: "/video/old", video_storage_path: "u/p/video.mp4" },
+      restoreData: { video_recovered: true, video_url: "/video/new" },
+    });
+    expect(r.restoredVideoUrl).toBe("API/video/new?t=0");
+    expect(r.restoredVideoMissing).toBe(false);
+    expect(r.adjustedStep).toBe(10);
+  });
+
+  it("marks missing and rewinds to 6 (full-ai) when backend flags expired", () => {
+    const r = computeVideoRestore({
+      adjustedStep: 10,
+      workflowMode: "full-ai",
+      data: { video_url: "/video/old", video_storage_path: "u/p/video.mp4" },
+      restoreData: { video_recovered: false, video_expired: true },
+    });
+    expect(r.restoredVideoUrl).toBeNull();
+    expect(r.restoredVideoMissing).toBe(true);
+    expect(r.adjustedStep).toBe(6);
+  });
+
+  it("marks missing and rewinds to 8 (hybrid) when backend flags expired", () => {
+    const r = computeVideoRestore({
+      adjustedStep: 10,
+      workflowMode: "hybrid",
+      data: { video_url: "/video/old", video_storage_path: "u/p/video.mp4" },
+      restoreData: { video_recovered: false, video_expired: true },
+    });
+    expect(r.adjustedStep).toBe(8);
+    expect(r.restoredVideoMissing).toBe(true);
+  });
+
+  it("rewinds even if backend hasn't flagged expired, when storage_path is missing at step 10", () => {
+    // This is the cache-write race: DB has video_url but no storage_path.
+    const r = computeVideoRestore({
+      adjustedStep: 10,
+      workflowMode: "full-ai",
+      data: { video_url: "/video/old", video_storage_path: null },
+      restoreData: { video_recovered: false, video_expired: false },
+    });
+    expect(r.restoredVideoUrl).toBeNull();
+    expect(r.restoredVideoMissing).toBe(true);
+    expect(r.adjustedStep).toBe(6);
+  });
+
+  it("stays at step 8 on hybrid and does not flag missing when not at step 10", () => {
+    const r = computeVideoRestore({
+      adjustedStep: 8,
+      workflowMode: "hybrid",
+      data: { video_url: null, video_storage_path: null },
+      restoreData: { video_recovered: false, video_expired: false },
+    });
+    expect(r.adjustedStep).toBe(8);
+    expect(r.restoredVideoMissing).toBe(false);
+    expect(r.restoredVideoUrl).toBeNull();
+  });
+
+  it("never trusts stored video_url at step 10 when backend gives no positive signal", () => {
+    // Defensive branch: even if backend returned neither recovered nor expired,
+    // a step-10 project with no storage_path must not render the stored URL —
+    // it points at a stale job_id.
+    const r = computeVideoRestore({
+      adjustedStep: 10,
+      workflowMode: "full-ai",
+      data: { video_url: "/video/stale", video_storage_path: null },
+      restoreData: {},
+    });
+    expect(r.restoredVideoUrl).toBeNull();
+    expect(r.restoredVideoMissing).toBe(true);
+  });
+});

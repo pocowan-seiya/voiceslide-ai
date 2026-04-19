@@ -30,6 +30,20 @@ function getAPIHeaders(): HeadersInit {
   return headers;
 }
 
+// Same as getAPIHeaders but also attaches x-user-id / x-project-id so the
+// backend can persist the slide bundle to Supabase Storage (Sprint 2). These
+// IDs are looked up at call time from the caller's closure — passing via
+// parameters keeps the function pure and prevents stale-closure bugs.
+function getAPIHeadersWithProject(
+  userId: string | null,
+  projectId: string | null,
+): Record<string, string> {
+  const headers: Record<string, string> = { ...(getAPIHeaders() as Record<string, string>) };
+  if (userId) headers["x-user-id"] = userId;
+  if (projectId) headers["x-project-id"] = projectId;
+  return headers;
+}
+
 // Helper for fetch with automatic retry on network errors
 async function fetchWithRetry(
   url: string,
@@ -81,6 +95,10 @@ interface JobState {
   videoCachedAt: string | null;
   videoMissing: boolean;        // cache expired on restore — drives "動画を再生成" banner on step 9
   videoJustGenerated: boolean;  // set right after successful generation; gates download-confirm modal
+  // Permanent slide bundle prefix in Supabase Storage (Sprint 2). Backend
+  // writes it; frontend reads it to pass back on restore so the backend can
+  // download slides when the old job_id's local copy is gone.
+  slidesStoragePrefix: string | null;
 }
 
 const HYBRID_STEPS = [
@@ -151,6 +169,7 @@ function HomeInner() {
     videoCachedAt: null,
     videoMissing: false,
     videoJustGenerated: false,
+    slidesStoragePrefix: null,
   });
 
   const [editedTranscript, setEditedTranscript] = useState<string>("");
@@ -493,6 +512,16 @@ function HomeInner() {
                 audio_storage_path: resolvedAudioStoragePath,  // Phase 2.3: column → settings fallback
                 video_storage_path: data.video_storage_path || null,  // 48h cache
                 video_cached_at: data.video_cached_at || null,
+                // Tells backend "this project reached step 10 at least once".
+                // Combined with video_storage_path=null it's how we detect the
+                // cache-write race (fire-and-forget upload didn't land before
+                // the user navigated away) so restore can mark the video as
+                // expired and the UI rewinds instead of trying a broken URL.
+                video_url_hint: data.video_url || null,
+                // Permanent slide bundle (Sprint 2). If present, backend will
+                // download slides from Supabase Storage when the old job_id's
+                // local copy is gone after a Railway redeploy.
+                slides_storage_prefix: data.slides_storage_prefix || null,
               }),
             });
             if (restoreRes.ok) {
@@ -514,9 +543,14 @@ function HomeInner() {
               if (restoreData.video_recovered && restoreData.video_url) {
                 // Silent restore — new container has a playable MP4 at the new job_id.
                 restoredVideoUrl = `${API_URL}${restoreData.video_url}?t=${Date.now()}`;
-              } else if (restoreData.video_expired) {
-                // 動画キャッシュ期限切れ: ユーザーがビデオ画面 (step 10) にいた場合、
-                // スライド生成完了画面まで戻す（動画を再生成できるよう）。
+              } else if (
+                restoreData.video_expired ||
+                (adjustedStep === 10 && !data.video_storage_path)
+              ) {
+                // 動画キャッシュが利用不可: (a) 期限切れ or (b) 生成直後に
+                // キャッシュが書き込まれる前にユーザーがダッシュボードへ戻った
+                // — のいずれか。どちらの場合も DB の video_url は古い job_id を
+                // 指して 404 になるので、信用せず再生成フローに戻す。
                 //   hybrid  → step 8 (スライド読み込み完了 → AIマッピング → 動画)
                 //   full-ai → step 6 (スライド生成完了 → 動画)
                 restoredVideoUrl = null;
@@ -524,6 +558,16 @@ function HomeInner() {
                 if (adjustedStep === 10) {
                   adjustedStep = (data.workflow_mode === "full-ai" ? 6 : 8) as Step;
                 }
+              } else if (adjustedStep === 10) {
+                // Defensive: if we're at step 10 but backend didn't confirm
+                // video_recovered AND didn't flag expired, don't trust the
+                // stored video_url either. This shouldn't happen with the new
+                // backend logic, but keep the guard so we never render a
+                // broken video tag silently.
+                restoredVideoUrl = null;
+                restoredVideoMissing = true;
+                adjustedStep = (data.workflow_mode === "full-ai" ? 6 : 8) as Step;
+                console.warn("[Restore] step=10 but neither recovered nor expired — treating as missing");
               }
               console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, slides_recovered=${restoreData.slides_recovered}, previews=${backendPreviews.length}, audio_recovered=${restoreData.audio_recovered}, video_recovered=${restoreData.video_recovered}, video_expired=${restoreData.video_expired}, coerced_step=${adjustedStep}`);
             } else {
@@ -569,6 +613,7 @@ function HomeInner() {
           videoCachedAt: data.video_cached_at ?? null,
           videoMissing: restoredVideoMissing,
           videoJustGenerated: false,  // always false on restore; only true after a fresh generation this session
+          slidesStoragePrefix: data.slides_storage_prefix ?? null,
         }));
 
         if (resolvedAudioStoragePath) setAudioStoragePath(resolvedAudioStoragePath);
@@ -1099,7 +1144,7 @@ function HomeInner() {
 
       const headers: HeadersInit = {
         "Content-Type": "application/json",
-        ...getAPIHeaders()
+        ...getAPIHeadersWithProject(userId, projectId),
       };
       if (selectedColorTheme) {
         (headers as Record<string, string>)["x-color-theme"] = selectedColorTheme;
@@ -1397,7 +1442,7 @@ function HomeInner() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          ...getAPIHeaders()
+          ...getAPIHeadersWithProject(userId, projectId),
         },
         body: JSON.stringify({ html: modifiedHtml })
       });
@@ -1442,7 +1487,7 @@ function HomeInner() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...getAPIHeaders()
+          ...getAPIHeadersWithProject(userId, projectId),
         },
         body: JSON.stringify({
           slide_number: selectedSlide,
@@ -1498,7 +1543,7 @@ function HomeInner() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...getAPIHeaders()
+          ...getAPIHeadersWithProject(userId, projectId),
         },
         body: JSON.stringify({
           slide_number: selectedSlide,
@@ -1530,7 +1575,7 @@ function HomeInner() {
     try {
       const res = await fetch(`${API_URL}/api/slides/${state.jobId}/undo/${selectedSlide}`, {
         method: "POST",
-        headers: getAPIHeaders()
+        headers: getAPIHeadersWithProject(userId, projectId),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Undo failed");
@@ -2136,6 +2181,7 @@ function HomeInner() {
       videoCachedAt: null,
       videoMissing: false,
       videoJustGenerated: false,
+      slidesStoragePrefix: null,
     });
     setEditText("");
     setIsEditingTranscript(false);
@@ -3739,6 +3785,17 @@ function HomeInner() {
                       </label>
                     </div>
                   )}
+
+                  {state.videoMissing && !state.audioMissing && (
+                    <div className="mb-6 p-6 bg-zinc-800/50 rounded-xl border border-amber-500/40 text-center">
+                      <p className="text-amber-300 font-semibold mb-2">⚠️ 動画が保存されていませんでした</p>
+                      <p className="text-zinc-400 text-sm">
+                        動画の一時キャッシュが見つかりませんでした（生成直後にページを離れた場合や、48時間の保存期間を過ぎた場合に発生します）。<br />
+                        スライドと設定は残っているので、下の「🎬 動画を生成」から再生成してください。
+                      </p>
+                    </div>
+                  )}
+
                   <div className="flex gap-4 flex-wrap">
                     <button
                       onClick={handleGenerateVideo}
@@ -4591,6 +4648,14 @@ function HomeInner() {
                       }}
                     />
                   </label>
+                </div>
+              )}
+              {state.videoMissing && !state.audioMissing && (
+                <div className="mb-4 p-4 bg-zinc-800/50 rounded-xl border border-amber-500/40 text-center">
+                  <p className="text-amber-300 font-semibold mb-1 text-sm">⚠️ 動画が保存されていませんでした</p>
+                  <p className="text-zinc-400 text-xs">
+                    動画の一時キャッシュが見つかりませんでした。下のボタンから再生成してください。
+                  </p>
                 </div>
               )}
               <button

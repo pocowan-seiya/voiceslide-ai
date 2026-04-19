@@ -13,8 +13,9 @@ authenticates as the service role, which bypasses RLS. Path convention:
 from __future__ import annotations
 
 import os
+import glob as _glob
 import asyncio
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import httpx
 
@@ -278,4 +279,258 @@ async def delete_video(storage_path: str) -> bool:
             return False
     except Exception as e:
         print(f"[Storage] ✗ Video delete exception: {type(e).__name__}: {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Slide PNG helpers (permanent — no retention cap)
+# ---------------------------------------------------------------------------
+# Slides are the core artifact of a project, not a convenience cache, so we
+# keep them for the project's lifetime. Deletion is tied to project deletion,
+# not a time-window sweep. See supabase_migration_slides_storage.sql for the
+# bucket + RLS definitions.
+
+SLIDES_BUCKET = "slides"
+
+# Per-file timeouts match audio — PNGs are small (200-500 KB), slide_data.json
+# is tiny. The bundle-level concurrency below is what keeps aggregate latency
+# bounded on 20+ slide projects.
+_SLIDE_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
+
+
+def build_slides_prefix(user_id: str, project_id: str) -> str:
+    """Path prefix (with trailing slash) inside the `slides` bucket.
+    E.g. `{user_id}/{project_id}/slides/`.
+
+    Trailing slash matters: Supabase's list API uses the prefix literally, so
+    `u/p/slides` would also match `u/p/slides_archive/` if it existed.
+    """
+    safe_user = "".join(c for c in user_id if c.isalnum() or c in "-_")
+    safe_project = "".join(c for c in project_id if c.isalnum() or c in "-_")
+    return f"{safe_user}/{safe_project}/slides/"
+
+
+async def _upload_slide_file(
+    client: httpx.AsyncClient,
+    local_path: str,
+    storage_path: str,
+    content_type: str,
+) -> bool:
+    """Single-file upload. Caller owns the AsyncClient so we can batch with
+    parallel semaphore. x-upsert:true means repeated uploads overwrite."""
+    url = f"{SUPABASE_URL}/storage/v1/object/{SLIDES_BUCKET}/{storage_path}"
+    try:
+        with open(local_path, "rb") as f:
+            data = f.read()
+        resp = await client.post(
+            url,
+            content=data,
+            headers=_service_headers({
+                "Content-Type": content_type,
+                "x-upsert": "true",
+            }),
+        )
+        if resp.status_code in (200, 201):
+            return True
+        print(f"[Storage] ✗ Slide upload failed for {storage_path}: "
+              f"{resp.status_code} — {resp.text[:200]}")
+        return False
+    except Exception as e:
+        print(f"[Storage] ✗ Slide upload exception for {storage_path}: "
+              f"{type(e).__name__}: {e}")
+        return False
+
+
+async def upload_slides_bundle(
+    slides_dir: str,
+    user_id: str,
+    project_id: str,
+    concurrency: int = 4,
+) -> Optional[str]:
+    """Upload every slide_*.png and slide_data.json under `slides_dir` in
+    parallel. Returns the storage prefix on success (even partial), or None
+    if the whole operation was a no-op (unconfigured, missing dir, no files).
+
+    Partial success returns the prefix anyway: having some slides restored
+    is strictly better than none, and the next cache cycle (e.g. after the
+    next edit) will catch up.
+    """
+    if not is_configured():
+        print("[Storage] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set, skipping slides upload")
+        return None
+    if not os.path.isdir(slides_dir):
+        print(f"[Storage] slides_dir not found: {slides_dir}")
+        return None
+    if not user_id or not project_id:
+        print("[Storage] user_id and project_id required for slides upload")
+        return None
+
+    # Collect payload
+    png_paths = sorted(_glob.glob(os.path.join(slides_dir, "slide_*.png")))
+    json_path = os.path.join(slides_dir, "slide_data.json")
+    files: List[Tuple[str, str, str]] = []  # (local, storage_name, content_type)
+    for p in png_paths:
+        files.append((p, os.path.basename(p), "image/png"))
+    if os.path.exists(json_path):
+        files.append((json_path, "slide_data.json", "application/json"))
+
+    if not files:
+        print(f"[Storage] No slide files to upload in {slides_dir}")
+        return None
+
+    prefix = build_slides_prefix(user_id, project_id)
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _one(client: httpx.AsyncClient, local: str, name: str, ctype: str) -> bool:
+        async with sem:
+            return await _upload_slide_file(client, local, f"{prefix}{name}", ctype)
+
+    async with httpx.AsyncClient(timeout=_SLIDE_TIMEOUT) as client:
+        results = await asyncio.gather(
+            *(_one(client, local, name, ctype) for (local, name, ctype) in files),
+            return_exceptions=False,
+        )
+
+    ok = sum(1 for r in results if r)
+    total = len(files)
+    if ok == 0:
+        print(f"[Storage] ✗ Slides upload completely failed: 0/{total} for project={project_id}")
+        return None
+    if ok < total:
+        print(f"[Storage] ⚠ Slides upload partial: {ok}/{total} for project={project_id} — returning prefix anyway")
+    else:
+        print(f"[Storage] ✓ Uploaded slides bundle: {prefix} ({ok} files)")
+    return prefix
+
+
+async def list_slide_objects(prefix: str) -> List[str]:
+    """List objects under the prefix. Returns names WITHOUT the prefix
+    (e.g. `slide_001.png`, `slide_data.json`). Empty list on failure."""
+    if not is_configured() or not prefix:
+        return []
+    # Supabase Storage list API: POST /storage/v1/object/list/{bucket}
+    url = f"{SUPABASE_URL}/storage/v1/object/list/{SLIDES_BUCKET}"
+    body = {
+        "prefix": prefix,
+        "limit": 1000,
+        "offset": 0,
+        "sortBy": {"column": "name", "order": "asc"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=_SLIDE_TIMEOUT) as client:
+            resp = await client.post(
+                url,
+                json=body,
+                headers=_service_headers({"Content-Type": "application/json"}),
+            )
+        if resp.status_code != 200:
+            print(f"[Storage] ✗ list failed for {prefix}: {resp.status_code} — {resp.text[:200]}")
+            return []
+        items = resp.json() or []
+        # Defensive: the API returns objects with a `name` field that is the
+        # path relative to the prefix when prefix is non-empty.
+        return [it["name"] for it in items if isinstance(it, dict) and it.get("name")]
+    except Exception as e:
+        print(f"[Storage] ✗ list exception for {prefix}: {type(e).__name__}: {e}")
+        return []
+
+
+async def _download_slide_file(
+    client: httpx.AsyncClient,
+    storage_path: str,
+    local_path: str,
+) -> bool:
+    url = f"{SUPABASE_URL}/storage/v1/object/{SLIDES_BUCKET}/{storage_path}"
+    try:
+        resp = await client.get(url, headers=_service_headers())
+        if resp.status_code == 200:
+            os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
+            with open(local_path, "wb") as f:
+                f.write(resp.content)
+            return True
+        print(f"[Storage] ✗ Slide download failed for {storage_path}: "
+              f"{resp.status_code} — {resp.text[:200]}")
+        return False
+    except Exception as e:
+        print(f"[Storage] ✗ Slide download exception for {storage_path}: "
+              f"{type(e).__name__}: {e}")
+        return False
+
+
+async def download_slides_bundle(
+    prefix: str,
+    dest_dir: str,
+    concurrency: int = 4,
+) -> int:
+    """Download every object under `prefix` into `dest_dir`. Returns the
+    number of files that landed on disk (not just requested). Zero means
+    the caller should fall back to the "regenerate slides" path.
+
+    Files are named by their storage-side basename, so
+    `{prefix}slide_001.png` lands at `{dest_dir}/slide_001.png`.
+    """
+    if not is_configured() or not prefix:
+        return 0
+    names = await list_slide_objects(prefix)
+    if not names:
+        return 0
+
+    os.makedirs(dest_dir, exist_ok=True)
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _one(client: httpx.AsyncClient, name: str) -> bool:
+        async with sem:
+            # `name` from list() is sometimes the basename only (when prefix is
+            # non-empty) and sometimes the full path. Handle both.
+            storage_path = name if name.startswith(prefix) else f"{prefix}{name}"
+            basename = os.path.basename(storage_path)
+            local = os.path.join(dest_dir, basename)
+            return await _download_slide_file(client, storage_path, local)
+
+    async with httpx.AsyncClient(timeout=_SLIDE_TIMEOUT) as client:
+        results = await asyncio.gather(
+            *(_one(client, n) for n in names),
+            return_exceptions=False,
+        )
+
+    ok = sum(1 for r in results if r)
+    total = len(names)
+    if ok == total and ok > 0:
+        print(f"[Storage] ✓ Downloaded slides bundle: {prefix} → {dest_dir} ({ok} files)")
+    elif ok > 0:
+        print(f"[Storage] ⚠ Partial slides download: {ok}/{total} for {prefix}")
+    else:
+        print(f"[Storage] ✗ Slides download failed: 0/{total} for {prefix}")
+    return ok
+
+
+async def delete_slides_prefix(prefix: str) -> bool:
+    """Delete every object under the prefix. Used by project-delete flow so
+    orphaned slides don't accumulate. Never raises."""
+    if not is_configured() or not prefix:
+        return False
+    names = await list_slide_objects(prefix)
+    if not names:
+        return True  # nothing to delete — treat as success
+    # Supabase DELETE API expects full paths relative to the bucket root.
+    full_paths = [
+        n if n.startswith(prefix) else f"{prefix}{n}"
+        for n in names
+    ]
+    url = f"{SUPABASE_URL}/storage/v1/object/{SLIDES_BUCKET}"
+    try:
+        async with httpx.AsyncClient(timeout=_SLIDE_TIMEOUT) as client:
+            resp = await client.request(
+                "DELETE",
+                url,
+                json={"prefixes": full_paths},
+                headers=_service_headers({"Content-Type": "application/json"}),
+            )
+        if resp.status_code in (200, 204):
+            print(f"[Storage] ✓ Deleted slides prefix: {prefix} ({len(full_paths)} objects)")
+            return True
+        print(f"[Storage] ✗ Slides delete failed: {resp.status_code} — {resp.text[:200]}")
+        return False
+    except Exception as e:
+        print(f"[Storage] ✗ Slides delete exception: {type(e).__name__}: {e}")
         return False

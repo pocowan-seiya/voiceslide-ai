@@ -1741,6 +1741,8 @@ async def generate_slides_endpoint(
     x_openrouter_key: Optional[str] = Header(None),
     x_openrouter_model: Optional[str] = Header(None),
     x_openrouter_design_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Step 7 (Full AI Mode): AI generates unique custom slides from outline"""
     pipeline = get_or_create_pipeline(job_id)
@@ -1806,7 +1808,12 @@ async def generate_slides_endpoint(
         
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["slide_count"] = len(image_paths)
-        
+
+        # Fire-and-forget upload to Supabase Storage so the slides survive
+        # Railway redeploys. User is actively on the page here, so we skip
+        # the debounce and schedule immediately.
+        _schedule_slides_cache_immediate(job_id, x_user_id, x_project_id)
+
         return {
             "job_id": job_id,
             "step": 7,
@@ -1814,7 +1821,7 @@ async def generate_slides_endpoint(
             "slide_previews": slide_previews,
             "message": "AIがユニークなスライドデザインを自動生成しました"
         }
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1846,6 +1853,8 @@ async def generate_slides_batch_endpoint(
     x_openrouter_key: Optional[str] = Header(None),
     x_openrouter_model: Optional[str] = Header(None),
     x_openrouter_design_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Batch slide generation: runs in background to avoid timeout"""
     pipeline = get_or_create_pipeline(job_id)
@@ -1950,6 +1959,11 @@ async def generate_slides_batch_endpoint(
                 "total_slides": total_slides
             }
             print(f"[Batch Generate] Completed slides {start}-{end}")
+
+            # Only cache after the final batch — intermediate batches would
+            # waste bandwidth re-uploading the same early slides on every pass.
+            if is_complete:
+                _schedule_slides_cache_immediate(job_id, x_user_id, x_project_id)
             
         except Exception as e:
             print(f"[Batch Generate] Error: {e}")
@@ -2210,7 +2224,9 @@ async def update_slide_text(
     slide_number: int,
     request: SlideTextUpdateRequest,
     x_gemini_key: Optional[str] = Header(None),
-    x_gemini_model: Optional[str] = Header(None)
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Update slide text directly (no AI) and re-render"""
     if job_id not in jobs:
@@ -2284,13 +2300,16 @@ async def update_slide_text(
             await browser.close()
         
         import time
+        # Debounced re-sync of the slides bundle to Supabase Storage.
+        # Collapses rapid successive edits into a single upload (~5s window).
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
         return {
             "success": True,
             "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}",
             "can_undo": True,
             "history_count": len(slide_history[job_id][slide_number])
         }
-        
+
     except Exception as e:
         print(f"[Text Edit] Error: {e}")
         raise HTTPException(500, f"Failed to update text: {str(e)}")
@@ -2331,7 +2350,9 @@ async def update_slide_html(
     slide_number: int,
     request: SlideHtmlUpdateRequest,
     x_gemini_key: Optional[str] = Header(None),
-    x_gemini_model: Optional[str] = Header(None)
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Update slide with directly edited HTML and re-render screenshot"""
     if job_id not in jobs:
@@ -2386,13 +2407,14 @@ async def update_slide_html(
             await browser.close()
         
         import time
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
         return {
             "success": True,
             "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}",
             "can_undo": True,
             "history_count": len(slide_history[job_id][slide_number])
         }
-        
+
     except Exception as e:
         print(f"[HTML Edit] Error: {e}")
         raise HTTPException(500, f"Failed to update HTML: {str(e)}")
@@ -2414,7 +2436,9 @@ async def slide_feedback_endpoint(
     job_id: str,
     request: SlideFeedbackRequest,
     x_gemini_key: Optional[str] = Header(None),
-    x_gemini_model: Optional[str] = Header(None)
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Regenerate a slide based on user feedback"""
     if job_id not in jobs:
@@ -2477,13 +2501,14 @@ async def slide_feedback_endpoint(
         result["preview_url"] = f"{result['preview_url']}?t={int(time.time())}"
         result["history_count"] = len(slide_history.get(job_id, {}).get(slide_num, []))
         
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
         return {
             "job_id": job_id,
             **result,
             "message": f"スライド {request.slide_number} を更新しました",
             "can_undo": result["history_count"] > 0
         }
-        
+
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -2502,7 +2527,9 @@ async def regenerate_image_endpoint(
     job_id: str,
     request: ImageRegenerateRequest,
     x_gemini_key: Optional[str] = Header(None),
-    x_gemini_model: Optional[str] = Header(None)
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Regenerate only the AI-generated illustration for a specific slide"""
     if job_id not in jobs:
@@ -2533,12 +2560,13 @@ async def regenerate_image_endpoint(
         import time
         result["preview_url"] = f"{result['preview_url']}?t={int(time.time())}"
         
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
         return {
             "job_id": job_id,
             **result,
             "message": f"スライド {request.slide_number} の画像を再生成しました"
         }
-        
+
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -2549,7 +2577,9 @@ async def regenerate_image_endpoint(
 @app.post("/api/slides/{job_id}/undo/{slide_number}")
 async def undo_slide_endpoint(
     job_id: str,
-    slide_number: int
+    slide_number: int,
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Undo last slide change - restore previous version"""
     if job_id not in jobs:
@@ -2589,7 +2619,8 @@ async def undo_slide_endpoint(
         preview_url = f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}"
         
         print(f"[History] Restored slide {slide_number} to version {len(history_list)}")
-        
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
+
         return {
             "job_id": job_id,
             "slide_number": slide_number,
@@ -2598,7 +2629,7 @@ async def undo_slide_endpoint(
             "history_count": len(history_list),
             "message": f"スライド {slide_number} を前のバージョンに戻しました"
         }
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2877,6 +2908,170 @@ async def _cache_video_to_storage(
     _set_status("failed", last_err or "unknown")
 
 
+# ---------------------------------------------------------------------------
+# Slides Supabase Storage cache (permanent — no retention window)
+# ---------------------------------------------------------------------------
+# Slides are the core project artifact, so we upload PNGs + slide_data.json
+# to Supabase Storage and keep them for the lifetime of the project. This
+# keeps Railway redeploys from wiping users' slide previews.
+#
+# Design choice: generation-end uploads fire immediately (user is watching);
+# edit-endpoint uploads go through a 5-second debounce so rapid edits don't
+# thrash the bucket. Debounce state is project-scoped, not job-scoped, because
+# restore creates a new job_id but keeps the same project_id.
+
+_SLIDES_CACHE_RETRY_DELAYS_SEC = (2, 8, 30)
+_SLIDES_CACHE_DEBOUNCE_SEC = 5.0
+_slides_cache_debounce: Dict[str, asyncio.Task] = {}
+
+
+async def _cache_slides_to_storage(
+    job_id: str,
+    user_id: str,
+    project_id: str,
+):
+    """Upload the on-disk slides dir (PNG + slide_data.json) for this job to
+    Supabase Storage, then PATCH projects.slides_storage_prefix /
+    slides_cached_at. Retries transient errors up to 3 times. Failures are
+    logged with a [SlidesCache] prefix and tracked in
+    jobs[job_id]["slides_cache_status"] for diagnostics.
+
+    Runs as a background task — never blocks the user's generate/edit
+    response, never raises.
+    """
+    import httpx as _httpx
+    from datetime import timezone as _tz
+
+    slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+
+    def _set_status(status: str, detail: str = ""):
+        if job_id in jobs:
+            jobs[job_id]["slides_cache_status"] = status
+            if detail:
+                jobs[job_id]["slides_cache_detail"] = detail
+
+    try:
+        from services.supabase_storage import (
+            upload_slides_bundle, is_configured, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+        )
+    except Exception as e:
+        print(f"[SlidesCache] ✗ import failed for project={project_id}: {e}")
+        _set_status("error", "import_failed")
+        return
+
+    if not is_configured():
+        print(f"[SlidesCache] skipped (Supabase not configured) for project={project_id}")
+        _set_status("skipped", "not_configured")
+        return
+
+    if not os.path.isdir(slides_dir):
+        print(f"[SlidesCache] skipped: slides_dir missing for job={job_id}")
+        _set_status("skipped", "no_slides_dir")
+        return
+
+    _set_status("uploading")
+    last_err: Optional[str] = None
+
+    for attempt, delay_before in enumerate(((0,) + _SLIDES_CACHE_RETRY_DELAYS_SEC)):
+        if delay_before:
+            await asyncio.sleep(delay_before)
+        attempt_num = attempt + 1
+        try:
+            prefix = await upload_slides_bundle(slides_dir, user_id, project_id)
+            if not prefix:
+                last_err = "upload_returned_none"
+                print(f"[SlidesCache] attempt {attempt_num} ✗ upload returned None for project={project_id}")
+                continue
+
+            now_iso = datetime.now(_tz.utc).isoformat()
+            async with _httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.patch(
+                    f"{SUPABASE_URL}/rest/v1/projects",
+                    params={"id": f"eq.{project_id}"},
+                    headers={
+                        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                    json={"slides_storage_prefix": prefix, "slides_cached_at": now_iso},
+                )
+            if r.status_code in (200, 204):
+                print(f"[SlidesCache] ✓ attempt {attempt_num}: cached {prefix} for project={project_id}")
+                _set_status("cached", prefix)
+                return
+            else:
+                last_err = f"patch_status_{r.status_code}"
+                print(
+                    f"[SlidesCache] attempt {attempt_num} ✗ PATCH failed for project={project_id}: "
+                    f"{r.status_code} — {r.text[:200]}"
+                )
+                # Same reasoning as video cache: retrying a 4xx won't help.
+                if r.status_code in (400, 403, 404, 422):
+                    break
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            print(f"[SlidesCache] attempt {attempt_num} ✗ exception for project={project_id}: {last_err}")
+
+    print(
+        f"[SlidesCache] ✗ GAVE UP after {len(_SLIDES_CACHE_RETRY_DELAYS_SEC) + 1} attempts for "
+        f"project={project_id}: last_err={last_err}. Slides remain on local disk; "
+        f"next restore will fall back to local copy or prompt regeneration."
+    )
+    _set_status("failed", last_err or "unknown")
+
+
+def _schedule_slides_cache_immediate(job_id: str, user_id: Optional[str], project_id: Optional[str]):
+    """Fire-and-forget, no debounce. Called right after slide generation —
+    the user is actively watching, so we want the "saved" state visible ASAP.
+    """
+    if not user_id or not project_id:
+        # Anonymous / legacy session — cache silently skipped
+        print(f"[SlidesCache] skipped for job={job_id}: missing user_id={bool(user_id)} project_id={bool(project_id)}")
+        return
+    if job_id in jobs:
+        jobs[job_id]["slides_cache_status"] = "pending"
+    asyncio.create_task(_cache_slides_to_storage(job_id, user_id, project_id))
+
+
+def _schedule_slides_cache_debounced(
+    job_id: str,
+    user_id: Optional[str],
+    project_id: Optional[str],
+):
+    """Called from slide-edit endpoints. Cancels any pending task for the
+    same project_id and schedules a new one after _SLIDES_CACHE_DEBOUNCE_SEC.
+
+    This avoids re-uploading 20 PNGs every time the user tweaks a single
+    character in a slide. The penalty is that a crash during the debounce
+    window loses the most recent edit from Storage — acceptable because
+    (a) the edit is still on local disk for the current container, and
+    (b) slide_data.json carries the HTML source, so next restore would
+    regenerate a fresh PNG anyway.
+    """
+    if not user_id or not project_id:
+        return
+
+    key = project_id
+    existing = _slides_cache_debounce.get(key)
+    if existing and not existing.done():
+        existing.cancel()
+
+    async def _delayed():
+        try:
+            await asyncio.sleep(_SLIDES_CACHE_DEBOUNCE_SEC)
+        except asyncio.CancelledError:
+            return
+        try:
+            await _cache_slides_to_storage(job_id, user_id, project_id)
+        finally:
+            _slides_cache_debounce.pop(key, None)
+
+    if job_id in jobs:
+        jobs[job_id]["slides_cache_status"] = "pending"
+    _slides_cache_debounce[key] = asyncio.create_task(_delayed())
+
+
 @app.post("/api/generate-video/{job_id}")
 async def generate_video(
     job_id: str,
@@ -3083,6 +3278,17 @@ class RestoreProjectRequest(BaseModel):
     # video_cached_at against a 48h window.
     video_storage_path: Optional[str] = None
     video_cached_at: Optional[str] = None  # ISO8601 UTC
+    # Signal that the frontend's DB row had a video_url (i.e. the user reached
+    # step 10 at some point). Needed because the cache-write race can leave
+    # the DB in a state where video_url is set but video_storage_path is null
+    # (fire-and-forget upload hadn't landed before the user navigated away).
+    # When step==10 and this is non-empty but video_storage_path is falsy,
+    # we treat the project as "video expired" so the UI rewinds + banners.
+    video_url_hint: Optional[str] = None
+    # Persistent slide cache prefix (see supabase_migration_slides_storage.sql).
+    # Present whenever slides have ever been successfully uploaded. Used as a
+    # fallback when the local old_job_id slides dir is gone (Railway redeploy).
+    slides_storage_prefix: Optional[str] = None
 
 @app.post("/api/restore-project")
 async def restore_project(
@@ -3207,6 +3413,24 @@ async def restore_project(
             # Cache was present but unusable (expired or download failed)
             video_expired = True
 
+    # Race-window fallback: the user reached step 10 (video_url_hint is set)
+    # but no storage path landed in the DB. This happens when the background
+    # cache upload hadn't completed before the user navigated away, or when
+    # it silently failed. Either way the DB's video_url points at an old
+    # job_id whose MP4 is gone — so we treat this identically to an expired
+    # cache, letting the frontend rewind + show the "再生成してください" banner.
+    if (
+        not video_recovered
+        and not video_expired
+        and request.step == 10
+        and request.video_url_hint
+    ):
+        video_expired = True
+        print(
+            f"[Restore] ⚠ step=10 with video_url_hint={request.video_url_hint!r} "
+            f"but no storage path — marking expired (cache-write race or failure)"
+        )
+
     # Initialize pipeline with saved state
     pipeline = get_or_create_pipeline(job_id, audio_path)
     pipeline.raw_transcript = request.transcript
@@ -3291,6 +3515,41 @@ async def restore_project(
     elif request.slide_previews:
         print(f"[Restore] ⚠ Could not parse old job_id from slide_previews: {request.slide_previews[0][:80]}")
 
+    # Fallback: if the local old_job_id copy produced no slides AND the project
+    # has a persistent Supabase Storage prefix (Sprint 2), download the bundle
+    # from Storage. This is the path that rescues projects after a Railway
+    # redeploy. See services/supabase_storage.download_slides_bundle.
+    if recovered_slides == 0 and request.slides_storage_prefix:
+        new_slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        try:
+            from services.supabase_storage import download_slides_bundle as _dl_slides
+            downloaded = await _dl_slides(request.slides_storage_prefix, new_slides_dir)
+        except Exception as e:
+            print(f"[Restore] Slides storage download raised: {type(e).__name__}: {e}")
+            downloaded = 0
+
+        if downloaded > 0:
+            png_files = sorted(_glob.glob(os.path.join(new_slides_dir, "slide_*.png")))
+            for p in png_files:
+                pipeline.slide_images.append(p)
+            recovered_slides = len(png_files)
+            print(f"[Restore] ✓ Recovered {recovered_slides} slides from Supabase Storage "
+                  f"({request.slides_storage_prefix})")
+
+            # Rehydrate slide_data.json cache so feedback/edit endpoints work.
+            # download_slides_bundle would have placed slide_data.json into
+            # new_slides_dir if it existed in Storage.
+            try:
+                from services.ai_slide_generator import load_slide_data_from_disk
+                if load_slide_data_from_disk(job_id):
+                    print(f"[Restore] ✓ Rehydrated slide_data.json cache from Storage for {job_id}")
+                else:
+                    print(f"[Restore] ⚠ slide_data.json rehydration from Storage skipped or failed")
+            except Exception as e:
+                print(f"[Restore] ⚠ slide_data.json rehydration raised: {type(e).__name__}: {e}")
+        else:
+            print(f"[Restore] ⚠ No slides in Supabase Storage at {request.slides_storage_prefix}")
+
     # Build the authoritative slide_previews list for the NEW job_id.
     # IMPORTANT: this supersedes whatever the frontend had stored. The previous
     # approach relied on the frontend HEAD-checking saved URLs (which pointed at
@@ -3303,7 +3562,7 @@ async def restore_project(
         for p in sorted(_glob.glob(os.path.join(new_slides_dir_path, "slide_*.png"))):
             restored_slide_previews.append(f"/outputs/{job_id}_slides/{os.path.basename(p)}")
 
-    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides}, previews_returned={len(restored_slide_previews)}, audio={'recovered' if audio_recovered else 'placeholder'})")
+    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides}, previews_returned={len(restored_slide_previews)}, audio={'recovered' if audio_recovered else 'placeholder'}, storage_restore={bool(request.slides_storage_prefix)})")
 
     return {
         "job_id": job_id,

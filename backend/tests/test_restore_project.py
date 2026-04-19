@@ -233,3 +233,244 @@ def test_restore_without_slide_previews_returns_empty_list(test_client):
     data = response.json()
     assert "slide_previews" in data
     assert data["slide_previews"] == []
+
+
+# ---------------------------------------------------------------------------
+# Regression: "video silently disappears after navigating away from step 10"
+#
+# Root cause: _cache_video_to_storage runs as fire-and-forget after
+# /api/generate-video returns. If the user navigates to the dashboard before
+# the upload PATCHes projects.video_storage_path, the DB keeps:
+#   status=completed, video_url=/video/<old>, video_storage_path=NULL
+# On restore, the old video_url is stale (pointing at a recycled job_id), so
+# we must NOT treat it as playable. These tests pin the contract:
+#   step=10 AND video_url_hint set AND video_storage_path missing
+#     → video_expired=true
+# The frontend then rewinds step and shows the "動画が保存されていませんでした" banner.
+# ---------------------------------------------------------------------------
+
+
+def test_restore_step_10_without_storage_path_marks_expired(test_client):
+    """Cache-write race: project was at step 10 (video_url_hint present) but
+    video_storage_path never landed in the DB. Must be flagged as expired."""
+    response = test_client.post(
+        "/api/restore-project",
+        json={
+            "transcript": "Hello world",
+            "outline": {"title": "Test", "slides": []},
+            "polished_outline": {"title": "Test", "slides": []},
+            "step": 10,
+            "video_url_hint": "/video/00000000-0000-0000-0000-00000000bbbb?t=123",
+            # Intentionally NO video_storage_path — this is the bug trigger.
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["video_recovered"] is False
+    assert data["video_expired"] is True
+    assert data["video_url"] is None
+
+
+def test_restore_step_10_with_storage_path_but_download_fails(test_client):
+    """If storage_path is set but the download fails (Supabase unconfigured
+    in tests), existing behavior must still flag expired — not regressed."""
+    response = test_client.post(
+        "/api/restore-project",
+        json={
+            "transcript": "Hello world",
+            "outline": {"title": "Test", "slides": []},
+            "step": 10,
+            "video_storage_path": "user/project/video.mp4",
+            "video_cached_at": "2099-01-01T00:00:00+00:00",  # future = age_ok=True
+            "video_url_hint": "/video/some-old-id",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # In the test env Supabase is not configured, so download returns False.
+    # Either path (download path OR hint-based path) must land on expired=true.
+    assert data["video_recovered"] is False
+    assert data["video_expired"] is True
+
+
+def test_restore_step_9_without_storage_path_does_not_mark_expired(test_client):
+    """Negative control: at step 9, the user never reached the video screen,
+    so the hint-based 'expired' branch MUST NOT fire — otherwise we'd show
+    a bogus banner on projects that legitimately have no video yet."""
+    response = test_client.post(
+        "/api/restore-project",
+        json={
+            "transcript": "Hello world",
+            "outline": {"title": "Test", "slides": []},
+            "step": 9,
+            # No video_url_hint, no video_storage_path — fresh pre-video state.
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["video_recovered"] is False
+    assert data["video_expired"] is False
+
+
+def test_restore_step_10_without_hint_does_not_mark_expired(test_client):
+    """Edge case: older clients might not send video_url_hint. In that case
+    we can't distinguish "user reached step 10" from "restore was called
+    with step=10 for some other reason" — prefer false negative (no banner)
+    over false positive (banner on a project that has no video). The
+    frontend's defensive branch at adjustedStep===10 && !video_storage_path
+    still handles the UI rewind independently."""
+    response = test_client.post(
+        "/api/restore-project",
+        json={
+            "transcript": "Hello world",
+            "outline": {"title": "Test", "slides": []},
+            "step": 10,
+            # No video_url_hint provided (legacy client)
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # Backend cannot prove a video existed, so doesn't flag expired.
+    # (Frontend takes over with its defensive rewind logic in this case.)
+    assert data["video_expired"] is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: "slides disappear after Railway redeploys" (Sprint 2)
+#
+# Root cause: slide PNGs only lived on the Railway container's ephemeral disk,
+# so any redeploy or container reshuffle wiped them. Fix: persist the bundle
+# to Supabase Storage and download on restore when the local old_job_id dir
+# is empty. These tests pin:
+#   1. When `slides_storage_prefix` is provided AND local recovery finds 0,
+#      the backend must call download_slides_bundle and rebuild the slide dir.
+#   2. When download returns 0 (unconfigured / prefix empty), the restore
+#      response still succeeds with empty previews — the frontend shows the
+#      regen banner as usual.
+# ---------------------------------------------------------------------------
+
+
+def test_restore_downloads_slides_from_storage_when_local_missing(test_client, monkeypatch):
+    """Local old_job_id has no slides, but the project has slides_storage_prefix.
+    Backend must call download_slides_bundle and the restore response must
+    reflect the recovered slides."""
+    import os
+    from config import OUTPUT_DIR
+
+    async def fake_download(prefix, dest_dir):
+        # Simulate: supabase delivers 2 PNGs and a slide_data.json
+        os.makedirs(dest_dir, exist_ok=True)
+        with open(os.path.join(dest_dir, "slide_001.png"), "wb") as f:
+            f.write(b"\x89PNG")
+        with open(os.path.join(dest_dir, "slide_002.png"), "wb") as f:
+            f.write(b"\x89PNG")
+        with open(os.path.join(dest_dir, "slide_data.json"), "w") as f:
+            f.write('{"slides":[]}')
+        return 3
+
+    from services import supabase_storage as ss
+    monkeypatch.setattr(ss, "download_slides_bundle", fake_download)
+
+    response = test_client.post(
+        "/api/restore-project",
+        json={
+            "transcript": "Hello world",
+            "outline": {"title": "Test", "slides": []},
+            "polished_outline": {"title": "Test", "slides": []},
+            "step": 6,
+            # No slide_previews → backend can't parse old_job_id, so the local
+            # recovery path finds nothing (recovered_slides=0)
+            "slides_storage_prefix": "user-a/project-b/slides/",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    new_job_id = data["job_id"]
+
+    # Backend should have downloaded 2 PNGs → 2 previews returned (json is not a preview)
+    assert data["slides_recovered"] == 2, (
+        f"Expected 2 slides recovered from storage, got {data['slides_recovered']}"
+    )
+    assert len(data["slide_previews"]) == 2
+    for p in data["slide_previews"]:
+        assert new_job_id in p
+        assert p.startswith(f"/outputs/{new_job_id}_slides/slide_")
+
+    # Cleanup
+    import shutil
+    d = os.path.join(OUTPUT_DIR, f"{new_job_id}_slides")
+    if os.path.isdir(d):
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_restore_falls_back_gracefully_when_storage_download_returns_zero(test_client, monkeypatch):
+    """If Storage download finds nothing (e.g. not configured in test env,
+    or prefix is empty), restore must still succeed — frontend will show
+    regen banner, but server must not 500."""
+    async def zero_download(prefix, dest_dir):
+        return 0
+
+    from services import supabase_storage as ss
+    monkeypatch.setattr(ss, "download_slides_bundle", zero_download)
+
+    response = test_client.post(
+        "/api/restore-project",
+        json={
+            "transcript": "Hello world",
+            "outline": {"title": "Test", "slides": []},
+            "step": 6,
+            "slides_storage_prefix": "user-x/project-y/slides/",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["slides_recovered"] == 0
+    assert data["slide_previews"] == []
+
+
+def test_restore_prefers_local_old_job_id_over_storage(test_client, monkeypatch):
+    """When the local old_job_id dir exists on this container (same
+    container, container not yet redeployed), backend should NOT call
+    download_slides_bundle — local is faster and authoritative."""
+    import os
+    from config import OUTPUT_DIR
+
+    storage_called = {"n": 0}
+    async def tracking_download(prefix, dest_dir):
+        storage_called["n"] += 1
+        return 0
+
+    from services import supabase_storage as ss
+    monkeypatch.setattr(ss, "download_slides_bundle", tracking_download)
+
+    # Seed local slides for an old job id
+    old_job_id = "00000000-0000-0000-0000-00000000cccc"
+    slides_dir = os.path.join(OUTPUT_DIR, f"{old_job_id}_slides")
+    os.makedirs(slides_dir, exist_ok=True)
+    for i in (1, 2):
+        with open(os.path.join(slides_dir, f"slide_{i:03d}.png"), "wb") as f:
+            f.write(b"\x89PNG")
+
+    try:
+        response = test_client.post(
+            "/api/restore-project",
+            json={
+                "transcript": "Hello world",
+                "outline": {"title": "Test", "slides": []},
+                "polished_outline": {"title": "Test", "slides": []},
+                "step": 6,
+                "slide_previews": [f"https://example.com/outputs/{old_job_id}_slides/slide_001.png"],
+                "slides_storage_prefix": "user-a/project-b/slides/",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["slides_recovered"] == 2  # from local
+        # Storage should NOT have been called when local path succeeded
+        assert storage_called["n"] == 0
+    finally:
+        import shutil
+        shutil.rmtree(slides_dir, ignore_errors=True)
+        d = os.path.join(OUTPUT_DIR, f"{data['job_id']}_slides")
+        if os.path.isdir(d):
+            shutil.rmtree(d, ignore_errors=True)
