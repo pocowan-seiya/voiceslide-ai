@@ -455,17 +455,38 @@ function HomeInner() {
         // スライド生成ステップの判定（full-aiは6以降、hybridは9以降）
         const slideCompleteStep = data.workflow_mode === "full-ai" ? 6 : 9;
 
+        // Signals that slides have been generated at least once. Used to
+        // decide whether to trust step 5+ when polished_outline looks missing
+        // — if the user clearly got past the outline step (slides or video
+        // exist), we must NOT rewind them to the outline screen just because
+        // polished_outline went null for some unknown reason.
+        const hasSlideArtifact =
+          storedPreviews.length > 0 ||
+          Boolean(data.slides_storage_prefix) ||
+          Boolean(data.video_url) ||
+          Boolean(data.video_storage_path);
+
         // --- 復元データの妥当性チェック ---
         // step >= 4（アウトライン以降）なのに outline が null/undefined/非object → step=3 に戻す
-        if (adjustedStep >= 4 && (!data.outline || typeof data.outline !== "object")) {
+        if (
+          adjustedStep >= 4 &&
+          (!data.outline || typeof data.outline !== "object") &&
+          !hasSlideArtifact
+        ) {
           console.warn("[Restore] outline is missing or invalid, rolling back to step 3");
           adjustedStep = 3 as Step;
         }
         // step >= 5（full-ai でアウトライン改善以降）なのに polished_outline が null/undefined/非object → step=4 に戻す
+        // ただしスライドまで生成されていた痕跡（slidePreviews, slides_storage_prefix,
+        // video_url のいずれか）が残っている場合は rollback しない。実測で、full-ai
+        // モードの動画生成完了プロジェクトを再オープンすると polished_outline が null と
+        // 判定されて step=4 に戻るケースが観測されたため、artifact が存在するなら
+        // 信頼してスライド完了画面へ進めるようにする。
         if (
           adjustedStep >= 5 &&
           data.workflow_mode === "full-ai" &&
-          (!data.polished_outline || typeof data.polished_outline !== "object")
+          (!data.polished_outline || typeof data.polished_outline !== "object") &&
+          !hasSlideArtifact
         ) {
           console.warn("[Restore] polished_outline is missing or invalid, rolling back to step 4");
           adjustedStep = 4 as Step;
@@ -2188,10 +2209,17 @@ function HomeInner() {
     setEditedTranscript("");
   };
 
-  // Modal that gates "back to My Projects" right after a fresh video generation.
-  // UI says "videos are NOT saved" — this nudges users to download before leaving.
-  // (Internally we do cache for 48h, but we don't surface that window to users.)
+  // Modal that gates leaving a freshly-generated video screen. Shown from two
+  // entry points — the in-page "マイプロジェクトへ戻る" button and the Header's
+  // "ダッシュボードへ戻る" back-arrow. Both must honour the user's choice.
+  //
+  // The two callers want different follow-up actions: the in-page button
+  // resets the session state, while the Header awaits a boolean so it can
+  // decide whether to proceed with `router.push("/dashboard")`. We support
+  // both by stashing a promise resolver in a ref — if set, the modal's
+  // yes/no buttons resolve it; otherwise they fall back to the in-page flow.
   const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+  const leaveConfirmResolverRef = useRef<((ok: boolean) => void) | null>(null);
 
   const handleBackToProjects = () => {
     if (state.videoJustGenerated) {
@@ -2201,16 +2229,40 @@ function HomeInner() {
     }
   };
 
-  // はい → 戻る（プロジェクトをリセット）
+  // はい → 戻る
   const handleConfirmLeave = () => {
     setShowDownloadConfirm(false);
-    handleReset();
+    const resolver = leaveConfirmResolverRef.current;
+    if (resolver) {
+      // Header-initiated leave: resolve so goDashboard proceeds to /dashboard.
+      leaveConfirmResolverRef.current = null;
+      resolver(true);
+    } else {
+      // In-page "マイプロジェクトへ戻る" button: reset session state in place.
+      handleReset();
+    }
   };
 
-  // いいえ → このページに留まる（ユーザーがダウンロードできるよう）
+  // いいえ → このページに留まる
   const handleCancelLeave = () => {
     setShowDownloadConfirm(false);
+    const resolver = leaveConfirmResolverRef.current;
+    if (resolver) {
+      leaveConfirmResolverRef.current = null;
+      resolver(false);
+    }
   };
+
+  // Helper for Header.onBeforeNavigate: if the user is on the "video just
+  // generated" screen, surface the same confirm modal and block navigation
+  // until they choose. Returns true to proceed, false to stay.
+  const confirmLeaveIfNeeded = useCallback((): Promise<boolean> => {
+    if (!stateRef.current.videoJustGenerated) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      leaveConfirmResolverRef.current = resolve;
+      setShowDownloadConfirm(true);
+    });
+  }, []);
 
   // 前のステップに戻る（状態を適切にリセット）
   const goToPreviousStep = () => {
@@ -2420,11 +2472,16 @@ function HomeInner() {
         projectName={projectName}
         projectId={projectId}
         onBeforeNavigate={async () => {
+          if (!projectId) return;
+          // If the user just generated a video, require them to confirm
+          // before we leave the completion screen. Returning false aborts
+          // the Header's router.push("/dashboard").
+          const ok = await confirmLeaveIfNeeded();
+          if (!ok) return false;
           // Flush a final save with the freshest state before leaving for
           // the dashboard. Without this, an in-flight Supabase write can
           // be aborted by the navigation, leaving the DB pointing at a
           // previous session's slide URLs (= "0 slides" on next restore).
-          if (!projectId) return;
           try {
             await saveProject(stateRef.current, settingsRef.current);
           } catch (e) {

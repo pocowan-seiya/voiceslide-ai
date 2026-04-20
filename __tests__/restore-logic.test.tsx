@@ -20,6 +20,9 @@ interface RestoreData {
   outline: any;
   polished_outline: any;
   settings: { slidePreviews?: string[] };
+  video_url?: string | null;
+  slides_storage_prefix?: string | null;
+  video_storage_path?: string | null;
 }
 
 function computeRestoredState(data: RestoreData) {
@@ -30,8 +33,22 @@ function computeRestoredState(data: RestoreData) {
 
   const slideCompleteStep = data.workflow_mode === "full-ai" ? 6 : 9;
 
+  // Mirror of app/page.tsx: if the project has slide/video artifacts,
+  // skip the missing-outline/polished_outline rollback. Prevents a
+  // legitimately-completed project from being rewound to the outline
+  // screen when polished_outline went null for unknown reasons.
+  const hasSlideArtifact =
+    restoredPreviews.length > 0 ||
+    Boolean(data.slides_storage_prefix) ||
+    Boolean(data.video_url) ||
+    Boolean(data.video_storage_path);
+
   // Data validation: outline check
-  if (adjustedStep >= 4 && (!data.outline || typeof data.outline !== "object")) {
+  if (
+    adjustedStep >= 4 &&
+    (!data.outline || typeof data.outline !== "object") &&
+    !hasSlideArtifact
+  ) {
     adjustedStep = 3 as Step;
   }
 
@@ -39,7 +56,8 @@ function computeRestoredState(data: RestoreData) {
   if (
     adjustedStep >= 5 &&
     data.workflow_mode === "full-ai" &&
-    (!data.polished_outline || typeof data.polished_outline !== "object")
+    (!data.polished_outline || typeof data.polished_outline !== "object") &&
+    !hasSlideArtifact
   ) {
     adjustedStep = 4 as Step;
   }
@@ -136,13 +154,16 @@ describe("restore data validation - outline", () => {
 // ---------------------------------------------------------------------------
 
 describe("restore data validation - polished_outline", () => {
-  it("rolls back to step 4 when polished_outline is null at step >= 5 (full-ai)", () => {
+  it("rolls back to step 4 when polished_outline is null at step >= 5 (full-ai, no artifacts)", () => {
+    // With no slide/video artifacts, the rollback applies as before. This is
+    // the only regime where rollback should fire now — if the user clearly
+    // got past outline polishing (slides or video exist), we trust the step.
     const result = computeRestoredState({
-      step: 6,
+      step: 5,
       workflow_mode: "full-ai",
       outline: { slides: [] },
       polished_outline: null,
-      settings: { slidePreviews: ["http://example.com/1.png"] },
+      settings: {},
     });
     expect(result.adjustedStep).toBe(4);
   });
@@ -175,6 +196,59 @@ describe("restore data validation - polished_outline", () => {
       workflow_mode: "full-ai",
       outline: { slides: [] },
       polished_outline: { slides: [{ title: "Polished" }] },
+      settings: { slidePreviews: ["http://example.com/1.png"] },
+    });
+    expect(result.adjustedStep).toBe(6);
+  });
+
+  // The regression we're actually fixing: a user completed the full flow up
+  // to video generation, but on restore polished_outline showed up as null in
+  // the DB for reasons we haven't pinned down. Before this fix, the naive
+  // rollback rewound them to step=4 (outline screen), hiding the video + the
+  // slides they had just made. Now, any downstream artifact (slides, video,
+  // storage cache) is treated as proof the user got past outline polishing,
+  // so we don't rewind.
+  it("does NOT roll back when slidePreviews exist, even if polished_outline is null", () => {
+    const result = computeRestoredState({
+      step: 10,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: null,
+      settings: { slidePreviews: ["http://example.com/1.png", "http://example.com/2.png"] },
+    });
+    expect(result.adjustedStep).toBe(10);
+  });
+
+  it("does NOT roll back when video_url exists, even if polished_outline is null", () => {
+    const result = computeRestoredState({
+      step: 10,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: null,
+      settings: {},
+      video_url: "/video/xyz",
+    });
+    expect(result.adjustedStep).toBe(10);
+  });
+
+  it("does NOT roll back when slides_storage_prefix exists, even if polished_outline is null", () => {
+    const result = computeRestoredState({
+      step: 6,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: null,
+      settings: {},
+      slides_storage_prefix: "user/project/slides/",
+    });
+    expect(result.adjustedStep).toBe(6);
+  });
+
+  it("does NOT roll back outline check either when artifacts exist", () => {
+    const result = computeRestoredState({
+      step: 6,
+      workflow_mode: "full-ai",
+      outline: null,
+      polished_outline: null,
       settings: { slidePreviews: ["http://example.com/1.png"] },
     });
     expect(result.adjustedStep).toBe(6);

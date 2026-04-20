@@ -13,8 +13,12 @@ interface HeaderProps {
    * Lets the parent flush a final save (especially the just-generated slide
    * URLs) so the DB doesn't get left pointing at a previous session's job_id.
    * Errors are swallowed — we navigate either way so the UI never feels stuck.
+   *
+   * Return `false` to cancel the navigation (e.g. user clicked "No" on a
+   * confirmation modal). Any other return value — including throwing —
+   * still proceeds with the navigation.
    */
-  onBeforeNavigate?: () => Promise<void> | void;
+  onBeforeNavigate?: () => Promise<boolean | void> | boolean | void;
 }
 
 function timeAgoShort(date: Date): string {
@@ -35,7 +39,12 @@ export function Header({ lastSavedAt, isSaving, projectName, projectId, onBefore
     setIsLeaving(true);
     try {
       if (onBeforeNavigate) {
-        await onBeforeNavigate();
+        const result = await onBeforeNavigate();
+        if (result === false) {
+          // Parent asked us to stay (e.g. user cancelled a confirm modal).
+          setIsLeaving(false);
+          return;
+        }
       }
     } catch (err) {
       console.error("[Header] onBeforeNavigate failed (navigating anyway):", err);
