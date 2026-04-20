@@ -43,6 +43,20 @@ function computeRestoredState(data: RestoreData) {
     Boolean(data.video_url) ||
     Boolean(data.video_storage_path);
 
+  // Artifact-based step promotion: recover projects whose DB step was
+  // corrupted by the old rollback bug that wrote step=4 back to the DB
+  // even though the user had reached step 10.
+  if (adjustedStep < 10 && Boolean(data.video_url)) {
+    adjustedStep = 10 as Step;
+  } else if (
+    adjustedStep < slideCompleteStep &&
+    (Boolean(data.slides_storage_prefix) ||
+      Boolean(data.video_storage_path) ||
+      restoredPreviews.length > 0)
+  ) {
+    adjustedStep = slideCompleteStep as Step;
+  }
+
   // Data validation: outline check
   if (
     adjustedStep >= 4 &&
@@ -252,6 +266,103 @@ describe("restore data validation - polished_outline", () => {
       settings: { slidePreviews: ["http://example.com/1.png"] },
     });
     expect(result.adjustedStep).toBe(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Step promotion for projects whose DB step was corrupted by the old
+// buggy restore. The fix: if video/slide artifacts exist in the DB, trust
+// them as proof of completion and promote adjustedStep even when the DB
+// itself says step=4.
+// ---------------------------------------------------------------------------
+
+describe("artifact-based step promotion (DB corruption recovery)", () => {
+  it("promotes step=4 to step=10 when video_url is present", () => {
+    const result = computeRestoredState({
+      step: 4,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: null,
+      settings: {},
+      video_url: "/video/abc",
+    });
+    expect(result.adjustedStep).toBe(10);
+  });
+
+  it("promotes step=4 to slideCompleteStep=6 (full-ai) when slides_storage_prefix is present", () => {
+    const result = computeRestoredState({
+      step: 4,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: null,
+      settings: {},
+      slides_storage_prefix: "u/p/slides/",
+    });
+    expect(result.adjustedStep).toBe(6);
+  });
+
+  it("promotes step=4 to slideCompleteStep=9 (hybrid) when slides_storage_prefix is present", () => {
+    const result = computeRestoredState({
+      step: 4,
+      workflow_mode: "hybrid",
+      outline: { slides: [] },
+      polished_outline: null,
+      settings: {},
+      slides_storage_prefix: "u/p/slides/",
+    });
+    expect(result.adjustedStep).toBe(9);
+  });
+
+  it("promotes step=4 to step=10 based on video_storage_path via the slide path first, then video_url wins when both exist", () => {
+    // video_url present → always promoted to 10 regardless of other fields
+    const result = computeRestoredState({
+      step: 4,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: { slides: [] },
+      settings: { slidePreviews: ["http://example.com/1.png"] },
+      video_url: "/video/xyz",
+      slides_storage_prefix: "u/p/slides/",
+      video_storage_path: "u/p/video.mp4",
+    });
+    expect(result.adjustedStep).toBe(10);
+  });
+
+  it("promotes to slideCompleteStep when only slidePreviews in settings exist", () => {
+    const result = computeRestoredState({
+      step: 4,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: null,
+      settings: { slidePreviews: ["http://example.com/1.png", "http://example.com/2.png"] },
+    });
+    expect(result.adjustedStep).toBe(6);
+  });
+
+  it("does NOT promote when no artifacts are present — DB step is trusted", () => {
+    const result = computeRestoredState({
+      step: 4,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: null,
+      settings: {},
+    });
+    expect(result.adjustedStep).toBe(4);
+  });
+
+  it("does NOT promote downward when DB step is already high", () => {
+    // If DB says step=10 and there are no artifacts, we don't "demote" here
+    // — the only check that would demote is the artifact-less rollback,
+    // which requires polished_outline=null. Without that condition, step
+    // stays at 10.
+    const result = computeRestoredState({
+      step: 10,
+      workflow_mode: "full-ai",
+      outline: { slides: [] },
+      polished_outline: { slides: [] },
+      settings: {},
+    });
+    expect(result.adjustedStep).toBe(10);
   });
 });
 

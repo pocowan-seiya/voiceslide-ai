@@ -466,6 +466,47 @@ function HomeInner() {
           Boolean(data.video_url) ||
           Boolean(data.video_storage_path);
 
+        // ---------------------------------------------------------------
+        // Step promotion for projects whose DB step was corrupted by an
+        // earlier buggy restore pass.
+        // ---------------------------------------------------------------
+        // Before the recent fix, a video-generated project could get rolled
+        // back from step=10 to step=4 during restore (because
+        // `polished_outline` had gone null for reasons we still haven't
+        // pinned). That rolled-back step was then immediately saved back to
+        // the DB by the auto-save useEffect, permanently lowering the
+        // project's step. After the rollback fix, new projects don't hit
+        // this. But EXISTING projects already have step=4 in the DB — the
+        // plain rollback guard (below) can't recover them because the DB
+        // step is already low.
+        //
+        // We fix this here by promoting adjustedStep up based on the
+        // artifacts present:
+        //   - video_url present → user reached step=10 at least once
+        //   - slides_storage_prefix / video_storage_path / slidePreviews →
+        //     user reached at least slideCompleteStep
+        // The downstream video-recovery branch then takes over: if the
+        // video cache is gone, it rewinds step=10 → step=6/8 and shows the
+        // "動画が保存されていませんでした" banner.
+        // (slideCompleteStep was declared above on line 456.)
+        if (adjustedStep < 10 && Boolean(data.video_url)) {
+          console.warn(
+            `[Restore] Promoting step ${adjustedStep} → 10 based on video_url ` +
+            `(DB was corrupted by a past restore rollback; video artifact survives)`
+          );
+          adjustedStep = 10 as Step;
+        } else if (
+          adjustedStep < slideCompleteStep &&
+          (Boolean(data.slides_storage_prefix) ||
+            Boolean(data.video_storage_path) ||
+            storedPreviews.length > 0)
+        ) {
+          console.warn(
+            `[Restore] Promoting step ${adjustedStep} → ${slideCompleteStep} based on slide artifacts`
+          );
+          adjustedStep = slideCompleteStep as Step;
+        }
+
         // --- 復元データの妥当性チェック ---
         // step >= 4（アウトライン以降）なのに outline が null/undefined/非object → step=3 に戻す
         if (
