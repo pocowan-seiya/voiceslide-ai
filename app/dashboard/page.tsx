@@ -99,8 +99,14 @@ export default function DashboardPage() {
     router.push("/login");
   };
 
-  const draftProjects = projects.filter((p) => p.status === "draft");
-  const completedProjects = projects.filter((p) => p.status === "completed");
+  // Projects are already ordered by updated_at DESC from Supabase (see the
+  // `.order("updated_at", { ascending: false })` in the load effect above),
+  // so the most recently edited project is `projects[0]` regardless of
+  // status. We used to split into "作業中" / "完成済み" sections, but that
+  // buried the latest-edited project below the draft list whenever it got
+  // promoted to completed — users lost track of which one they were on.
+  // Now we show a single grid in pure recency order; the per-card status
+  // badge ("完成" / step label) carries the distinction.
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -169,48 +175,17 @@ export default function DashboardPage() {
             </button>
           </div>
         ) : (
-          <div className="space-y-10">
-            {/* 作業中 */}
-            {draftProjects.length > 0 && (
-              <section>
-                <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-4">
-                  作業中 ({draftProjects.length})
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {draftProjects.map((project) => (
-                    <ProjectCard
-                      key={project.id}
-                      project={project}
-                      onOpen={() => router.push(`/?project=${project.id}`)}
-                      onDelete={(e) => handleDelete(project.id, e)}
-                      onRename={(name) => handleRename(project.id, name)}
-                      isDeleting={deletingId === project.id}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* 完成済み */}
-            {completedProjects.length > 0 && (
-              <section>
-                <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-4">
-                  完成済み ({completedProjects.length})
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {completedProjects.map((project) => (
-                    <ProjectCard
-                      key={project.id}
-                      project={project}
-                      onOpen={() => router.push(`/?project=${project.id}`)}
-                      onDelete={(e) => handleDelete(project.id, e)}
-                      onRename={(name) => handleRename(project.id, name)}
-                      isDeleting={deletingId === project.id}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {projects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onOpen={() => router.push(`/?project=${project.id}`)}
+                onDelete={(e) => handleDelete(project.id, e)}
+                onRename={(name) => handleRename(project.id, name)}
+                isDeleting={deletingId === project.id}
+              />
+            ))}
           </div>
         )}
       </main>

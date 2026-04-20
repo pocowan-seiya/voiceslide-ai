@@ -61,6 +61,79 @@ def build_audio_path(user_id: str, project_id: str, ext: str) -> str:
     return f"{safe_user}/{safe_project}/audio{ext}"
 
 
+def build_processed_audio_path(user_id: str, project_id: str, ext: str) -> str:
+    """Storage path for the POST-cleanup/post-speed version of the audio —
+    i.e. the file that's actually fed into video generation.
+
+    We keep this separate from the original `audio{ext}` upload so:
+      (1) the user's raw recording stays recoverable if they want to re-run
+          transcribe with different cleanup settings, and
+      (2) restore can grab the processed version directly and drop it in
+          as `{new_job_id}_trimmed{ext}`, which the video generator already
+          prefers over the original.
+    """
+    ext = _safe_ext(ext)
+    safe_user = "".join(c for c in user_id if c.isalnum() or c in "-_")
+    safe_project = "".join(c for c in project_id if c.isalnum() or c in "-_")
+    return f"{safe_user}/{safe_project}/audio_processed{ext}"
+
+
+async def _upload_audio_to_path(
+    local_path: str,
+    storage_path: str,
+    ext: Optional[str] = None,
+) -> Optional[str]:
+    """Internal: upload a local file to the `audios` bucket at `storage_path`.
+
+    Shared by upload_audio (original) and upload_processed_audio (cleaned).
+    Returns the storage_path on success, or None on failure / misconfig.
+    """
+    if not is_configured():
+        print("[Storage] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set, skipping upload")
+        return None
+    if not os.path.exists(local_path):
+        print(f"[Storage] Local file not found: {local_path}")
+        return None
+
+    url = f"{SUPABASE_URL}/storage/v1/object/{AUDIOS_BUCKET}/{storage_path}"
+    if ext is None:
+        ext = os.path.splitext(local_path)[1]
+
+    # Determine content-type from extension
+    mime_map = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/m4a",
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".webm": "video/webm",
+        ".avi": "video/x-msvideo",
+        ".mkv": "video/x-matroska",
+    }
+    content_type = mime_map.get(_safe_ext(ext), "application/octet-stream")
+
+    try:
+        with open(local_path, "rb") as f:
+            data = f.read()
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.post(
+                url,
+                content=data,
+                headers=_service_headers({
+                    "Content-Type": content_type,
+                    "x-upsert": "true",
+                }),
+            )
+        if resp.status_code in (200, 201):
+            print(f"[Storage] ✓ Uploaded: {storage_path} ({len(data)/1024/1024:.1f} MB)")
+            return storage_path
+        print(f"[Storage] ✗ Upload failed for {storage_path}: {resp.status_code} — {resp.text[:200]}")
+        return None
+    except Exception as e:
+        print(f"[Storage] ✗ Upload exception for {storage_path}: {type(e).__name__}: {e}")
+        return None
+
+
 async def upload_audio(
     local_path: str,
     user_id: str,
@@ -160,6 +233,31 @@ async def download_audio(storage_path: str, local_path: str) -> bool:
 def storage_path_ext(storage_path: str) -> str:
     """Extract the extension from a storage path. Defaults to .wav."""
     return _safe_ext(os.path.splitext(storage_path)[1])
+
+
+async def upload_processed_audio(
+    local_path: str,
+    user_id: str,
+    project_id: str,
+    ext: Optional[str] = None,
+) -> Optional[str]:
+    """Upload the post-cleanup / post-speed audio to the `audio_processed`
+    storage slot. This is what restore should hand back to the video
+    generator, so the video reflects the user's cleanup choices.
+    """
+    if not user_id or not project_id:
+        return None
+    if ext is None:
+        ext = os.path.splitext(local_path)[1]
+    storage_path = build_processed_audio_path(user_id, project_id, ext)
+    return await _upload_audio_to_path(local_path, storage_path, ext)
+
+
+async def download_processed_audio(storage_path: str, local_path: str) -> bool:
+    """Download the processed audio. Returns True on success, False on 404
+    (never raises). The caller should fall back to download_audio on failure.
+    """
+    return await download_audio(storage_path, local_path)
 
 
 # ---------------------------------------------------------------------------

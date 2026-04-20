@@ -979,7 +979,11 @@ function HomeInner() {
 
       const startRes = await fetchWithRetry(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
         method: "POST",
-        headers: getAPIHeaders(),
+        // x-user-id / x-project-id must be sent so the backend can upload the
+        // post-cleanup audio to Supabase Storage. Without them, cleanup runs
+        // locally but is lost after a restore → video ends up with the raw
+        // (uncut) audio length instead of the cleaned one.
+        headers: getAPIHeadersWithProject(userId, projectId),
       });
       const startData = await startRes.json();
       if (!startRes.ok) throw new Error(startData.detail || startData.error || "Start failed");

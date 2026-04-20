@@ -956,7 +956,7 @@ async def reupload_audio(
 
 @app.post("/api/transcribe/{job_id}")
 async def transcribe(
-    job_id: str, 
+    job_id: str,
     background_tasks: BackgroundTasks,
     cleanup_audio: bool = True,
     cleanup_mode: str = "natural",  # "strict" or "natural"
@@ -964,7 +964,9 @@ async def transcribe(
     speed_factor: float = 1.0,  # 1.0, 1.2, 1.5, 2.0
     x_openai_key: Optional[str] = Header(None),
     x_gemini_key: Optional[str] = Header(None),
-    x_gemini_model: Optional[str] = Header(None)
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Step 2: Start transcription (async background processing)"""
     audio_path = jobs.get(job_id, {}).get("audio_path")
@@ -978,11 +980,19 @@ async def transcribe(
         jobs[job_id]["gemini_key"] = x_gemini_key
     if x_gemini_model:
         jobs[job_id]["gemini_model"] = x_gemini_model
-    
+    # Remember which Supabase project this job belongs to — needed so the
+    # post-cleanup / post-speed audio can be uploaded to Storage and survive
+    # a Railway redeploy. Without this, restore falls back to the ORIGINAL
+    # uncut audio and the video ends up with the pre-cleanup duration.
+    if x_user_id:
+        jobs[job_id]["user_id"] = x_user_id
+    if x_project_id:
+        jobs[job_id]["project_id"] = x_project_id
+
     jobs[job_id]["step"] = 2
     jobs[job_id]["transcribe_status"] = "processing"
     jobs[job_id]["transcribe_progress"] = "開始中..."
-    
+
     # Store settings for background task
     jobs[job_id]["cleanup_settings"] = {
         "cleanup_audio": cleanup_audio,
@@ -990,14 +1000,14 @@ async def transcribe(
         "silence_threshold": silence_threshold,
         "speed_factor": max(0.5, min(3.0, speed_factor))  # clamp to safe range
     }
-    
+
     # Start background processing
     background_tasks.add_task(
         run_transcribe_background,
         job_id,
         x_openai_key
     )
-    
+
     return {
         "job_id": job_id,
         "status": "processing",
@@ -1187,11 +1197,75 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                     print(f"[BGM Mix] Failed: {e}")
         
         print(f"[Transcribe] Completed for job {job_id}")
-        
+
+        # Persist the post-cleanup / post-speed audio to Supabase Storage so
+        # the user's cleanup choices survive restore. Without this, restore
+        # would fall back to the ORIGINAL uncut audio and the re-generated
+        # video would be longer than the user expected.
+        #
+        # Only upload when:
+        #   (1) the final audio_path differs from the original upload
+        #       (i.e. cleanup or speed actually changed something), and
+        #   (2) we have a user/project id to route the upload.
+        try:
+            user_id = jobs[job_id].get("user_id")
+            project_id = jobs[job_id].get("project_id")
+            final_audio = jobs[job_id].get("audio_path")
+            original_audio = jobs[job_id].get("original_audio_path")
+            if (
+                user_id and project_id
+                and final_audio and original_audio
+                and final_audio != original_audio
+                and os.path.exists(final_audio)
+            ):
+                # Schedule fire-and-forget so we don't hold up the user.
+                asyncio.create_task(
+                    _upload_processed_audio_fire_and_forget(
+                        final_audio, user_id, project_id, job_id
+                    )
+                )
+            else:
+                print(f"[ProcessedAudio] skipped for job={job_id} "
+                      f"(user={bool(user_id)}, project={bool(project_id)}, "
+                      f"changed={final_audio != original_audio if final_audio else False})")
+        except Exception as e:
+            print(f"[ProcessedAudio] scheduling failed: {e}")
+
     except Exception as e:
         print(f"[Transcribe] Error for job {job_id}: {e}")
         jobs[job_id]["transcribe_status"] = "error"
         jobs[job_id]["transcribe_error"] = str(e)
+
+
+async def _upload_processed_audio_fire_and_forget(
+    local_path: str,
+    user_id: str,
+    project_id: str,
+    job_id: str,
+):
+    """Upload the post-cleanup audio with a small retry loop. Mirrors the
+    video / slides cache helpers so failures are visible in Railway logs."""
+    try:
+        from services.supabase_storage import upload_processed_audio
+    except Exception as e:
+        print(f"[ProcessedAudio] ✗ import failed: {e}")
+        return
+
+    for attempt, delay in enumerate((0, 2, 8, 30)):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            path = await upload_processed_audio(local_path, user_id, project_id)
+            if path:
+                print(f"[ProcessedAudio] ✓ attempt {attempt + 1}: cached {path} for project={project_id}")
+                if job_id in jobs:
+                    jobs[job_id]["processed_audio_status"] = "cached"
+                return
+        except Exception as e:
+            print(f"[ProcessedAudio] attempt {attempt + 1} ✗ {type(e).__name__}: {e}")
+    print(f"[ProcessedAudio] ✗ GAVE UP for project={project_id} — next restore will use the uncut original")
+    if job_id in jobs:
+        jobs[job_id]["processed_audio_status"] = "failed"
 
 
 @app.get("/api/transcribe-status/{job_id}")
@@ -3319,6 +3393,18 @@ async def restore_project(
     audio_recovered = False  # True if real user audio was found; False if placeholder
 
     # Priority 1: Supabase Storage (Phase 2 — survives Railway redeploys)
+    #
+    # We download TWO files when they exist:
+    #   - the ORIGINAL upload under `{user}/{project}/audio.{ext}` → placed at
+    #     `{job_id}{ext}` so pipeline.audio_path points at the original
+    #   - the POST-CLEANUP version under `{user}/{project}/audio_processed.{ext}`
+    #     → placed at `{job_id}_trimmed{ext}` so the video generator's
+    #     existing "prefer _trimmed" logic picks it up and the regenerated
+    #     video matches the user's cleanup duration (not the raw length).
+    #
+    # If processed is absent (old project or cleanup was skipped), we just
+    # use the original — the video will match the original audio length,
+    # which is the existing legacy behavior.
     if request.audio_storage_path:
         try:
             from services.supabase_storage import download_audio as storage_download, storage_path_ext
@@ -3329,6 +3415,32 @@ async def restore_project(
                 audio_path = candidate
                 audio_recovered = True
                 print(f"[Restore] ✓ Recovered audio from Supabase Storage: {request.audio_storage_path}")
+
+                # Also try to fetch the processed (post-cleanup) version.
+                # Path convention: replace `/audio.` with `/audio_processed.`.
+                if "/audio." in request.audio_storage_path:
+                    processed_path = request.audio_storage_path.replace(
+                        "/audio.", "/audio_processed.", 1
+                    )
+                    trimmed_candidate = os.path.join(UPLOAD_DIR, f"{job_id}_trimmed{ext}")
+                    try:
+                        proc_ok = await storage_download(processed_path, trimmed_candidate)
+                        if (
+                            proc_ok
+                            and os.path.exists(trimmed_candidate)
+                            and os.path.getsize(trimmed_candidate) > 100
+                        ):
+                            print(
+                                f"[Restore] ✓ Recovered processed audio from Supabase Storage: "
+                                f"{processed_path} → {os.path.basename(trimmed_candidate)}"
+                            )
+                        else:
+                            # Not an error — processed version is optional. Most common reason
+                            # is a project that was transcribed before this change landed, or
+                            # one where cleanup was disabled so nothing got uploaded.
+                            print(f"[Restore] (no processed audio at {processed_path}, using original length)")
+                    except Exception as e:
+                        print(f"[Restore] processed audio download failed (ignored): {e}")
         except Exception as e:
             print(f"[Restore] Storage download failed (will fall back): {e}")
 
