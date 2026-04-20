@@ -107,4 +107,43 @@ describe("Header back-to-dashboard navigation", () => {
     resolveSave();
     await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
   });
+
+  // Regression for the cancel-leave modal wiring: when the parent's
+  // onBeforeNavigate returns `false` (user clicked "いいえ" on the confirm
+  // dialog), the Header must NOT navigate. It must also release its internal
+  // `isLeaving` lock so subsequent clicks work.
+  it("does NOT push to /dashboard when onBeforeNavigate returns false", async () => {
+    const onBeforeNavigate = jest.fn().mockResolvedValue(false);
+
+    render(
+      <Header projectId="proj-1" projectName="Test" onBeforeNavigate={onBeforeNavigate} />
+    );
+
+    fireEvent.click(screen.getByTitle("ダッシュボードへ戻る"));
+
+    await waitFor(() => expect(onBeforeNavigate).toHaveBeenCalledTimes(1));
+    expect(pushMock).not.toHaveBeenCalled();
+
+    // isLeaving should have been released — the link must be clickable again.
+    await waitFor(() =>
+      expect(screen.getByTitle("ダッシュボードへ戻る")).toBeInTheDocument()
+    );
+
+    // Second click proceeds normally when the parent resolves undefined.
+    onBeforeNavigate.mockResolvedValue(undefined);
+    fireEvent.click(screen.getByTitle("ダッシュボードへ戻る"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
+    expect(onBeforeNavigate).toHaveBeenCalledTimes(2);
+  });
+
+  it("navigates when onBeforeNavigate returns undefined or true (non-false)", async () => {
+    const onBeforeNavigate = jest.fn().mockResolvedValue(true);
+
+    render(
+      <Header projectId="proj-1" projectName="Test" onBeforeNavigate={onBeforeNavigate} />
+    );
+
+    fireEvent.click(screen.getByTitle("ダッシュボードへ戻る"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
+  });
 });

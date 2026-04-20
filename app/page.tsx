@@ -513,7 +513,15 @@ function HomeInner() {
         let restoredVideoUrl: string | null = data.video_url ?? null;
         let restoredVideoMissing = false;  // True if cache expired / unavailable and user was on step 10
 
-        if (adjustedStep >= 4 && (data.outline || data.polished_outline)) {
+        // Call backend restore whenever the user got past the upload step.
+        // Previously this required outline OR polished_outline to be set, but
+        // that missed projects where both were null in the DB yet slides/video
+        // clearly existed. In that blind spot the frontend would keep stale
+        // `data.video_url` (pointing at a dead old job_id) and skip the
+        // video_expired / videoMissing signalling entirely. Now we also
+        // trigger on hasSlideArtifact so the backend can download slides from
+        // Storage and signal video expiration properly.
+        if (adjustedStep >= 4 && (data.outline || data.polished_outline || hasSlideArtifact)) {
           try {
             const restoreRes = await fetch(`${API_URL}/api/restore-project`, {
               method: "POST",
