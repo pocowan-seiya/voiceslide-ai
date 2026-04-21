@@ -1103,21 +1103,81 @@ def select_layout_for_slide(
     content_type: str,
     num_points: int = 0,
     is_illustration_mode: bool = False,  # illustration mode flag
-    is_portrait: bool = False  # Portrait (9:16) mode flag
+    is_portrait: bool = False,  # Portrait (9:16) mode flag
+    design_mode: str = "flash_standard",  # Sprint C: "flash_standard" | "pro"
+    strategy_layouts: Optional[List[Dict[str, Any]]] = None,  # Pro mode: AI-chosen layouts
 ) -> Dict[str, Any]:
     """
     Select an appropriate layout for each slide, ensuring variety.
     Avoids using the same layout consecutively.
     Standard layouts focus on typography and readability.
     For illustration-enhanced slides, uses integrated image-focused layouts.
-    
-    If no cached layout is found (new design or regeneration), generates one using AI 
+
+    If no cached layout is found (new design or regeneration), generates one using AI
     or fallback logic based on content type.
+
+    Sprint C — Pro mode (`design_mode == "pro"` and `strategy_layouts` set):
+    Skip deterministic Python cycling and honor what the design_strategy AI
+    recommended for this slide. `strategy_layouts` is the JSON array the AI
+    returned (one entry per slide_number). Falls back to the deterministic
+    path when the AI didn't provide guidance or the layout_key is unknown
+    (see _custom_ai_layout for the unknown-key escape hatch).
     """
+    # --- Sprint C: Pro mode path (skips deterministic cycling) ---
+    if design_mode == "pro" and strategy_layouts:
+        # Find the AI's recommendation for this slide number. The AI is
+        # asked to produce one entry per slide in designated order, but we
+        # look it up by slide_number rather than by list index so off-by-one
+        # bugs in the AI output don't silently break us.
+        ai_pick = None
+        for entry in strategy_layouts:
+            if isinstance(entry, dict) and entry.get("slide_number") == slide_number:
+                ai_pick = entry
+                break
+
+        if ai_pick:
+            layout_key = ai_pick.get("layout_key") or ""
+            override_hints = ai_pick.get("override_hints") or ""
+
+            # Look up the layout in the known catalog. If it matches a known
+            # key (center_hero, cards, left_heavy, etc.), use that + append
+            # any AI hints to the description.
+            known = (
+                LAYOUT_TYPES.get(layout_key)
+                or PORTRAIT_LAYOUT_TYPES.get(layout_key)
+            )
+            if known:
+                base = dict(known)
+                if override_hints:
+                    base["description"] = (
+                        f"{base.get('description', '')}\n\nAI hints: {override_hints}"
+                    )
+                # Still track the pick so subsequent slides can vary
+                if job_id not in _used_layouts_cache:
+                    _used_layouts_cache[job_id] = []
+                _used_layouts_cache[job_id].append(layout_key)
+                _used_layouts_cache[job_id] = _used_layouts_cache[job_id][-10:]
+                return {"key": layout_key, **base}
+
+            # Unknown layout_key — the AI invented one. Accept it as a
+            # "custom_ai" layout that carries only the override_hints as
+            # the CSS guidance. This is the escape hatch that lets Pro
+            # users get genuinely novel layouts, at the cost of the
+            # typography/balance rules being AI-mediated via the hints
+            # text rather than pre-baked into LAYOUT_TYPES.
+            if override_hints:
+                return {
+                    "key": "custom_ai",
+                    "name": f"Custom AI Layout ({layout_key})" if layout_key else "Custom AI Layout",
+                    "description": f"AI-designed layout. Hints: {override_hints}",
+                    "best_for": [],
+                }
+        # else: fall through to deterministic path below
+
     # Initialize cache for this job
     if job_id not in _used_layouts_cache:
         _used_layouts_cache[job_id] = []
-    
+
     used = _used_layouts_cache[job_id]
     
     # Determine available layouts based on illustration mode
@@ -1524,12 +1584,17 @@ async def generate_design_strategy(
     copy_style_request: Optional[str] = None,
     facecam_position: Optional[str] = None,
     facecam_size: Optional[int] = None,
-    model_name: str = "gemini-3-flash-preview"
+    model_name: str = "gemini-3-flash-preview",
+    design_mode: str = "flash_standard",  # Sprint C: "flash_standard" | "pro"
+    total_slides_hint: Optional[int] = None,  # Used by Pro mode to request per-slide layouts
 ) -> Dict[str, Any]:
     """
     Step 1 & 2: Analyze content and define design strategy
     color_theme: If specified, use preset. If None, AI will choose appropriate colors.
     design_preference: Free-form user requirements to incorporate into design.
+    design_mode: "flash_standard" (default — deterministic Python layouts,
+                 cheaper) or "pro" (AI decides layouts/fonts/accents for
+                 each slide, better on Claude/GPT, higher token cost).
     """
     key = gemini_key or GEMINI_API_KEY
     if not key:
@@ -1624,6 +1689,73 @@ async def generate_design_strategy(
         color_theme_instruction=color_theme_instruction + design_preference_instruction + copy_style_instruction + pip_avoidance_instruction
     )
 
+    # Sprint C: in Pro mode, append a creative-freedom addendum to the system
+    # prompt that asks the AI to also choose layouts, fonts, and accents —
+    # and to keep them consistent across all slides in this project (the
+    # "LOCKED design DNA" rule). Flash standard mode skips this and uses
+    # Python's deterministic cycling in select_layout_for_slide().
+    effective_system_prompt = DESIGN_STRATEGY_SYSTEM_PROMPT
+    if design_mode == "pro":
+        layout_hint_catalog = ", ".join(sorted(LAYOUT_TYPES.keys()))
+        font_hint_catalog = ", ".join(FONT_STYLES.keys())
+        portrait_catalog = ", ".join(sorted(PORTRAIT_LAYOUT_TYPES.keys()))
+        effective_system_prompt = DESIGN_STRATEGY_SYSTEM_PROMPT + f"""
+
+# ⭐ Pro Mode — Additional Creative Responsibilities
+
+You are now responsible for picking the **layout**, **font pairing**, and
+**accent visual treatments** for this project — not just the color palette
+and concept name. The per-slide generator will honor your choices.
+
+## Consistency contract (LOCKED across all slides)
+Whatever you define in `color_palette`, `headline_font_family`,
+`body_font_family`, and `accent_treatments` is FROZEN for the rest of the
+project. Per-slide generation MUST NOT introduce new color families, new
+fonts, or conflicting treatments. Layout may vary per slide (in fact,
+variety is encouraged) but the stylistic DNA is constant.
+
+## Layout catalog to choose from (landscape)
+{layout_hint_catalog}
+
+## Portrait catalog (if project is 9:16)
+{portrait_catalog}
+
+## Font catalog (pick one for headline, one for body; must be Google Fonts)
+{font_hint_catalog}, or any other Google Font family by name.
+
+## Extended Output Fields (add these to the JSON response)
+
+```json
+{{
+  "content_analysis": {{ ... existing fields ... }},
+  "design_style": {{
+    "concept_name": "...",
+    "concept_description": "...",
+    "color_palette": {{ ... existing ... }},
+    "typography_direction": "...",
+    "visual_theme": "...",
+
+    "headline_font_family": "Zen Maru Gothic",
+    "body_font_family": "Noto Sans JP",
+    "font_imports": ["Zen+Maru+Gothic:wght@500;700;900", "Noto+Sans+JP:wght@400;700"],
+    "accent_treatments": ["soft-glow", "grain-texture", "diagonal-split"],
+    "slide_layouts": [
+      {{"slide_number": 1, "layout_key": "center_hero", "override_hints": "large gradient headline centered, subtle radial glow behind title"}},
+      {{"slide_number": 2, "layout_key": "cards", "override_hints": "3 glass cards with icon placeholders; offset alignment"}}
+      // ... one entry per slide (total_slides = {total_slides_hint or 'see Input'})
+    ]
+  }}
+}}
+```
+
+- `slide_layouts` MUST have one entry per slide (slide_number 1..N).
+- `layout_key` should be from the catalog above, OR a novel name like
+  `"asymmetric_diagonal_poster"` — in that case `override_hints` must
+  contain enough CSS guidance to make it work.
+- `override_hints` are short imperative phrases. The per-slide generator
+  will embed them directly into the layout instruction.
+"""
+
     try:
         response_text = await safe_gemini_generate(
             model_name,
@@ -1631,15 +1763,18 @@ async def generate_design_strategy(
             key,
             config=genai.GenerationConfig(
                 response_mime_type="application/json",
-                temperature=0.7
+                # Pro mode wants a bit more creativity; Flash is balanced.
+                temperature=0.75 if design_mode == "pro" else 0.7,
+                # Pro mode returns more fields, needs more tokens
+                max_output_tokens=(12288 if design_mode == "pro" else 8192),
             ),
             use_design_model=True,
-            system_prompt=DESIGN_STRATEGY_SYSTEM_PROMPT,
+            system_prompt=effective_system_prompt,
         )
 
         strategy = json.loads(response_text)
         print(f"[Design Architect] Strategy: {strategy['design_style']['concept_name']}")
-        
+
         # Force apply color theme if specified (override AI's choice)
         if color_theme and color_theme in COLOR_THEMES:
             theme = COLOR_THEMES[color_theme]
@@ -1651,18 +1786,29 @@ async def generate_design_strategy(
                 "background_start": theme['background_start'],
                 "background_end": theme['background_end']
             }
-        
+
         # Include personality analysis from outline
         personality = outline.get("personality_analysis", {})
         if personality:
             strategy["personality_analysis"] = personality
             print(f"[Design Architect] Personality: {personality.get('tone', 'N/A')}")
-        
+
+        # Sprint C: stash the mode on the strategy so downstream
+        # generate_slide_html / select_layout_for_slide don't need a new
+        # positional arg threaded through every call site. This mirrors
+        # the existing `_copy_style_request` internal-key pattern.
+        strategy["_design_mode"] = design_mode
+        if design_mode == "pro":
+            layouts = strategy.get("design_style", {}).get("slide_layouts") or []
+            print(f"[Design Architect] Pro mode — AI picked {len(layouts)} layouts")
+
         return strategy
-        
+
     except Exception as e:
         print(f"[Design Architect] Strategy generation failed: {e}")
-        return get_fallback_strategy(color_theme)
+        fallback = get_fallback_strategy(color_theme)
+        fallback["_design_mode"] = design_mode
+        return fallback
 
 
 def get_fallback_strategy(color_theme: Optional[str] = None) -> Dict[str, Any]:
@@ -1779,10 +1925,19 @@ async def generate_slide_html(
     text_style_instruction = copy_style_per_slide
     
     slide_type = determine_slide_type(slide, slide_number, total_slides)
-    
+
     # Detect portrait mode
     is_portrait = video_height > video_width
-    
+
+    # Sprint C: read the project-wide design_mode + AI-chosen slide_layouts
+    # (when present) off the strategy dict. select_layout_for_slide()
+    # honors them in Pro mode; in Flash standard mode (the default) it
+    # falls back to the deterministic cycling path.
+    design_mode = strategy.get("_design_mode", "flash_standard") if strategy else "flash_standard"
+    strategy_layouts = None
+    if design_mode == "pro" and strategy:
+        strategy_layouts = strategy.get("design_style", {}).get("slide_layouts")
+
     # Select layout for variety
     layout = select_layout_for_slide(
         job_id=job_id,
@@ -1791,7 +1946,9 @@ async def generate_slide_html(
         content_type=slide_type,
         num_points=len(raw_points),
         is_illustration_mode=is_illustration_mode,
-        is_portrait=is_portrait
+        is_portrait=is_portrait,
+        design_mode=design_mode,
+        strategy_layouts=strategy_layouts,
     )
     
     # Build layout instruction
@@ -2060,21 +2217,49 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     try:
         # Slide HTML generation (uses design model via OpenRouter).
         # Sprint A: pass SLIDE_DESIGN_SYSTEM_PROMPT via system_prompt so
-        # Claude / GPT picks it up through their native system slot. The
-        # user-slot `prompt` still contains the full SLIDE_DESIGN_PROMPT
-        # (with the role/rules redundantly inlined) — this keeps behavior
-        # 100% the same as before on Gemini while upgrading Claude/GPT.
-        # Sprint B will remove the redundant copy from `prompt`.
+        # Claude / GPT picks it up through their native system slot.
+        # Sprint B: SLIDE_DESIGN_SYSTEM_PROMPT now carries ALL invariant
+        # rules and the user prompt is just per-slide variables.
+        # Sprint C: Pro mode appends a creative-freedom rider that tells
+        # the model to honor the strategy's LOCKED DNA but otherwise
+        # compose layouts/visuals freely. strategy fields like
+        # headline_font_family and accent_treatments are added to the
+        # system prompt so the model picks them up once per session.
+        system_for_this_slide = SLIDE_DESIGN_SYSTEM_PROMPT
+        if design_mode == "pro":
+            design_style = (strategy or {}).get("design_style", {}) or {}
+            locked_headline = design_style.get("headline_font_family") or "(Noto Sans JP)"
+            locked_body = design_style.get("body_font_family") or "(Noto Sans JP)"
+            locked_accents = design_style.get("accent_treatments") or []
+            accents_str = ", ".join(locked_accents) if locked_accents else "(none specified)"
+            system_for_this_slide = SLIDE_DESIGN_SYSTEM_PROMPT + f"""
+
+# ⭐ Pro Mode — Creative Freedom
+The project-wide design_strategy already defined the following LOCKED
+identity. Use them exactly as given — do NOT invent new colors / fonts /
+treatments per slide:
+- Headline font family: {locked_headline}
+- Body font family: {locked_body}
+- Accent treatments: {accents_str}
+
+Layout is where you get freedom: you may adapt the recommended layout's
+CSS to make it feel hand-designed (offset alignment, bold type scales,
+expressive composition). Keep the stylistic DNA consistent project-wide.
+"""
+
+        # Pro mode sometimes produces richer HTML → give it more output budget
+        max_output = 12288 if design_mode == "pro" else 8192
+
         html = await safe_gemini_generate(
             model_name,
             prompt,
             key,
             config=genai.GenerationConfig(
                 temperature=0.8,
-                max_output_tokens=8192
+                max_output_tokens=max_output,
             ),
             use_design_model=True,
-            system_prompt=SLIDE_DESIGN_SYSTEM_PROMPT,
+            system_prompt=system_for_this_slide,
         )
         
         # Extract HTML from markdown code block if present (case-insensitive)
@@ -2626,9 +2811,17 @@ async def generate_all_custom_slides(
     openrouter_key: Optional[str] = None,  # OpenRouter API key (priority over Gemini)
     openrouter_model: str = "google/gemini-3-flash-preview",  # OpenRouter model ID (text generation)
     openrouter_design_model: str = "google/gemini-3-flash-preview",  # OpenRouter model ID (HTML design)
+    design_mode: str = "flash_standard",  # Sprint C: "flash_standard" | "pro"
 ) -> List[str]:
     """
-    Generate all slides using the AI Design Architect approach
+    Generate all slides using the AI Design Architect approach.
+
+    design_mode (Sprint C):
+      - "flash_standard" (default): deterministic Python layout cycling,
+        cheaper + safer for Gemini 3 Flash. Matches Sprint B behavior.
+      - "pro": AI (via strategy step) picks layouts, fonts, accent
+        treatments. Higher token cost but models like Claude Opus 4.7
+        actually get to express their strength.
     """
     print(f"[DEBUG] generate_all_custom_slides called for job {job_id}, dimensions={video_width}x{video_height}, openrouter={'yes' if openrouter_key else 'no'}, design_model={openrouter_design_model if openrouter_key else 'N/A'}")
 
@@ -2673,11 +2866,28 @@ async def generate_all_custom_slides(
         if progress_callback:
             progress_callback(0, end_slide - start_slide + 2, "デザイン戦略を生成中...")
         
-        strategy = await generate_design_strategy(outline, gemini_key, color_theme, design_preference, copy_style_request, facecam_position, facecam_size, model_name)
-        
+        strategy = await generate_design_strategy(
+            outline,
+            gemini_key,
+            color_theme,
+            design_preference,
+            copy_style_request,
+            facecam_position,
+            facecam_size,
+            model_name,
+            design_mode=design_mode,
+            total_slides_hint=total_slides,
+        )
+
         # Store copy_style_request in strategy for per-slide prompt injection
         if copy_style_request:
             strategy['_copy_style_request'] = copy_style_request
+
+        # Sprint C: mirror the mode onto strategy so per-slide functions
+        # see it even on cache-hit rehydration paths. generate_design_strategy
+        # already sets this, but in batch-continuation with a cached strategy
+        # we need to refresh the value to whatever the caller asked for now.
+        strategy['_design_mode'] = design_mode
         
         # Apply user-selected font style to strategy
         if font_style and font_style in FONT_STYLES:

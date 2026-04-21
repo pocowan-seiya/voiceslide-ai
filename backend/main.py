@@ -1936,6 +1936,9 @@ class BatchGenerateRequest(BaseModel):
     illustration_percentage: int = 50  # Percentage of slides to add illustrations (10-100)
     facecam_position: Optional[str] = None  # PiP overlay position: top-left, top-right, bottom-left, bottom-right
     facecam_size: Optional[int] = None  # PiP overlay size in px
+    # Sprint C: design mode. "flash_standard" (default) or "pro". Body takes
+    # precedence over the x-design-mode header when both are sent.
+    design_mode: Optional[str] = None
 
 
 @app.post("/api/generate-slides-batch/{job_id}")
@@ -1952,6 +1955,7 @@ async def generate_slides_batch_endpoint(
     x_openrouter_design_model: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None, alias="x-user-id"),
     x_project_id: Optional[str] = Header(None, alias="x-project-id"),
+    x_design_mode: Optional[str] = Header(None, alias="x-design-mode"),
 ):
     """Batch slide generation: runs in background to avoid timeout"""
     pipeline = get_or_create_pipeline(job_id)
@@ -2009,6 +2013,24 @@ async def generate_slides_batch_endpoint(
             openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
             openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash-preview")
             openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-3-flash-preview")
+
+            # Sprint C: resolve design_mode with this precedence:
+            #   body (request.design_mode) > header (x-design-mode) >
+            #   job-memoized > default "flash_standard"
+            # Unknown values normalize back to "flash_standard" so a client
+            # bug can't accidentally flip every project to Pro mode.
+            resolved_design_mode = (
+                request.design_mode
+                or x_design_mode
+                or jobs.get(job_id, {}).get("design_mode")
+                or "flash_standard"
+            )
+            if resolved_design_mode not in ("flash_standard", "pro"):
+                print(f"[Batch Generate] Unknown design_mode={resolved_design_mode!r}, normalizing to flash_standard")
+                resolved_design_mode = "flash_standard"
+            jobs[job_id]["design_mode"] = resolved_design_mode
+            print(f"[Batch Generate] design_mode={resolved_design_mode}")
+
             image_paths = await generate_all_custom_slides(
                 slides=slides,
                 job_id=job_id,
@@ -2035,6 +2057,7 @@ async def generate_slides_batch_endpoint(
                 openrouter_key=openrouter_key if openrouter_key else None,
                 openrouter_model=openrouter_model,
                 openrouter_design_model=openrouter_design_model,
+                design_mode=resolved_design_mode,
             )
             
             # パイプラインに保存

@@ -104,6 +104,12 @@ interface JobState {
   // dismissible yellow banner so users know they're not actually getting
   // the model they selected. Reset when a new generation starts.
   apiWarnings: string[];
+  // Sprint C: per-project design mode. "flash_standard" is the cheap
+  // deterministic path, "pro" hands layout/font/accent decisions to the
+  // AI (expensive on Claude Opus 4.7 but the only way its power shows).
+  // Persisted to projects.design_mode; defaults to flash_standard for
+  // backward compatibility with existing projects.
+  designMode: "flash_standard" | "pro";
 }
 
 const HYBRID_STEPS = [
@@ -176,6 +182,7 @@ function HomeInner() {
     videoJustGenerated: false,
     slidesStoragePrefix: null,
     apiWarnings: [],
+    designMode: "flash_standard",
   });
 
   const [editedTranscript, setEditedTranscript] = useState<string>("");
@@ -405,6 +412,10 @@ function HomeInner() {
         // new authoritative location (matches video_storage_path pattern);
         // JSONB write is kept so older clients still see the value.
         audio_storage_path: audioStoragePath,
+        // Sprint C: persist design_mode. Column has a DEFAULT 'flash_standard'
+        // in the schema, so writing this every time is safe even when the
+        // user hasn't explicitly picked a mode yet.
+        design_mode: currentState.designMode,
         settings: {
           ...settings,
           slidePreviews: currentState.slidePreviews,
@@ -691,6 +702,13 @@ function HomeInner() {
           videoJustGenerated: false,  // always false on restore; only true after a fresh generation this session
           slidesStoragePrefix: data.slides_storage_prefix ?? null,
           apiWarnings: [],  // fresh per restore; not persisted
+          // Sprint C: restore design_mode from projects row. Legacy rows
+          // (pre-migration) will return undefined → default to flash_standard
+          // so old projects keep their cheap deterministic behavior.
+          designMode:
+            (data as { design_mode?: string }).design_mode === "pro"
+              ? "pro"
+              : "flash_standard",
         }));
 
         if (resolvedAudioStoragePath) setAudioStoragePath(resolvedAudioStoragePath);
@@ -1248,6 +1266,9 @@ function HomeInner() {
           illustration_percentage: illustrationPercentage,
           facecam_position: facecamUploaded ? facecamPosition : null,
           facecam_size: facecamUploaded ? facecamSize : null,
+          // Sprint C: send the chosen design mode. Backend defaults to
+          // "flash_standard" if missing/unknown so older frontends are safe.
+          design_mode: state.designMode,
         })
       });
 
@@ -2288,6 +2309,7 @@ function HomeInner() {
       videoJustGenerated: false,
       slidesStoragePrefix: null,
       apiWarnings: [],
+      designMode: "flash_standard",
     });
     setEditText("");
     setIsEditingTranscript(false);
@@ -4453,6 +4475,57 @@ function HomeInner() {
                 </>
               </div>
 
+
+              {/* Sprint C: 品質モード選択
+                  Flash 標準 = Python の決定論的レイアウト選択（速い・安い、
+                  Gemini 3 Flash で十分）。Pro = AI にレイアウト・フォント・
+                  アクセント決定権を渡す（Claude Opus 4.7 / GPT-5 の性能が
+                  実際に差別化される代わりに、トークン消費は増える）。 */}
+              <div className="mb-4 p-4 bg-zinc-800/40 rounded-xl border border-zinc-700">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-semibold text-zinc-200">🎯 品質モード</label>
+                  <span className="text-xs text-zinc-500">
+                    プロジェクトごとに切替え可能
+                  </span>
+                </div>
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => updateState({ designMode: "flash_standard" })}
+                    disabled={state.isProcessing}
+                    className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      state.designMode === "flash_standard"
+                        ? "bg-blue-600 text-white border-2 border-blue-400"
+                        : "bg-zinc-700/60 text-zinc-300 border-2 border-transparent hover:bg-zinc-700"
+                    }`}
+                  >
+                    ⚡ Flash 標準<br />
+                    <span className="text-xs opacity-80">速い・安い・Gemini 向け</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateState({ designMode: "pro" })}
+                    disabled={state.isProcessing}
+                    className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      state.designMode === "pro"
+                        ? "bg-purple-600 text-white border-2 border-purple-400"
+                        : "bg-zinc-700/60 text-zinc-300 border-2 border-transparent hover:bg-zinc-700"
+                    }`}
+                  >
+                    ✨ Pro<br />
+                    <span className="text-xs opacity-80">AI 自由度高・Opus/GPT-5 向け</span>
+                  </button>
+                </div>
+                {state.designMode === "pro" && (
+                  <p className="text-xs text-amber-300 mt-2 leading-relaxed">
+                    ⚠️ Pro モードは AI にレイアウト・配色・フォント判断を委ねます。
+                    Claude Opus 4.7 / GPT-5 等の上位モデル指定時に最大限効果を発揮。
+                    Gemini 3 Flash の場合は効果が限定的です。
+                    <br />
+                    コスト目安: Opus 4.7 で 10 スライドあたり約 $3〜$5 相当。
+                  </p>
+                )}
+              </div>
 
               <div className="flex gap-3 justify-center">
                 <button
