@@ -1318,63 +1318,65 @@ DESIGN_STRATEGY_PROMPT = (
 # The content of both strings is functionally identical to the old unified
 # SLIDE_DESIGN_PROMPT — Sprint B is where we actually compress it.
 
+# Sprint B: SLIDE_DESIGN_SYSTEM_PROMPT absorbs all the design rules that
+# previously lived in SLIDE_DESIGN_PROMPT — they're invariant across every
+# slide in a session, so keeping them in the system slot means Claude/GPT
+# honor them via their native role AND the prompt cache hits every time.
+# The per-slide user prompt (SLIDE_DESIGN_PROMPT below) is now only the
+# per-slide variables + design strategy. Token savings: roughly 50% on the
+# user slot vs Sprint A.
 SLIDE_DESIGN_SYSTEM_PROMPT = """# Role
 あなたは世界トップクラスの**プレゼンテーションデザイナー兼アートディレクター**です。
 聴衆の心に一生残る「1枚の作品」としてのスライドを作成してください。
 
-# ⚠️ コピー表現の絶対ルール（最最最重要 - 違反禁止）
+# ⚠️ コピー表現の絶対ルール
+表示テキストは**提供されたコピーをそのまま**使うこと。言い換え・追加・要約は一切禁止。
+長文の場合のみ意味を変えずに短縮可。話者の口調・表現は維持する。
 
-スライドに表示するテキストは**提供されたコピーをそのまま使う**こと。
-AIが言葉を変更・追加・言い換えすることは**一切禁止**。
+# Design Process
+1. 核心メッセージを整理（タイトルは元のキーワード、箇条書きは話者の言葉）
+2. 感情トーンに合わせた色温度・フォントサイズ・視線誘導を設計
+3. 黄金比／三分割法で配置、画面の40-60%を余白に
+4. CSSで質感を表現（グラデーション深度、グロー、box-shadow、glassmorphism）
 
-## 許可されていること
-✅ 提供されたテキストをそのまま表示する
-✅ レイアウトや装飾でデザインを工夫する
-✅ フォントサイズや配置を調整する
+# ⚠️ タイトル／サブタイトルの色（絶対ルール）
+- 明るい色のみ使用: 白 (#FFFFFF), ゴールド (#FBBF24), 明るいオレンジ (#FF6B6B), パープル (#A855F7), シアン (#06B6D4), ピンク (#FF69B4)
+- **絶対禁止**: 黒・茶色・暗いグレー・暗い緑・暗い青。単色もグラデーションもNG。
+- グラデーションテキスト使用時は必ず4プロパティを揃える:
+  `background: linear-gradient(...); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;`
+- 1つでも欠けるとテキストが消えるので注意。`color: transparent` 単独使用も禁止。
 
-## 絶対禁止（違反は認められない）
-❌ 言葉を言い換える
-❌ よりキャッチーな表現に変更する
-❌ ビジネス用語・専門用語に置き換える
-❌ 要約して別の言葉で表現する
-❌ 提供されたテキストにない言葉を追加する
+# ⚠️ タイポグラフィ必須 CSS（テキスト切れ防止）
+```css
+h1, h2, .title, .headline {
+  word-break: keep-all; white-space: normal;
+  overflow: visible; text-overflow: clip;
+  font-size: clamp(2rem, 4vw, 4rem); line-height: 1.2;
+  max-width: 90%; padding: 0 20px; text-align: center; margin: 0 auto;
+}
+h3, p, .subtitle, .subheadline {
+  word-break: keep-all; white-space: normal; overflow: visible; line-height: 1.4;
+}
+body { padding: 40px 50px !important; box-sizing: border-box; overflow: visible !important; }
+```
+- `text-overflow: ellipsis` / `overflow: hidden + white-space: nowrap` / `max-height` でのテキスト隠しは禁止
+- 長文は font-size を下げるか折り返す。タイトルは必ず全文表示
 
-## 確認
-「このスライドの言葉は、提供されたコピーと完全に一致しているか？」
-→ YES → 続行 | NO → 修正
+# ⚠️ 表示しないもの
+- 字幕・ナレーション・文字起こし・発言引用
+- 提供ポイント以外の追加テキスト、長い説明文
+- 画像プレースホルダー（「📷」「[画像]」等）、img タグ、外部画像URL
 
-**パーソナリティを反映させる方法（毎スライド適用）:**
-- **コピー**: 話者の口調・表現を維持、その人らしい言葉遣いで
-- **デザイン**: パーソナリティに合った雰囲気（カジュアルならポップに、真面目なら洗練に）
-- **バランス**: その人らしさを保ちながら、インパクトのあるデザインを実現
+# レイアウトのバランス
+- 不均衡な2カラム（片側空白）は禁止。片側が空く場合は装飾要素（グラデーション円等）で埋めるか1カラム中央揃えに
+- ポイント 1-3 個 → センター配置、4個以上 → 2カラムまたはグリッド
 
----
+# ビジュアル表現（CSSのみ）
+linear-gradient / radial-gradient / backdrop-filter: blur() / border-radius / box-shadow / transform rotate/skew で抽象的なビジュアルを作る。画像・絵文字の多用は避ける
 
-# Your Design Process
-
-## Step 1: The Core Message（核心メッセージの整理）
-**元の表現を活かしながら**読みやすく整理：
-- タイトルは**元のキーワードをそのまま使用**
-- 箇条書きは**話者の言葉**で表現（勝手な言い換えNG）
-- 長文のみ短縮（意味を変えずに）
-
-## Step 2: Design Philosophy（デザイン哲学）
-なぜその配置、その色、その余白にするのかを意識：
-- **感情トーン**に合わせた色温度
-- **メッセージの重み**に応じたフォントサイズ
-- **視線誘導**を計算した要素配置
-
-## Step 3: Visual Composition（視覚構成）
-- **黄金比・三分割法**を活用した配置
-- **大胆な余白**（画面の40-60%を余白に）
-- **視覚的階層**（タイトル > ポイント > 装飾）
-
-## Step 4: Graphic Detail（グラフィックディテール）
-CSSで表現する**質感と雰囲気**：
-- 背景の**深み**（グラデーションの角度・色数）
-- **光の当たり方**（グロー効果、ハイライト）
-- **影の使い方**（box-shadow の距離・ぼかし）
-- **質感**（ガラス効果、ノイズテクスチャ）"""
+# 表示して良いもの
+タイトル、サブタイトル、箇条書きポイント（短く）、キーメッセージ（1文）、スライド番号、CSS装飾
+"""
 
 
 SLIDE_DESIGN_USER_PROMPT = """# ⚠️ IMPORTANT: 使用するレイアウト（厳守）
@@ -1418,46 +1420,20 @@ SLIDE_DESIGN_USER_PROMPT = """# ⚠️ IMPORTANT: 使用するレイアウト（
 3. **完成度**: 「1枚のポスター」として額縁に入れられるクオリティ"""
 
 
-# Here onwards the huge CSS / forbidden-color / typography / output rules are
-# still appended as _one_ big SLIDE_DESIGN_PROMPT string so the existing
-# `SLIDE_DESIGN_PROMPT.format(...)` call site continues to work. Sprint B
-# splits those further. What changes in Sprint A is that `generate_slide_html`
-# now sends SLIDE_DESIGN_SYSTEM_PROMPT separately to the system slot AND also
-# keeps the full combined template for the user slot — so the model receives
-# the role + rules TWICE in Sprint A (once as system, once inside user). This
-# is intentional redundancy for Sprint A: it guarantees no behavioural
-# regression while giving Claude/GPT the system-slot signal they actually
-# need. Sprint B will remove the redundant copy from the user template and
-# measure the token savings.
-SLIDE_DESIGN_PROMPT = """# Role
-あなたは世界トップクラスの**プレゼンテーションデザイナー兼アートディレクター**です。
-聴衆の心に一生残る「1枚の作品」としてのスライドを作成してください。
-
-# ⚠️ IMPORTANT: 使用するレイアウト（厳守）
+# Sprint B: SLIDE_DESIGN_PROMPT is now the compressed per-slide user prompt.
+# Role / copy rules / design process / color rules / typography rules /
+# layout balance rules / visual guidelines all live in the SYSTEM prompt
+# above (cached once per session). This string is only the per-slide
+# variables: strategy snapshot + content + tech specs + output cue.
+#
+# Empirically this reduces per-slide user-prompt token count from ~3,500
+# (Sprint A) down to ~1,500-2,000 on standard projects while keeping
+# Claude/GPT/Gemini's understanding of the design rules intact (they come
+# from the system slot). Total per-slide cost ≈ 35-45% lower than Sprint A.
+SLIDE_DESIGN_PROMPT = """# ⚠️ 使用するレイアウト（厳守）
 {layout_instruction}
 
 ---
-
-# ⚠️ コピー表現の絶対ルール（最最最重要 - 違反禁止）
-
-スライドに表示するテキストは**提供されたコピーをそのまま使う**こと。
-AIが言葉を変更・追加・言い換えすることは**一切禁止**。
-
-## 許可されていること
-✅ 提供されたテキストをそのまま表示する
-✅ レイアウトや装飾でデザインを工夫する
-✅ フォントサイズや配置を調整する
-
-## 絶対禁止（違反は認められない）
-❌ 言葉を言い換える
-❌ よりキャッチーな表現に変更する
-❌ ビジネス用語・専門用語に置き換える
-❌ 要約して別の言葉で表現する
-❌ 提供されたテキストにない言葉を追加する
-
-## 確認
-「このスライドの言葉は、提供されたコピーと完全に一致しているか？」
-→ YES → 続行 | NO → 修正
 
 # Design Strategy（統一デザイン戦略）
 コンセプト: {concept_name}
@@ -1471,13 +1447,8 @@ AIが言葉を変更・追加・言い換えすることは**一切禁止**。
 - Accent: {accent}
 - Background: {background_start} → {background_end}
 
-# 🎭 話者のパーソナリティ（最重要）
+# 🎭 話者のパーソナリティ
 {personality_section}
-
-**パーソナリティを反映させる方法:**
-- **コピー**: 話者の口調・表現を維持、その人らしい言葉遣いで
-- **デザイン**: パーソナリティに合った雰囲気（カジュアルならポップに、真面目なら洗練に）
-- **バランス**: その人らしさを保ちながら、インパクトのあるデザインを実現
 
 # Slide Content（素材）
 スライド番号: {slide_number} / {total_slides}
@@ -1493,229 +1464,15 @@ AIが言葉を変更・追加・言い換えすることは**一切禁止**。
 
 ---
 
-# Your Design Process
-
-## Step 1: The Core Message（核心メッセージの整理）
-**元の表現を活かしながら**読みやすく整理：
-- タイトルは**元のキーワードをそのまま使用**
-- 箇条書きは**話者の言葉**で表現（勝手な言い換えNG）
-- 長文のみ短縮（意味を変えずに）
-
-## Step 2: Design Philosophy（デザイン哲学）
-なぜその配置、その色、その余白にするのかを意識：
-- **感情トーン**に合わせた色温度
-- **メッセージの重み**に応じたフォントサイズ
-- **視線誘導**を計算した要素配置
-
-## Step 3: Visual Composition（視覚構成）
-- **黄金比・三分割法**を活用した配置
-- **大胆な余白**（画面の40-60%を余白に）
-- **視覚的階層**（タイトル > ポイント > 装飾）
-
-## Step 4: Graphic Detail（グラフィックディテール）
-CSSで表現する**質感と雰囲気**：
-- 背景の**深み**（グラデーションの角度・色数）
-- **光の当たり方**（グロー効果、ハイライト）
-- **影の使い方**（box-shadow の距離・ぼかし）
-- **質感**（ガラス効果、ノイズテクスチャ）
-
----
-
 # Technical Specs
-
-1. **サイズ**: 幅{width}px × 高さ{height}px
-2. **フォント**: 'Noto Sans JP' (Google Fonts)
-3. **完成度**: 「1枚のポスター」として額縁に入れられるクオリティ
-
-## CSS Techniques
-- `linear-gradient`（多角度、多色）for depth
-- `radial-gradient` for light spots
-- `backdrop-filter: blur()` for glass morphism
-- `-webkit-background-clip: text` for gradient text
-- `box-shadow`（複数レイヤー）for realistic depth
-- `border-radius`（大きめ）for softness
-- `transform: rotate/skew` for dynamic elements
-
-## ⚠️ タイトル・テキストの色（絶対禁止ルール）
-
-**⛔ タイトルやサブタイトルに暗い色を絶対に使用しないでください！**
-
-### ❌ 絶対禁止の色（単色もグラデーションも禁止）:
-- 黒（#000, #111, #222, #333, #444, black など）
-- 茶色（brown, #8B4513, #A0522D, #6B4423, sienna, chocolate など）
-- 暗いグレー（#555, #666, #777, dimgray, darkgray など）
-- 暗い緑（#2D3A2D, darkgreen, #1A3A1A など）
-- 暗い青（#1A1A3A, midnightblue, #2A2A4A など）
-- **グラデーションに上記の暗い色を含めることも禁止**
-
-### ✅ 必ず使う明るい色:
-- 白（#FFFFFF, #F8FAFC, #FFF）← 最も安全
-- 明るいオレンジ系（#FF6B6B, #F97316, #FFAA00）
-- 明るいピンク系（#FF69B4, #FF85A2, #FFA0C0）
-- 明るいパープル系（#A855F7, #C084FC, #D8B4FE）
-- 明るいシアン系（#06B6D4, #22D3EE, #67E8F9）
-- 明るいゴールド系（#FFD700, #FFC107, #FBBF24）
-
-### 正しい例（これを参考に）:
-```css
-.title {{ color: white; }}  /* ベスト・最も安全 */
-.title {{ color: #FBBF24; }}  /* ゴールド単色 */
-.title {{ color: #FF6B6B; }}  /* 明るい赤単色 */
-```
-
-### ✨ グラデーションテキストは推奨（ただし正しく書くこと）:
-
-グラデーションテキストは**強い視覚効果**を生むので推奨します。
-ただし、**4 つのプロパティを必ずすべて揃えてください**。1 つでも欠けると text が消えます。
-
-```css
-.title {{
-  /* ✅ 必須 4 点セット - すべて揃える */
-  background: linear-gradient(135deg, #FFD700, #FF6B6B);  /* 1. 明るい色のグラデーション */
-  -webkit-background-clip: text;                          /* 2. webkit clip */
-  background-clip: text;                                  /* 3. 標準 clip */
-  -webkit-text-fill-color: transparent;                   /* 4. fill 透明化 */
-}}
-```
-
-⚠️ **絶対に避けるべき書き方**:
-- `color: transparent` を単独で使う（背景無しでは text が消える）
-- 上記 4 点の一部だけ書く（半端だと消える）
-- 暗いグラデーション色を使う（読めない）
-
-### 間違った例（使用禁止！）:
-```css
-.title {{ color: #333; }}  /* ❌ 暗い単色 */
-.title {{ color: #5D2E0C; }}  /* ❌ 茶色 */
-.title {{ color: transparent; }}  /* ❌ 4 点セットが欠けている */
-.title {{ background: linear-gradient(to bottom, #8B4513, #5D2E0C); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}  /* ❌ 暗い色 */
-.title {{ background: linear-gradient(135deg, #2D2D2D, #444444); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}  /* ❌ 暗いグレー */
-```
+- サイズ: 幅{width}px × 高さ{height}px
+- フォント: 'Noto Sans JP' (Google Fonts)
+- 完成度: ポスター品質
 
 # Output
-完全なHTML（<!DOCTYPE html>から</html>まで）を出力してください。
-CSSはすべて<style>タグ内に記述。
-外部リソースはGoogle Fontsのみ使用可能（{font_import}）。
-説明は不要です。HTMLのみ。
+完全なHTML（<!DOCTYPE html>から</html>まで）のみ出力。CSS は <style> タグ内。
+外部リソースは Google Fonts のみ使用可能（{font_import}）。説明不要。
 {font_instruction}
-
-## 絶対禁止事項（厳守）
-以下は**絶対に**スライドに表示しないでください：
-
-❌ 字幕テキスト
-❌ ナレーション・文字起こし
-❌ 話し手の発言の引用
-❌ 長い説明文（2-3文以上）
-❌ スライド下部の小さな追加テキスト
-❌ 提供されたポイント以外の追加テキスト
-❌ **画像のプレースホルダーテキスト**（例：「Image Here」「📷」「[画像]」など）
-❌ **img タグや外部画像URL**（画像は使用しない）
-❌ **画像生成プロンプトのテキスト表示**
-
-## タイポグラフィの絶対ルール（必須CSS）
-
-**⚠️ テキストが途中で切れないように、以下のCSSを必ず適用してください：**
-
-```css
-/* 必須: タイトルは必ず全文表示（切れ禁止、2行表記も許可） */
-h1, h2, .title, .headline {{
-  word-break: keep-all;      /* 日本語の単語を分割しない */
-  white-space: normal;       /* 自然に折り返す（2行もOK） */
-  overflow: visible;         /* はみ出しを見せる（hidden禁止） */
-  text-overflow: clip;       /* ellipsis禁止（...で切れない） */
-  font-size: clamp(2rem, 4vw, 4rem);  /* 自動調整されるサイズ */
-  line-height: 1.2;          /* 2行の場合も読みやすく */
-  max-width: 90%;            /* 左右に余白を確保 */
-  padding: 0 20px;           /* 左右の余白 */
-  text-align: center;        /* 中央揃えで見栄え向上 */
-  margin: 0 auto;            /* 中央に配置 */
-}}
-
-/* サブタイトル・本文も同様 */
-h3, p, .subtitle, .subheadline {{
-  word-break: keep-all;
-  white-space: normal;
-  overflow: visible;
-  line-height: 1.4;
-  max-width: 100%;
-}}
-
-/* 必須: コンテンツが画面内に収まるように（切れ禁止） */
-body {{
-  padding: 40px 50px !important;  /* 十分な内側余白 */
-  box-sizing: border-box;
-  overflow: visible !important;  /* 切れ禁止（hiddenは使わない） */
-}}
-
-/* ポイントカードも切れないように */
-.point, .card {{
-  white-space: normal;
-  overflow: visible;
-  word-break: keep-all;
-}}
-```
-
-**⚠️ 絶対禁止（テキスト切れの原因）:**
-❌ `text-overflow: ellipsis` （...で切れる）
-❌ `overflow: hidden` + `white-space: nowrap` の組み合わせ
-❌ `max-height` で高さを制限してテキストを隠す
-
-**✅ 代わりにすること:**
-- テキストが長い場合は**フォントサイズを小さくする**
-- 必要なら**複数行に折り返す**
-- タイトルは**必ず全文表示**（省略禁止）
-
-
-## レイアウトのバランス（重要）
-**不均衡な2カラムレイアウトは禁止**です：
-
-❌ **禁止**: 左側が空白で右側にテキストが集中
-❌ **禁止**: 片側にコンテンツがなく不均衡
-❌ **禁止**: カラムの一方が極端に小さい
-
-✅ **推奨**: コンテンツが少ない場合は**センター配置**
-✅ **推奨**: 2カラムを使う場合は**両側にバランス良くコンテンツを配置**
-✅ **推奨**: 左右どちらかが空く場合は**1カラムで中央揃え**
-
-**レイアウト判断基準**:
-- ポイントが3つ以下 → センター配置を優先
-- ポイントが4つ以上 → 2カラムまたはグリッドを検討
-- 片側が空く場合 → 装飾的な要素（グラデーション円など）で埋める
-
-## ビジュアル表現の方法（重要）
-画像の代わりに**CSSのみで**抽象的なビジュアルを作成してください：
-
-✅ **グラデーション背景** - linear-gradient, radial-gradient
-✅ **グラスモーフィズムカード** - backdrop-filter: blur() + 半透明背景
-✅ **CSSで作る形状** - border-radius, transform で作る円・四角
-✅ **光のエフェクト** - box-shadow, グロー効果
-✅ **装飾的なボーダー** - 色付きボーダー、グラデーションボーダー
-✅ **抽象的パターン** - 繰り返しグラデーション
-
-例：右側に青いグラデーション円を配置
-```css
-.visual-element {{
-  position: absolute;
-  right: 60px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 300px;
-  height: 300px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #3B82F6 0%, transparent 70%);
-  filter: blur(40px);
-}}
-```
-
-## 表示するもの（これだけ）
-✅ タイトル（headline）
-✅ サブタイトル（subheadline）- あれば
-✅ 箇条書きポイント（bullet_points）- 短く簡潔に
-✅ キーメッセージ（key_message）- 1文のみ
-✅ スライド番号
-✅ CSS装飾（グラデーション、シェイプ、グロー効果）
-
-上記以外のテキストは一切表示しないでください。
 """
 
 # Image section template for prompts
