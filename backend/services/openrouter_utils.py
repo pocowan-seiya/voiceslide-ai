@@ -91,7 +91,7 @@ async def openrouter_generate(
     Compatible interface with safe_gemini_generate for easy swapping.
 
     Args:
-        model_name: OpenRouter model ID (e.g., "google/gemini-2.5-flash", "anthropic/claude-opus-4-6")
+        model_name: OpenRouter model ID (e.g., "google/gemini-2.5-flash", "anthropic/claude-opus-4-7")
         prompt: Text prompt or list of message dicts
         key: OpenRouter API key
         max_retries: Max retry attempts
