@@ -4,7 +4,17 @@ import json
 import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 
-async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: Optional[genai.GenerationConfig] = None, max_retries: int = 5, openrouter_key: Optional[str] = None, openrouter_model: Optional[str] = None, use_design_model: bool = False) -> str:
+async def safe_gemini_generate(
+    model_name: str,
+    prompt: Any,
+    key: str,
+    config: Optional[genai.GenerationConfig] = None,
+    max_retries: int = 5,
+    openrouter_key: Optional[str] = None,
+    openrouter_model: Optional[str] = None,
+    use_design_model: bool = False,
+    system_prompt: Optional[str] = None,
+) -> str:
     """
     Safely call AI API with robust retry logic.
     If openrouter_key is provided, routes through OpenRouter instead of Gemini.
@@ -12,6 +22,13 @@ async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: O
 
     use_design_model: If True, uses the design model (for HTML slide generation)
                       instead of the text model (for outline/transcript).
+    system_prompt: Optional system instruction. On Gemini, passed to
+                   `genai.GenerativeModel(system_instruction=...)`. On OpenRouter,
+                   prepended to `messages` as `{"role": "system", ...}`. Before
+                   this existed, callers stuffed role-like guidance into `prompt`
+                   which worked on Gemini (Gemini has a soft "role" convention)
+                   but NOT on Claude through OpenRouter — Claude keys hard on
+                   the system slot, so design prompts underperformed.
     """
     # Check contextvars for OpenRouter config if not explicitly passed
     if not openrouter_key:
@@ -50,11 +67,18 @@ async def safe_gemini_generate(model_name: str, prompt: Any, key: str, config: O
             json_mode=json_mode,
             max_tokens=max_tokens,
             temperature=temperature,
+            system_prompt=system_prompt,
         )
 
     # Direct Gemini API
     genai.configure(api_key=key)
-    model = genai.GenerativeModel(model_name)
+    # When a system_prompt is provided, pass it via Gemini's native
+    # system_instruction slot. Passing None there would error on some
+    # google-generativeai versions, so we only supply the kwarg when set.
+    if system_prompt:
+        model = genai.GenerativeModel(model_name, system_instruction=system_prompt)
+    else:
+        model = genai.GenerativeModel(model_name)
 
     # Increased delays: 10, 30, 60, 120, 240 seconds
     delays = [10, 30, 60, 120, 240]

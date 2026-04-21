@@ -1217,19 +1217,15 @@ def select_layout_for_slide(
         **LAYOUT_TYPES[layout_key]
     }
 
-DESIGN_STRATEGY_PROMPT = """# Role definition
+# Sprint A: prompt is split into a stable system portion (role + process +
+# output schema) and a per-call user portion (title + slide list + optional
+# color theme). The system portion is literally unchanged from the old single
+# DESIGN_STRATEGY_PROMPT, but moved into the system slot so Claude (and any
+# future system-respecting model) picks it up properly. Sprint B will trim
+# the content of this string — don't shorten it here.
+DESIGN_STRATEGY_SYSTEM_PROMPT = """# Role definition
 あなたは、世界最高峰のクリエイティブエージェンシーに所属する「AIデザインアーキテクト」です。
 あなたの使命は、提供されたプレゼンテーション全体の内容を深く理解し、統一感のある「オーダーメイドのスライドデザイン戦略」を設計することです。
-
-# User Input Content
-プレゼンテーションタイトル: {presentation_title}
-
-スライド内容:
-{slides_content}
-
-{color_theme_instruction}
-
----
 
 # Process
 
@@ -1248,7 +1244,7 @@ DESIGN_STRATEGY_PROMPT = """# Role definition
    - 自然・安らぎ → グリーン、ターコイズ系
    - プロフェッショナル → ブルー、グレー系
    - 情熱・エネルギー → レッド、オレンジ系
-   
+
    以下の形式で指定:
    - primary: メインカラー (HEX)
    - secondary: サブカラー (HEX)
@@ -1260,37 +1256,179 @@ DESIGN_STRATEGY_PROMPT = """# Role definition
 
 # Output Format (JSON)
 ```json
-{{
-  "content_analysis": {{
+{
+  "content_analysis": {
     "core_message": "...",
     "emotional_tone": "...",
     "key_concepts": ["...", "...", "..."],
     "target_audience": "..."
-  }},
-  "design_style": {{
+  },
+  "design_style": {
     "concept_name": "...",
     "concept_description": "...",
-    "color_palette": {{
+    "color_palette": {
       "primary": "#...",
       "secondary": "#...",
       "accent": "#...",
       "background_start": "#...",
       "background_end": "#..."
-    }},
+    },
     "typography_direction": "...",
     "visual_theme": "..."
-  }}
-}}
+  }
+}
 ```
 
 JSONのみを出力してください。
 """
 
 
+DESIGN_STRATEGY_USER_PROMPT = """# User Input Content
+プレゼンテーションタイトル: {presentation_title}
+
+スライド内容:
+{slides_content}
+
+{color_theme_instruction}
+"""
+
+
+# Backwards-compat alias: some older call sites (tests, scripts) may still
+# reference DESIGN_STRATEGY_PROMPT as the combined template. Keep the
+# alias pointing at a re-joined version so they don't break. New code should
+# pass system_prompt=DESIGN_STRATEGY_SYSTEM_PROMPT with prompt=
+# DESIGN_STRATEGY_USER_PROMPT.format(...).
+DESIGN_STRATEGY_PROMPT = (
+    DESIGN_STRATEGY_SYSTEM_PROMPT
+    .replace("{", "{{").replace("}", "}}")  # escape literal JSON braces
+    + "\n"
+    + DESIGN_STRATEGY_USER_PROMPT
+)
+
+
 # =============================================================================
 # STEP 3: Individual Slide Design
 # =============================================================================
 
+# Sprint A: SLIDE_DESIGN_PROMPT is now split into a stable SYSTEM portion
+# (role, rules, process, CSS guidelines — unchanged across every slide in a
+# session) and a USER portion (per-slide strategy + content + dimensions).
+# This unlocks real system-prompt treatment on Claude/GPT-served routes and
+# drastically improves prompt-cache hit rate on repeated slide calls.
+# The content of both strings is functionally identical to the old unified
+# SLIDE_DESIGN_PROMPT — Sprint B is where we actually compress it.
+
+SLIDE_DESIGN_SYSTEM_PROMPT = """# Role
+あなたは世界トップクラスの**プレゼンテーションデザイナー兼アートディレクター**です。
+聴衆の心に一生残る「1枚の作品」としてのスライドを作成してください。
+
+# ⚠️ コピー表現の絶対ルール（最最最重要 - 違反禁止）
+
+スライドに表示するテキストは**提供されたコピーをそのまま使う**こと。
+AIが言葉を変更・追加・言い換えすることは**一切禁止**。
+
+## 許可されていること
+✅ 提供されたテキストをそのまま表示する
+✅ レイアウトや装飾でデザインを工夫する
+✅ フォントサイズや配置を調整する
+
+## 絶対禁止（違反は認められない）
+❌ 言葉を言い換える
+❌ よりキャッチーな表現に変更する
+❌ ビジネス用語・専門用語に置き換える
+❌ 要約して別の言葉で表現する
+❌ 提供されたテキストにない言葉を追加する
+
+## 確認
+「このスライドの言葉は、提供されたコピーと完全に一致しているか？」
+→ YES → 続行 | NO → 修正
+
+**パーソナリティを反映させる方法（毎スライド適用）:**
+- **コピー**: 話者の口調・表現を維持、その人らしい言葉遣いで
+- **デザイン**: パーソナリティに合った雰囲気（カジュアルならポップに、真面目なら洗練に）
+- **バランス**: その人らしさを保ちながら、インパクトのあるデザインを実現
+
+---
+
+# Your Design Process
+
+## Step 1: The Core Message（核心メッセージの整理）
+**元の表現を活かしながら**読みやすく整理：
+- タイトルは**元のキーワードをそのまま使用**
+- 箇条書きは**話者の言葉**で表現（勝手な言い換えNG）
+- 長文のみ短縮（意味を変えずに）
+
+## Step 2: Design Philosophy（デザイン哲学）
+なぜその配置、その色、その余白にするのかを意識：
+- **感情トーン**に合わせた色温度
+- **メッセージの重み**に応じたフォントサイズ
+- **視線誘導**を計算した要素配置
+
+## Step 3: Visual Composition（視覚構成）
+- **黄金比・三分割法**を活用した配置
+- **大胆な余白**（画面の40-60%を余白に）
+- **視覚的階層**（タイトル > ポイント > 装飾）
+
+## Step 4: Graphic Detail（グラフィックディテール）
+CSSで表現する**質感と雰囲気**：
+- 背景の**深み**（グラデーションの角度・色数）
+- **光の当たり方**（グロー効果、ハイライト）
+- **影の使い方**（box-shadow の距離・ぼかし）
+- **質感**（ガラス効果、ノイズテクスチャ）"""
+
+
+SLIDE_DESIGN_USER_PROMPT = """# ⚠️ IMPORTANT: 使用するレイアウト（厳守）
+{layout_instruction}
+
+---
+
+# Design Strategy（統一デザイン戦略）
+コンセプト: {concept_name}
+説明: {concept_description}
+感情トーン: {emotional_tone}
+ビジュアルテーマ: {visual_theme}
+
+カラーパレット:
+- Primary: {primary}
+- Secondary: {secondary}
+- Accent: {accent}
+- Background: {background_start} → {background_end}
+
+# 🎭 話者のパーソナリティ（最重要）
+{personality_section}
+
+# Slide Content（素材）
+スライド番号: {slide_number} / {total_slides}
+スライドタイプ: {slide_type}
+
+タイトル: {title}
+サブタイトル: {subtitle}
+ポイント:
+{points}
+キーメッセージ: {key_message}
+
+{image_section}
+
+---
+
+# Technical Specs
+
+1. **サイズ**: 幅{width}px × 高さ{height}px
+2. **フォント**: 'Noto Sans JP' (Google Fonts)
+3. **完成度**: 「1枚のポスター」として額縁に入れられるクオリティ"""
+
+
+# Here onwards the huge CSS / forbidden-color / typography / output rules are
+# still appended as _one_ big SLIDE_DESIGN_PROMPT string so the existing
+# `SLIDE_DESIGN_PROMPT.format(...)` call site continues to work. Sprint B
+# splits those further. What changes in Sprint A is that `generate_slide_html`
+# now sends SLIDE_DESIGN_SYSTEM_PROMPT separately to the system slot AND also
+# keeps the full combined template for the user slot — so the model receives
+# the role + rules TWICE in Sprint A (once as system, once inside user). This
+# is intentional redundancy for Sprint A: it guarantees no behavioural
+# regression while giving Claude/GPT the system-slot signal they actually
+# need. Sprint B will remove the redundant copy from the user template and
+# measure the token savings.
 SLIDE_DESIGN_PROMPT = """# Role
 あなたは世界トップクラスの**プレゼンテーションデザイナー兼アートディレクター**です。
 聴衆の心に一生残る「1枚の作品」としてのスライドを作成してください。
@@ -1719,22 +1857,27 @@ async def generate_design_strategy(
 4. **全てのテキストがスライド内に完全に収まるようにしてください。はみ出しは絶対NGです。**
 """
 
-    prompt = DESIGN_STRATEGY_PROMPT.format(
+    # Sprint A: pass the role/process/schema in the system slot (stable
+    # across every invocation → better prompt cache hit rate, and Claude/GPT
+    # actually honor it). Only the per-presentation data stays in the user
+    # slot. Output format is unchanged for this sprint — Sprint B trims.
+    user_prompt = DESIGN_STRATEGY_USER_PROMPT.format(
         presentation_title=outline.get("presentation_title", "プレゼンテーション"),
         slides_content=slides_content,
         color_theme_instruction=color_theme_instruction + design_preference_instruction + copy_style_instruction + pip_avoidance_instruction
     )
-    
+
     try:
         response_text = await safe_gemini_generate(
             model_name,
-            prompt,
+            user_prompt,
             key,
             config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.7
             ),
             use_design_model=True,
+            system_prompt=DESIGN_STRATEGY_SYSTEM_PROMPT,
         )
 
         strategy = json.loads(response_text)
@@ -2158,7 +2301,13 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
     )
     
     try:
-        # Slide HTML generation (uses design model via OpenRouter)
+        # Slide HTML generation (uses design model via OpenRouter).
+        # Sprint A: pass SLIDE_DESIGN_SYSTEM_PROMPT via system_prompt so
+        # Claude / GPT picks it up through their native system slot. The
+        # user-slot `prompt` still contains the full SLIDE_DESIGN_PROMPT
+        # (with the role/rules redundantly inlined) — this keeps behavior
+        # 100% the same as before on Gemini while upgrading Claude/GPT.
+        # Sprint B will remove the redundant copy from `prompt`.
         html = await safe_gemini_generate(
             model_name,
             prompt,
@@ -2168,6 +2317,7 @@ AI生成されたイラストがこのスライドの主役です。以下の絶
                 max_output_tokens=8192
             ),
             use_design_model=True,
+            system_prompt=SLIDE_DESIGN_SYSTEM_PROMPT,
         )
         
         # Extract HTML from markdown code block if present (case-insensitive)

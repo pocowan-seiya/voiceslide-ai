@@ -99,6 +99,11 @@ interface JobState {
   // writes it; frontend reads it to pass back on restore so the backend can
   // download slides when the old job_id's local copy is gone.
   slidesStoragePrefix: string | null;
+  // Sprint A (design quality): transient warnings from the backend (e.g.
+  // "OpenRouter rejected model X → fell back to Y"). Surfaced as a
+  // dismissible yellow banner so users know they're not actually getting
+  // the model they selected. Reset when a new generation starts.
+  apiWarnings: string[];
 }
 
 const HYBRID_STEPS = [
@@ -170,6 +175,7 @@ function HomeInner() {
     videoMissing: false,
     videoJustGenerated: false,
     slidesStoragePrefix: null,
+    apiWarnings: [],
   });
 
   const [editedTranscript, setEditedTranscript] = useState<string>("");
@@ -684,6 +690,7 @@ function HomeInner() {
           videoMissing: restoredVideoMissing,
           videoJustGenerated: false,  // always false on restore; only true after a fresh generation this session
           slidesStoragePrefix: data.slides_storage_prefix ?? null,
+          apiWarnings: [],  // fresh per restore; not persisted
         }));
 
         if (resolvedAudioStoragePath) setAudioStoragePath(resolvedAudioStoragePath);
@@ -1310,11 +1317,35 @@ function HomeInner() {
             const newSlidePreviews = statusData.slide_previews.map((p: string) => `${API_URL}${p}`);
             const newStep = (statusData.is_complete ? 6 : 5) as Step;
 
+            // Sprint A: surface any OpenRouter fallback warnings returned
+            // by the backend as a dismissible banner. Example payload:
+            //   [{kind:"openrouter_fallback", requested_model:"anthropic/claude-opus-4-7",
+            //     fallback_model:"google/gemini-2.5-flash", reason:"invalid_model_id"}]
+            // Without this, users would silently be served by a cheaper
+            // model without knowing, and wonder why "Opus 4.7" looks the
+            // same as Gemini Flash.
+            const backendWarnings: Array<{
+              kind?: string;
+              requested_model?: string;
+              fallback_model?: string;
+              reason?: string;
+            }> = Array.isArray(statusData.warnings) ? statusData.warnings : [];
+            const warningMessages: string[] = [];
+            for (const w of backendWarnings) {
+              if (w.kind === "openrouter_fallback" && w.requested_model && w.fallback_model) {
+                warningMessages.push(
+                  `⚠️ OpenRouter がモデル「${w.requested_model}」を拒否したため、` +
+                  `代わりに「${w.fallback_model}」で生成しました。設定で有効なモデルIDを選び直してください。`
+                );
+              }
+            }
+
             updateState({
               slideCount: statusData.batch_end,
               slidePreviews: newSlidePreviews,
               step: newStep,
               isProcessing: isPreviewMode.current ? false : !statusData.is_complete,
+              ...(warningMessages.length > 0 ? { apiWarnings: warningMessages } : {}),
             });
             setSelectedSlide(null);
             setSlideFeedback("");
@@ -2256,6 +2287,7 @@ function HomeInner() {
       videoMissing: false,
       videoJustGenerated: false,
       slidesStoragePrefix: null,
+      apiWarnings: [],
     });
     setEditText("");
     setIsEditingTranscript(false);
@@ -2741,6 +2773,25 @@ function HomeInner() {
             <p className="text-amber-400 text-sm">⚠️ {audioPersistWarning}</p>
             <button
               onClick={() => setAudioPersistWarning(null)}
+              className="btn-secondary mt-2 text-xs"
+            >
+              閉じる
+            </button>
+          </div>
+        )}
+
+        {/* Sprint A: API warnings (OpenRouter fallback etc.) — shown as a
+            dismissible yellow banner so the user knows the selected model
+            wasn't actually used. Without this the fallback was silent. */}
+        {state.apiWarnings && state.apiWarnings.length > 0 && (
+          <div className="glass rounded-xl p-4 mb-6 border-l-4 border-amber-500">
+            {state.apiWarnings.map((msg, i) => (
+              <p key={i} className="text-amber-300 text-sm whitespace-pre-line">
+                {msg}
+              </p>
+            ))}
+            <button
+              onClick={() => updateState({ apiWarnings: [] })}
               className="btn-secondary mt-2 text-xs"
             >
               閉じる

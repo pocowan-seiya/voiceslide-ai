@@ -1820,15 +1820,23 @@ async def generate_slides_endpoint(
 ):
     """Step 7 (Full AI Mode): AI generates unique custom slides from outline"""
     pipeline = get_or_create_pipeline(job_id)
-    
+
     jobs[job_id]["step"] = 7
     jobs[job_id]["status"] = "generating_slides"
-    
+
+    # Sprint A: collect OpenRouter fallback events for the UI. Reset the
+    # context list at the start of every request; openrouter_generate will
+    # append to it when it swaps to the safe fallback model (invalid model
+    # id). We read it back after generation and stash on the job so the
+    # status endpoint can return it to the frontend.
+    from services.openrouter_utils import _openrouter_warnings
+    _openrouter_warnings.set([])
+
     # アウトラインを取得
     outline = pipeline.polished_outline or pipeline.raw_outline
     if not outline:
         raise HTTPException(400, "アウトラインが見つかりません。先にアウトラインを生成してください。")
-    
+
     try:
         from services.ai_slide_generator import generate_all_custom_slides
         
@@ -1882,6 +1890,21 @@ async def generate_slides_endpoint(
         
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["slide_count"] = len(image_paths)
+
+        # Capture any OpenRouter fallback warnings collected during this
+        # request so /api/status can surface them to the UI. De-dup by
+        # (requested_model, fallback_model) since many slide calls in one
+        # batch would otherwise spam the same entry.
+        warnings = _openrouter_warnings.get() or []
+        if warnings:
+            seen = set()
+            deduped = []
+            for w in warnings:
+                key = (w.get("requested_model"), w.get("fallback_model"))
+                if key not in seen:
+                    seen.add(key)
+                    deduped.append(w)
+            jobs[job_id]["warnings"] = (jobs[job_id].get("warnings") or []) + deduped
 
         # Fire-and-forget upload to Supabase Storage so the slides survive
         # Railway redeploys. User is actively on the page here, so we skip
@@ -1961,9 +1984,14 @@ async def generate_slides_batch_endpoint(
 
     # Define background task
     async def generate_batch_async():
+        # Sprint A: isolate OpenRouter fallback warnings to this batch.
+        # ContextVar.set is local to this task's context; the warnings list
+        # is read back at the end so /api/status surfaces a dedup'd view.
+        from services.openrouter_utils import _openrouter_warnings
+        _openrouter_warnings.set([])
         try:
             from services.ai_slide_generator import generate_all_custom_slides
-            
+
             def update_progress(current: int, total: int, message: str):
                 slide_progress[job_id] = {
                     **slide_progress.get(job_id, {}),
@@ -2034,6 +2062,20 @@ async def generate_slides_batch_endpoint(
             }
             print(f"[Batch Generate] Completed slides {start}-{end}")
 
+            # Capture dedup'd OpenRouter fallback warnings onto the job so
+            # /api/status surfaces them in the UI. Same shape as the
+            # non-batch endpoint above.
+            warnings = _openrouter_warnings.get() or []
+            if warnings:
+                seen = set()
+                deduped = []
+                for w in warnings:
+                    key = (w.get("requested_model"), w.get("fallback_model"))
+                    if key not in seen:
+                        seen.add(key)
+                        deduped.append(w)
+                jobs[job_id]["warnings"] = (jobs[job_id].get("warnings") or []) + deduped
+
             # Only cache after the final batch — intermediate batches would
             # waste bandwidth re-uploading the same early slides on every pass.
             if is_complete:
@@ -2068,6 +2110,11 @@ async def generate_slides_batch_endpoint(
 async def get_batch_status(job_id: str):
     """Get batch generation status for polling"""
     progress = slide_progress.get(job_id, {})
+    # Sprint A: include OpenRouter fallback warnings captured during this
+    # job so the UI can toast them. Empty list is fine — the frontend just
+    # ignores it when empty. These are set by generate_slides_batch_endpoint
+    # and generate_slides_endpoint after the generate call returns.
+    warnings = jobs.get(job_id, {}).get("warnings") or []
     return {
         "job_id": job_id,
         "status": progress.get("status", "unknown"),
@@ -2079,7 +2126,8 @@ async def get_batch_status(job_id: str):
         "batch_end": progress.get("batch_end"),
         "next_start": progress.get("next_start"),
         "is_complete": progress.get("is_complete", False),
-        "total_slides": progress.get("total_slides", 0)
+        "total_slides": progress.get("total_slides", 0),
+        "warnings": warnings,
     }
 
 

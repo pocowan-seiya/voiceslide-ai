@@ -5,6 +5,7 @@ OpenRouter provides an OpenAI-compatible API that supports multiple providers
 """
 
 import asyncio
+import contextvars
 import random
 import json
 from typing import Any, Optional, List, Dict
@@ -19,6 +20,62 @@ from openai import AsyncOpenAI
 OPENROUTER_SAFE_FALLBACK_MODEL = "google/gemini-2.5-flash"
 
 
+# ContextVar that collects fallback events that happen during a request.
+# Set by openrouter_generate() when it swaps to the safe fallback model;
+# read by backend/main.py after the user's generation finishes so the UI
+# can toast "モデル X が利用不可のため Y にフォールバックしました" — the
+# previous behavior was silent, which is how users ended up with "Opus 4.7"
+# in settings but actually got served by gemini-2.5-flash.
+_openrouter_warnings: contextvars.ContextVar[Optional[List[Dict[str, str]]]] = (
+    contextvars.ContextVar("_openrouter_warnings", default=None)
+)
+
+
+def _record_fallback_warning(requested_model: str, fallback_model: str, reason: str) -> None:
+    """Append a fallback event to the current request's warning list.
+
+    No-op when the ContextVar isn't set (i.e. caller isn't interested).
+    The list is mutated in place so the backend request handler can read
+    it after the generate call returns."""
+    warnings = _openrouter_warnings.get()
+    if warnings is None:
+        return
+    warnings.append({
+        "kind": "openrouter_fallback",
+        "requested_model": requested_model,
+        "fallback_model": fallback_model,
+        "reason": reason,
+    })
+
+
+def pick_temperature(model_name: str, requested: Optional[float]) -> Optional[float]:
+    """Choose a default temperature tuned to the target model family.
+
+    Rationale: different model providers have very different "sweet spots"
+    for creative generation:
+      - Anthropic Claude family performs best at lower temperatures (0.5-0.7);
+        higher temps hurt coherence and make it drop format rules.
+      - OpenAI GPT family is well-behaved in the 0.6-0.8 range.
+      - Google Gemini family tolerates/benefits from higher temperatures
+        (0.7-0.9) for design-style tasks.
+
+    The caller's explicit `requested` value always wins — this only fills
+    in sensible defaults when the caller passed `None`.
+
+    Model names follow the OpenRouter convention: "<provider>/<model>".
+    """
+    if requested is not None:
+        return requested
+    name = (model_name or "").lower()
+    if "claude" in name or "anthropic/" in name:
+        return 0.6
+    if "gpt" in name or "openai/" in name:
+        return 0.7
+    if "gemini" in name or "google/" in name:
+        return 0.8
+    return 0.7
+
+
 async def openrouter_generate(
     model_name: str,
     prompt: Any,
@@ -27,6 +84,7 @@ async def openrouter_generate(
     json_mode: bool = False,
     max_tokens: int = 8192,
     temperature: Optional[float] = None,
+    system_prompt: Optional[str] = None,
 ) -> str:
     """
     Call OpenRouter API with robust retry logic.
@@ -39,14 +97,31 @@ async def openrouter_generate(
         max_retries: Max retry attempts
         json_mode: If True, request JSON response format
         max_tokens: Maximum tokens in response
-        temperature: Sampling temperature (0.0-2.0)
+        temperature: Sampling temperature (0.0-2.0). When None, pick_temperature()
+                     chooses a model-family default (Claude 0.6, GPT 0.7, Gemini 0.8).
+        system_prompt: Optional system message prepended to `messages`. Matters
+                       a lot for Anthropic Claude (which takes system prompts
+                       strongly into account) and GPT (native system role). For
+                       Gemini-family models served through OpenRouter, OpenAI's
+                       chat-completions shim maps it to the provider's instruction
+                       slot. Pre-`system_prompt` support this file used to shove
+                       everything into `user`, which silently neutered Claude's
+                       strength and was the main reason OpenRouter felt
+                       "lower-quality than direct Gemini".
 
     If the supplied `model_name` is rejected as invalid by OpenRouter (400),
     we log loudly and retry ONCE with OPENROUTER_SAFE_FALLBACK_MODEL so the
     user's workflow keeps moving. This protects against stale model IDs
     stored in user_settings from before OpenRouter deprecated them.
     """
-    print(f"[OpenRouter] Generating with model={model_name}, json_mode={json_mode}, max_tokens={max_tokens}, temperature={temperature}")
+    # Apply model-family temperature default if the caller didn't specify
+    temperature = pick_temperature(model_name, temperature)
+
+    print(
+        f"[OpenRouter] Generating with model={model_name}, json_mode={json_mode}, "
+        f"max_tokens={max_tokens}, temperature={temperature}, "
+        f"system_prompt={'yes' if system_prompt else 'no'}"
+    )
     client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=key,
@@ -58,12 +133,22 @@ async def openrouter_generate(
     elif isinstance(prompt, list):
         # Assume it's already a list of message dicts or content parts
         if len(prompt) > 0 and isinstance(prompt[0], dict) and "role" in prompt[0]:
-            messages = prompt
+            messages = list(prompt)
         else:
             # Treat as content parts (text + image for multimodal)
             messages = [{"role": "user", "content": prompt}]
     else:
         messages = [{"role": "user", "content": str(prompt)}]
+
+    # Prepend system message if provided AND not already present. Defensive —
+    # callers that pass a pre-built message list might already include a
+    # system role; don't duplicate it.
+    if system_prompt:
+        has_system = any(
+            isinstance(m, dict) and m.get("role") == "system" for m in messages
+        )
+        if not has_system:
+            messages = [{"role": "system", "content": system_prompt}] + messages
 
     delays = [10, 30, 60, 120, 240]
     last_err = None
@@ -116,6 +201,13 @@ async def openrouter_generate(
                     f"[OpenRouter] ✗ model {current_model!r} rejected as invalid by OpenRouter. "
                     f"Falling back to {OPENROUTER_SAFE_FALLBACK_MODEL!r}. "
                     f"Update your settings to pick a currently-supported model."
+                )
+                # Record the fallback event so the backend can surface it to
+                # the UI. See module-level _openrouter_warnings comment.
+                _record_fallback_warning(
+                    requested_model=current_model,
+                    fallback_model=OPENROUTER_SAFE_FALLBACK_MODEL,
+                    reason="invalid_model_id",
                 )
                 current_model = OPENROUTER_SAFE_FALLBACK_MODEL
                 tried_fallback = True
