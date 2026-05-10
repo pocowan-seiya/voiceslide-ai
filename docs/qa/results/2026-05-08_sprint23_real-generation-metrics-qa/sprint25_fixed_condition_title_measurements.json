@@ -1,0 +1,118 @@
+[
+  {
+    "mode": "flash_standard",
+    "slide": 1,
+    "metric_title_clipping": false,
+    "direct_detector": false,
+    "quality_gate": "pass",
+    "title_font_size": 72.0,
+    "warnings": [],
+    "measures": [
+      {
+        "tag": "H1",
+        "cls": "",
+        "text": "音声からスライド動画を作る流れ",
+        "clientWidth": 1116,
+        "scrollWidth": 1116,
+        "clientHeight": 108,
+        "scrollHeight": 108,
+        "rectWidth": 1116.406,
+        "rectHeight": 108,
+        "fontSize": "72px",
+        "lineHeight": "normal",
+        "maxWidth": "100%",
+        "whiteSpace": "normal",
+        "overflow": "visible",
+        "clip": false
+      }
+    ]
+  },
+  {
+    "mode": "flash_standard",
+    "slide": 2,
+    "metric_title_clipping": false,
+    "direct_detector": false,
+    "quality_gate": "warn",
+    "title_font_size": 72.0,
+    "warnings": [
+      "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+    ],
+    "measures": [
+      {
+        "tag": "H1",
+        "cls": "",
+        "text": "日本語の読みやすさと 復元確認",
+        "clientWidth": 774,
+        "scrollWidth": 774,
+        "clientHeight": 216,
+        "scrollHeight": 216,
+        "rectWidth": 774.406,
+        "rectHeight": 216,
+        "fontSize": "72px",
+        "lineHeight": "normal",
+        "maxWidth": "100%",
+        "whiteSpace": "normal",
+        "overflow": "visible",
+        "clip": false
+      }
+    ]
+  },
+  {
+    "mode": "pro",
+    "slide": 1,
+    "metric_title_clipping": false,
+    "direct_detector": false,
+    "quality_gate": "warn",
+    "title_font_size": 72.0,
+    "warnings": [
+      "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+    ],
+    "measures": [
+      {
+        "tag": "H1",
+        "cls": "",
+        "text": "音声からスライド動画 を作る流れ",
+        "clientWidth": 1478,
+        "scrollWidth": 1478,
+        "clientHeight": 216,
+        "scrollHeight": 216,
+        "rectWidth": 1478.391,
+        "rectHeight": 216,
+        "fontSize": "72px",
+        "lineHeight": "normal",
+        "maxWidth": "none",
+        "whiteSpace": "normal",
+        "overflow": "visible",
+        "clip": false
+      }
+    ]
+  },
+  {
+    "mode": "pro",
+    "slide": 2,
+    "metric_title_clipping": false,
+    "direct_detector": false,
+    "quality_gate": "pass",
+    "title_font_size": 72.0,
+    "warnings": [],
+    "measures": [
+      {
+        "tag": "H1",
+        "cls": "headline",
+        "text": "日本語の 読みやすさと 復元確認",
+        "clientWidth": 757,
+        "scrollWidth": 757,
+        "clientHeight": 324,
+        "scrollHeight": 324,
+        "rectWidth": 756.797,
+        "rectHeight": 324,
+        "fontSize": "72px",
+        "lineHeight": "normal",
+        "maxWidth": "none",
+        "whiteSpace": "normal",
+        "overflow": "visible",
+        "clip": false
+      }
+    ]
+  }
+]

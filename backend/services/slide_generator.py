@@ -9,6 +9,7 @@ from openai import OpenAI
 import google.generativeai as genai
 
 from config import OPENAI_API_KEY, GEMINI_API_KEY
+from services.generation_telemetry import redact_secrets
 
 
 # Initialize clients
@@ -156,7 +157,7 @@ async def generate_outline(transcript: str, segments: List[Dict[str, Any]]) -> D
         if outline:
             return outline
     except Exception as e:
-        print(f"Gemini outline failed: {e}")
+        print(f"Gemini outline failed: {redact_secrets(str(e))}")
     
     return await generate_outline_with_gpt4(formatted_transcript)
 
@@ -172,7 +173,7 @@ async def generate_slides(outline: Dict[str, Any]) -> List[Dict[str, Any]]:
         if slides:
             return slides
     except Exception as e:
-        print(f"Gemini slides failed: {e}")
+        print(f"Gemini slides failed: {redact_secrets(str(e))}")
     
     return await generate_slides_with_gpt4(outline_json)
 

@@ -13,6 +13,7 @@ from io import BytesIO
 import math
 
 from config import GEMINI_API_KEY, OUTPUT_DIR, VIDEO_WIDTH, VIDEO_HEIGHT
+from services.generation_telemetry import redact_secrets
 
 
 # Configure Gemini
@@ -202,7 +203,7 @@ Requirements:
         return None
         
     except Exception as e:
-        print(f"Illustration generation failed: {e}")
+        print(f"Illustration generation failed: {redact_secrets(str(e))}")
         return None
 
 

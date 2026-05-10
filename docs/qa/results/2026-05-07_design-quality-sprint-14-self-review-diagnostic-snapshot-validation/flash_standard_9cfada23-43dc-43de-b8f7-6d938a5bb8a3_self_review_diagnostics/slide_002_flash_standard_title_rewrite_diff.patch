@@ -1,0 +1,142 @@
+--- slide_002_flash_standard_title_rewrite_original.html
++++ slide_002_flash_standard_title_rewrite_improved.html
+@@ -1,10 +1,9 @@
+ <!DOCTYPE html>
+-
+ <html lang="ja">
+ <head>
+ <meta charset="utf-8"/>
+ <title>Slide 2</title>
+-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&amp;display=swap" rel="stylesheet"/>
++<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet"/>
+ <style>
+   * { margin: 0; padding: 0; box-sizing: border-box; }
+   
+@@ -16,13 +15,12 @@
+     color: #fff;
+     overflow: hidden;
+     position: relative;
+-    padding: 100px 140px !important;
++    padding: 120px 160px;
+     display: flex;
+     flex-direction: column;
+     justify-content: center;
+   }
+ 
+-  /* 流れる波形の装飾 */
+   .wave {
+     position: absolute;
+     left: 0;
+@@ -30,8 +28,8 @@
+     height: 2px;
+     background: linear-gradient(90deg, transparent 0%, rgba(0, 180, 216, 0.6) 30%, rgba(72, 202, 228, 0.8) 50%, rgba(0, 180, 216, 0.6) 70%, transparent 100%);
+   }
+-  .wave-1 { top: 18%; }
+-  .wave-2 { bottom: 18%; opacity: 0.5; }
++  .wave-1 { top: 15%; }
++  .wave-2 { bottom: 15%; opacity: 0.5; }
+ 
+   .glow-orb {
+     position: absolute;
+@@ -40,24 +38,24 @@
+     opacity: 0.35;
+   }
+   .orb-1 {
+-    width: 600px; height: 600px;
++    width: 700px; height: 700px;
+     background: #00B4D8;
+-    top: -200px; right: -150px;
++    top: -250px; right: -200px;
+   }
+   .orb-2 {
+-    width: 500px; height: 500px;
++    width: 600px; height: 600px;
+     background: #FFB703;
+-    bottom: -150px; left: -100px;
++    bottom: -200px; left: -150px;
+     opacity: 0.15;
+   }
+ 
+   .eyebrow {
+-    font-size: 20px;
++    font-size: 24px;
+     font-weight: 700;
+-    letter-spacing: 0.4em;
++    letter-spacing: 0.5em;
+     color: #48CAE4;
+     text-transform: uppercase;
+-    margin-bottom: 48px;
++    margin-bottom: 64px;
+     text-align: center;
+     position: relative;
+     z-index: 2;
+@@ -66,24 +64,22 @@
+   .eyebrow::before, .eyebrow::after {
+     content: '';
+     display: inline-block;
+-    width: 60px;
++    width: 80px;
+     height: 1px;
+     background: #48CAE4;
+     vertical-align: middle;
+-    margin: 0 24px;
++    margin: 0 28px;
+   }
+ 
+-  h1 {
+-    font-size: clamp(3rem, 5.2vw, 6rem);
++  h1.main {
++    font-size: 118px;
+     font-weight: 900;
+-    line-height: 1.25;
++    line-height: 1.3;
+     text-align: center;
+     letter-spacing: 0.02em;
+-    max-width: 90%;
++    max-width: 100%;
+     margin: 0 auto;
+-    padding: 0 20px;
+     word-break: keep-all;
+-    white-space: normal;
+     background: linear-gradient(135deg, #FFFFFF 0%, #48CAE4 50%, #FFB703 100%);
+     -webkit-background-clip: text;
+     background-clip: text;
+@@ -93,11 +89,22 @@
+   }
+ 
+   .accent-line {
+-    width: 120px;
+-    height: 4px;
++    width: 160px;
++    height: 5px;
+     background: linear-gradient(90deg, #00B4D8, #FFB703);
+-    margin: 64px auto 0;
++    margin: 80px auto 0;
+     border-radius: 2px;
++    position: relative;
++    z-index: 2;
++  }
++
++  .sub-caption {
++    margin-top: 48px;
++    text-align: center;
++    font-size: 28px;
++    font-weight: 400;
++    letter-spacing: 0.25em;
++    color: rgba(255, 255, 255, 0.55);
+     position: relative;
+     z-index: 2;
+   }
+@@ -131,9 +138,10 @@
+ <div class="wave wave-1"></div>
+ <div class="wave wave-2"></div>
+ <div class="eyebrow">Key Message</div>
+-<h1>音声の流れに合わせて、<br/>スライドが自然に繋がること</h1>
++<h1 class="main">音声の流れに沿って、<br/>スライドが自然に繋がる。</h1>
+ <div class="accent-line"></div>
++<div class="sub-caption">S E A M L E S S &nbsp;&nbsp; N A R R A T I V E &nbsp;&nbsp; F L O W</div>
+ <div class="brand">SONIC FLOW</div>
+ <div class="slide-number">02 / 02</div>
+-<div class="injected-content" style="position:relative;z-index:10;text-align:center;padding:40px 60px;"><h1 style="color:white;font-size:clamp(2rem,4vw,3.5rem);font-weight:900;margin-bottom:20px;text-shadow:0 2px 8px rgba(0,0,0,0.3);">日本語が読みやすく、自然に繋がること</h1><h3 style="color:rgba(255,255,255,0.85);font-size:clamp(1.5rem,2vw,1.5rem);font-weight:400;margin-bottom:30px;">品質向上のための重要要素</h3><p style="color:rgba(255,255,255,0.9);font-size: 1.5rem;margin:8px 0;">2つ目は、日本語が読みやすく、余白が詰まりすぎていないこと</p><p style="color:rgba(255,255,255,0.9);font-size: 1.5rem;margin:8px 0;">3つ目は、音声の流れに合わせて、スライドが自然に繋がること</p><p style="color:rgba(255,255,255,0.9);font-size: 1.5rem;margin:8px 0;">最後に、作成した動画を保存して、後から復元できることも確認します</p></div></body>
++</body>
+ </html>

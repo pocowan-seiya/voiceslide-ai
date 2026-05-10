@@ -1,0 +1,30 @@
+[
+  {
+    "mode": "flash_standard",
+    "job_id": "a0093691-57b5-4b7a-ad96-e8dfa71cba7e",
+    "file": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-04_design-quality-sprint-3-visible-chrome-regeneration/flash_standard_slide_001.png",
+    "sha256": "abb51af2c42058ea51f5035bc260dfaa3eb00a18cea714ef2787592f3c6bb8c7",
+    "size": 717098
+  },
+  {
+    "mode": "flash_standard",
+    "job_id": "a0093691-57b5-4b7a-ad96-e8dfa71cba7e",
+    "file": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-04_design-quality-sprint-3-visible-chrome-regeneration/flash_standard_slide_002.png",
+    "sha256": "158b3693c31f9679758c86cc8ee5b64fec43e3ff8c93cf8156c037015536c1ea",
+    "size": 880170
+  },
+  {
+    "mode": "pro",
+    "job_id": "5fd68c44-efc6-4ff5-80aa-19656a825067",
+    "file": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-04_design-quality-sprint-3-visible-chrome-regeneration/pro_slide_001.png",
+    "sha256": "abb51af2c42058ea51f5035bc260dfaa3eb00a18cea714ef2787592f3c6bb8c7",
+    "size": 717098
+  },
+  {
+    "mode": "pro",
+    "job_id": "5fd68c44-efc6-4ff5-80aa-19656a825067",
+    "file": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-04_design-quality-sprint-3-visible-chrome-regeneration/pro_slide_002.png",
+    "sha256": "cbed7a9ff8e9b2c4ee570aa3cd390f54175102ca8eace5abc6194fa14cf97057",
+    "size": 655400
+  }
+]

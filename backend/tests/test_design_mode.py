@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 
 from services.ai_slide_generator import (
+    generate_fallback_html,
     select_layout_for_slide,
     LAYOUT_TYPES,
     _used_layouts_cache,
@@ -185,3 +186,44 @@ def test_layout_types_catalog_is_populated():
     mismatched."""
     for key in ("center_hero", "left_heavy", "right_heavy", "cards", "minimal"):
         assert key in LAYOUT_TYPES, f"LAYOUT_TYPES missing canonical key {key!r}"
+
+
+def test_pro_fallback_html_does_not_match_flash_fallback_html_for_same_slide():
+    """If both modes fall back, Pro should still avoid byte-identical
+    standard fallback output for the same slide content."""
+    slide = {
+        "slide_copy": {
+            "headline": "Quality check",
+            "subheadline": "Fixed fixture",
+            "bullet_points": ["Capture telemetry", "Compare modes"],
+            "key_message": "Fallbacks must be visible",
+        }
+    }
+    style = {
+        "design_style": {
+            "color_palette": {
+                "primary": "#F59E0B",
+                "secondary": "#8B5CF6",
+                "accent": "#06B6D4",
+                "background_start": "#0f172a",
+                "background_end": "#1e293b",
+            }
+        }
+    }
+
+    flash_html = generate_fallback_html(
+        slide,
+        slide_number=1,
+        total_slides=2,
+        strategy={**style, "_design_mode": "flash_standard"},
+    )
+    pro_html = generate_fallback_html(
+        slide,
+        slide_number=1,
+        total_slides=2,
+        strategy={**style, "_design_mode": "pro"},
+    )
+
+    assert 'data-voislide-fallback="true"' in flash_html
+    assert 'data-voislide-fallback="true"' in pro_html
+    assert pro_html != flash_html

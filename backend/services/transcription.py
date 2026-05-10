@@ -11,6 +11,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 import google.generativeai as genai
+from services.generation_telemetry import redact_secrets
 from typing import Dict, Any, List, Optional
 
 from config import OPENAI_API_KEY, GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
@@ -123,7 +124,7 @@ def get_openai_client(api_key: Optional[str] = None) -> OpenAI:
 
 def get_available_gemini_model(api_key: str) -> str:
     """Find an available Gemini model for content generation"""
-    print(f"[Gemini] Configuring with key: {str(api_key)[:10]}...{str(api_key)[-4:]}")
+    print(f"[Gemini] Configuring with key: {redact_secrets(str(api_key))}")
     if not api_key:
         print("[Gemini] No API key provided to get_available_gemini_model")
         return "gemini-3-flash-preview"

@@ -1,0 +1,112 @@
+{
+  "created_at": "2026-05-08 12:23:00 JST",
+  "jobs": {
+    "flash_standard": {
+      "job_id": "143c1d64-fd41-448d-b73d-53cc8d92d769",
+      "status": "complete",
+      "message": "バッチ完了 (1-2)",
+      "telemetry_summary": {
+        "job_id": "143c1d64-fd41-448d-b73d-53cc8d92d769",
+        "entry_count": 5,
+        "total_calls": 5,
+        "total_duration_ms": 87051,
+        "fallback_count": 0,
+        "total_input_tokens": 14257,
+        "total_output_tokens": 11742,
+        "total_estimated_cost_usd": null
+      },
+      "design_quality_metrics": [
+        {
+          "min_font_size_px": 26.0,
+          "title_font_size_px": 124.0,
+          "body_font_size_px_min": 124.0,
+          "small_text_count": 0,
+          "fallback_used": false,
+          "quality_gate": "pass",
+          "warnings": [],
+          "slide_number": 1
+        },
+        {
+          "min_font_size_px": 115.2,
+          "title_font_size_px": 115.2,
+          "body_font_size_px_min": 115.2,
+          "small_text_count": 0,
+          "fallback_used": false,
+          "quality_gate": "pass",
+          "warnings": [],
+          "slide_number": 2
+        }
+      ],
+      "warnings": []
+    },
+    "pro": {
+      "job_id": "18f84d23-cc29-4317-8d44-185a74c57b26",
+      "status": "complete",
+      "message": "バッチ完了 (1-2)",
+      "telemetry_summary": {
+        "job_id": "18f84d23-cc29-4317-8d44-185a74c57b26",
+        "entry_count": 5,
+        "total_calls": 5,
+        "total_duration_ms": 97724,
+        "fallback_count": 0,
+        "total_input_tokens": 16729,
+        "total_output_tokens": 13393,
+        "total_estimated_cost_usd": null
+      },
+      "design_quality_metrics": [
+        {
+          "min_font_size_px": 72.0,
+          "title_font_size_px": 72.0,
+          "body_font_size_px_min": 72.0,
+          "small_text_count": 0,
+          "fallback_used": false,
+          "quality_gate": "pass",
+          "warnings": [],
+          "slide_number": 1
+        },
+        {
+          "min_font_size_px": 26.0,
+          "title_font_size_px": 96.0,
+          "body_font_size_px_min": 44.0,
+          "small_text_count": 0,
+          "fallback_used": false,
+          "quality_gate": "pass",
+          "warnings": [],
+          "slide_number": 2
+        }
+      ],
+      "warnings": []
+    }
+  },
+  "artifacts": [
+    {
+      "mode": "flash_standard",
+      "slide": 1,
+      "path": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint19_post-hardening-regeneration-qa/flash_standard_slide_001.png",
+      "bytes": 911496,
+      "sha256": "67bcebb3b23215f687c6e45fea7af7c89f1cf6d1ae022bcc403b87f86333c975"
+    },
+    {
+      "mode": "flash_standard",
+      "slide": 2,
+      "path": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint19_post-hardening-regeneration-qa/flash_standard_slide_002.png",
+      "bytes": 1023262,
+      "sha256": "24defb2bc175b6e59e42a0839b3b9b1884a18ce7d77c01b45f9f19220e995d24"
+    },
+    {
+      "mode": "pro",
+      "slide": 1,
+      "path": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint19_post-hardening-regeneration-qa/pro_slide_001.png",
+      "bytes": 1154739,
+      "sha256": "742127e15819fcd27370196576d9ab5fc6031f077e3eaa90399ac278d3de6043"
+    },
+    {
+      "mode": "pro",
+      "slide": 2,
+      "path": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint19_post-hardening-regeneration-qa/pro_slide_002.png",
+      "bytes": 1008480,
+      "sha256": "5381772b4cf665f493eec96ec3f465f130d237ff2dd407e815f7b989cd2e24d8"
+    }
+  ],
+  "contact_sheet": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint19_post-hardening-regeneration-qa/contact_sheet_flash_vs_pro_2slide_post_hardening.png"
+}

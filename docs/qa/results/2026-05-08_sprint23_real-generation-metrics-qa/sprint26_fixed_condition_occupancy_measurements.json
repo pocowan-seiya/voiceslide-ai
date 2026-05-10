@@ -1,0 +1,44 @@
+[
+  {
+    "mode": "flash_standard",
+    "slide": 1,
+    "quality_gate": "pass",
+    "main_element_occupancy_ratio": 0.589737,
+    "blank_area_ratio_estimate": 0.410263,
+    "text_clipping_detected": false,
+    "title_font_size_px": 72.0,
+    "warnings": []
+  },
+  {
+    "mode": "flash_standard",
+    "slide": 2,
+    "quality_gate": "warn",
+    "main_element_occupancy_ratio": 0.000868,
+    "blank_area_ratio_estimate": 0.999132,
+    "text_clipping_detected": false,
+    "title_font_size_px": 72.0,
+    "warnings": [
+      "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+    ]
+  },
+  {
+    "mode": "pro",
+    "slide": 1,
+    "quality_gate": "pass",
+    "main_element_occupancy_ratio": 0.723775,
+    "blank_area_ratio_estimate": 0.276225,
+    "text_clipping_detected": false,
+    "title_font_size_px": 72.0,
+    "warnings": []
+  },
+  {
+    "mode": "pro",
+    "slide": 2,
+    "quality_gate": "pass",
+    "main_element_occupancy_ratio": 1.0,
+    "blank_area_ratio_estimate": 0.0,
+    "text_clipping_detected": false,
+    "title_font_size_px": 82.0,
+    "warnings": []
+  }
+]

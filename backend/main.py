@@ -1830,15 +1830,23 @@ async def generate_slides_endpoint(
     # id). We read it back after generation and stash on the job so the
     # status endpoint can return it to the frontend.
     from services.openrouter_utils import _openrouter_warnings
+    from services.generation_telemetry import (
+        TelemetryCollector,
+        reset_current_collector,
+        set_current_collector,
+    )
     _openrouter_warnings.set([])
+    telemetry_collector = TelemetryCollector(job_id)
+    telemetry_token = set_current_collector(telemetry_collector)
 
     # アウトラインを取得
     outline = pipeline.polished_outline or pipeline.raw_outline
     if not outline:
+        reset_current_collector(telemetry_token)
         raise HTTPException(400, "アウトラインが見つかりません。先にアウトラインを生成してください。")
 
     try:
-        from services.ai_slide_generator import generate_all_custom_slides
+        from services.ai_slide_generator import generate_all_custom_slides, get_slide_data
         
         slides = outline.get("slides", [])
         total_slides = len(slides)
@@ -1884,12 +1892,17 @@ async def generate_slides_endpoint(
         # パイプラインに保存
         pipeline.slide_images = image_paths
         pipeline.slide_contents = slides
+        slide_data = get_slide_data(job_id) or {}
+        design_quality_metrics = slide_data.get("design_quality_metrics", [])
         
         # スライドプレビューURLを生成
         slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
         
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["slide_count"] = len(image_paths)
+        jobs[job_id]["generation_telemetry"] = telemetry_collector.to_list()
+        jobs[job_id]["generation_telemetry_summary"] = telemetry_collector.summary()
+        jobs[job_id]["design_quality_metrics"] = design_quality_metrics
 
         # Capture any OpenRouter fallback warnings collected during this
         # request so /api/status can surface them to the UI. De-dup by
@@ -1911,15 +1924,20 @@ async def generate_slides_endpoint(
         # the debounce and schedule immediately.
         _schedule_slides_cache_immediate(job_id, x_user_id, x_project_id)
 
+        reset_current_collector(telemetry_token)
         return {
             "job_id": job_id,
             "step": 7,
             "slide_count": len(image_paths),
             "slide_previews": slide_previews,
+            "generation_telemetry": telemetry_collector.to_list(),
+            "generation_telemetry_summary": telemetry_collector.summary(),
+            "design_quality_metrics": design_quality_metrics,
             "message": "AIがユニークなスライドデザインを自動生成しました"
         }
 
     except Exception as e:
+        reset_current_collector(telemetry_token)
         import traceback
         traceback.print_exc()
         jobs[job_id]["status"] = "error"
@@ -1992,9 +2010,16 @@ async def generate_slides_batch_endpoint(
         # ContextVar.set is local to this task's context; the warnings list
         # is read back at the end so /api/status surfaces a dedup'd view.
         from services.openrouter_utils import _openrouter_warnings
+        from services.generation_telemetry import (
+            TelemetryCollector,
+            reset_current_collector,
+            set_current_collector,
+        )
         _openrouter_warnings.set([])
+        telemetry_collector = TelemetryCollector(job_id)
+        telemetry_token = set_current_collector(telemetry_collector)
         try:
-            from services.ai_slide_generator import generate_all_custom_slides
+            from services.ai_slide_generator import generate_all_custom_slides, get_slide_data
 
             def update_progress(current: int, total: int, message: str):
                 slide_progress[job_id] = {
@@ -2063,6 +2088,8 @@ async def generate_slides_batch_endpoint(
             # パイプラインに保存
             pipeline.slide_images = image_paths
             pipeline.slide_contents = slides
+            slide_data = get_slide_data(job_id) or {}
+            design_quality_metrics = slide_data.get("design_quality_metrics", [])
             
             # スライドプレビューURLを生成
             slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
@@ -2081,8 +2108,14 @@ async def generate_slides_batch_endpoint(
                 "batch_end": end,
                 "next_start": None if is_complete else next_start,
                 "is_complete": is_complete,
-                "total_slides": total_slides
+                "total_slides": total_slides,
+                "generation_telemetry": telemetry_collector.to_list(),
+                "generation_telemetry_summary": telemetry_collector.summary(),
+                "design_quality_metrics": design_quality_metrics,
             }
+            jobs[job_id]["generation_telemetry"] = telemetry_collector.to_list()
+            jobs[job_id]["generation_telemetry_summary"] = telemetry_collector.summary()
+            jobs[job_id]["design_quality_metrics"] = design_quality_metrics
             print(f"[Batch Generate] Completed slides {start}-{end}")
 
             # Capture dedup'd OpenRouter fallback warnings onto the job so
@@ -2105,14 +2138,20 @@ async def generate_slides_batch_endpoint(
                 _schedule_slides_cache_immediate(job_id, x_user_id, x_project_id)
             
         except Exception as e:
+            jobs[job_id]["generation_telemetry"] = telemetry_collector.to_list()
+            jobs[job_id]["generation_telemetry_summary"] = telemetry_collector.summary()
             print(f"[Batch Generate] Error: {e}")
             import traceback
             traceback.print_exc()
             slide_progress[job_id] = {
                 **slide_progress.get(job_id, {}),
                 "status": "error",
-                "message": f"エラー: {str(e)}"
+                "message": f"エラー: {str(e)}",
+                "generation_telemetry": telemetry_collector.to_list(),
+                "generation_telemetry_summary": telemetry_collector.summary(),
             }
+        finally:
+            reset_current_collector(telemetry_token)
     
     # Run in background using asyncio
     import asyncio
@@ -2138,6 +2177,9 @@ async def get_batch_status(job_id: str):
     # ignores it when empty. These are set by generate_slides_batch_endpoint
     # and generate_slides_endpoint after the generate call returns.
     warnings = jobs.get(job_id, {}).get("warnings") or []
+    generation_telemetry = progress.get("generation_telemetry") or jobs.get(job_id, {}).get("generation_telemetry", [])
+    generation_telemetry_summary = progress.get("generation_telemetry_summary") or jobs.get(job_id, {}).get("generation_telemetry_summary", {})
+    design_quality_metrics = progress.get("design_quality_metrics") or jobs.get(job_id, {}).get("design_quality_metrics", [])
     return {
         "job_id": job_id,
         "status": progress.get("status", "unknown"),
@@ -2151,6 +2193,9 @@ async def get_batch_status(job_id: str):
         "is_complete": progress.get("is_complete", False),
         "total_slides": progress.get("total_slides", 0),
         "warnings": warnings,
+        "generation_telemetry": generation_telemetry,
+        "generation_telemetry_summary": generation_telemetry_summary,
+        "design_quality_metrics": design_quality_metrics,
     }
 
 

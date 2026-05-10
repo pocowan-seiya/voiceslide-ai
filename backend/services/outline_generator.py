@@ -11,6 +11,7 @@ import google.generativeai as genai
 
 from config import OPENAI_API_KEY, GEMINI_API_KEY
 from services.ai_utils import safe_gemini_generate
+from services.generation_telemetry import redact_secrets
 
 
 # Initialize clients
@@ -653,7 +654,7 @@ async def generate_outline(
         result = repair_and_parse_json(response_text, "Gemini")
         
     except Exception as e:
-        print(f"Gemini outline failed: {e}, falling back to GPT-4o")
+        print(f"Gemini outline failed: {redact_secrets(str(e))}, falling back to GPT-4o")
         
         try:
             response = openai_client.chat.completions.create(
@@ -671,7 +672,7 @@ async def generate_outline(
             result = repair_and_parse_json(response.choices[0].message.content, "GPT-4o")
             
         except Exception as e2:
-            print(f"GPT-4o also failed: {e2}")
+            print(f"GPT-4o also failed: {redact_secrets(str(e2))}")
             return create_fallback_outline(transcript, segments)
     
     # タイムスタンプの検証と修正
@@ -722,7 +723,7 @@ async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-fl
         result = json.loads(response_text)
         
     except Exception as e:
-        print(f"Gemini polish failed: {e}, keeping original")
+        print(f"Gemini polish failed: {redact_secrets(str(e))}, keeping original")
         result = outline
     
     # 再度タイムスタンプ検証

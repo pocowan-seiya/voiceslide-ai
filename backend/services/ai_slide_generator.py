@@ -19,6 +19,14 @@ from playwright.async_api import async_playwright, Browser
 
 from config import GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT, get_video_dimensions
 from services.ai_utils import safe_gemini_generate
+from services.generation_telemetry import (
+    get_current_collector,
+    record_current_telemetry,
+    redact_secrets,
+    reset_telemetry_context,
+    set_telemetry_context,
+)
+from services.design_quality_metrics import analyze_design_quality
 
 # Context vars for OpenRouter routing (set per-request, read by safe_gemini_generate)
 _openrouter_key_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar('_openrouter_key', default=None)
@@ -1315,6 +1323,9 @@ DESIGN_STRATEGY_SYSTEM_PROMPT = """# Role definition
 4. **Visual Theme:** ビジュアルの方向性（抽象的な幾何学、有機的なライン、未来的、温かみなど）
 
 # Output Format (JSON)
+Return a single valid JSON object only.
+Do not include markdown fences, comments, prefaces, trailing notes, or prose.
+The first character of your response must be `{` and the last character must be `}`.
 ```json
 {
   "content_analysis": {
@@ -1419,6 +1430,12 @@ h3, p, .subtitle, .subheadline {
 }
 body { padding: 40px 50px !important; box-sizing: border-box; overflow: visible !important; }
 ```
+
+# ⚠️ フォントサイズ品質ゲート（Sprint 14）
+- 通常テキストの `font-size` は **24px以下を使わない**。本文・カード・箇条書きは原則28px以上。
+- タイトル/h1/.title/.headline は56px以上、できれば72px以上。
+- `font-size: 16px`, `18px`, `20px`, `1rem`, `1.1rem`, `1.2rem`, `clamp(1rem, ...)` は通常テキストでは禁止。
+- 小さくしてよいのは `.slide-number`, `.caption`, `.eyebrow`, `.badge`, `.meta`, `.decorative` などの装飾的な表示だけ。
 - `text-overflow: ellipsis` / `overflow: hidden + white-space: nowrap` / `max-height` でのテキスト隠しは禁止
 - 長文は font-size を下げるか折り返す。タイトルは必ず全文表示
 
@@ -1575,6 +1592,382 @@ def determine_slide_type(slide: Dict, slide_number: int, total_slides: int) -> s
     else:
         return "points"  # Default to points
 
+
+
+# -----------------------------------------------------------------------------
+# Sprint 14: provider-response parsing and deterministic typography hardening
+# -----------------------------------------------------------------------------
+
+def _extract_balanced_json_object(text: str) -> str:
+    """Return the first balanced JSON object substring from a model response."""
+    if not text or not text.strip():
+        raise ValueError("Empty strategy response")
+
+    start = text.find("{")
+    if start < 0:
+        preview = redact_secrets(text[:160].replace("\n", " "))
+        raise ValueError(f"No JSON object found in strategy response: {preview}")
+
+    depth = 0
+    in_string = False
+    escape = False
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:idx + 1]
+
+    preview = redact_secrets(text[start:start + 160].replace("\n", " "))
+    raise ValueError(f"Unbalanced JSON object in strategy response: {preview}")
+
+
+def _parse_design_strategy_response(response_text: str) -> Dict[str, Any]:
+    """Parse strategy JSON from real provider responses.
+
+    OpenRouter/Claude can return fenced JSON or a short preface/trailing note
+    even when json_mode is requested. Sprint 13 failed at ``json.loads`` line 1
+    column 1; this parser keeps the strict schema but extracts the JSON object
+    before parsing so valid provider output is not discarded.
+    """
+    raw = (response_text or "").strip()
+    if not raw:
+        raise ValueError("Empty strategy response")
+
+    candidates = [raw]
+    lower = raw.lower()
+    if "```json" in lower:
+        idx = lower.index("```json")
+        fenced = raw[idx + len("```json"):]
+        if "```" in fenced:
+            fenced = fenced[:fenced.index("```")]
+        candidates.insert(0, fenced.strip())
+    elif "```" in raw:
+        parts = raw.split("```")
+        if len(parts) >= 3:
+            candidates.insert(0, parts[1].strip())
+
+    last_error: Optional[Exception] = None
+    for candidate in candidates:
+        try:
+            obj_text = _extract_balanced_json_object(candidate)
+            parsed = json.loads(obj_text)
+            if not isinstance(parsed, dict):
+                raise ValueError("Strategy JSON root must be an object")
+            if not isinstance(parsed.get("content_analysis"), dict):
+                raise ValueError("Strategy JSON missing content_analysis object")
+            if not isinstance(parsed.get("design_style"), dict):
+                raise ValueError("Strategy JSON missing design_style object")
+            return parsed
+        except Exception as exc:
+            last_error = exc
+
+    preview = redact_secrets(raw[:220].replace("\n", " "))
+    raise ValueError(f"Could not parse strategy JSON: {last_error}; response_preview={preview}")
+
+
+_TYPOGRAPHY_NON_CONTENT_MARKERS = (
+    "slide-number", "page-number", "decorative", "footer", "caption",
+    "supplemental", "section-label", "eyebrow", "kicker", "badge", "meta",
+    # Sprint 15: keep small card/step labels as visual chrome, while card body
+    # / Japanese explanation text remains content-bearing and gets hardened.
+    "card-label", "point-label", "step-label", "stat-label",
+)
+
+
+def _selector_is_typography_chrome(selector: str) -> bool:
+    items = [s.strip().lower() for s in selector.split(",") if s.strip()]
+    if not items:
+        return False
+    return all(
+        item in {"body", "html", "*", ":root"}
+        or any(marker in item for marker in _TYPOGRAPHY_NON_CONTENT_MARKERS)
+        for item in items
+    )
+
+
+def _attrs_are_typography_chrome(attrs: str) -> bool:
+    import re as re_mod
+    class_match = re_mod.search(r'class\s*=\s*(["\'])(.*?)\1', attrs, re_mod.IGNORECASE | re_mod.DOTALL)
+    id_match = re_mod.search(r'id\s*=\s*(["\'])(.*?)\1', attrs, re_mod.IGNORECASE | re_mod.DOTALL)
+    haystack = " ".join(
+        value.lower()
+        for value in [class_match.group(2) if class_match else "", id_match.group(2) if id_match else ""]
+    )
+    return any(marker in haystack for marker in _TYPOGRAPHY_NON_CONTENT_MARKERS)
+
+
+def _raise_font_sizes_below_in_css(css: str, min_px: float) -> str:
+    """Raise font-size declarations below ``min_px`` while preserving units."""
+    import re as re_mod
+
+    def repl(match):
+        value = float(match.group(1))
+        unit = match.group(2).lower()
+        px = value * 16.0 if unit in {"rem", "em"} else value
+        if px >= min_px:
+            return match.group(0)
+        if unit == "px":
+            replacement = f"{int(min_px)}px"
+        else:
+            replacement = f"{min_px / 16.0:.3g}{unit}"
+        return f"font-size: {replacement}"
+
+    css = re_mod.sub(r"font-size\s*:\s*([\d.]+)\s*(px|rem|em)", repl, css, flags=re_mod.IGNORECASE)
+
+    def clamp_repl(match):
+        value = float(match.group(1))
+        unit = match.group(2).lower()
+        px = value * 16.0 if unit in {"rem", "em"} else value
+        if px >= min_px:
+            return match.group(0)
+        replacement = f"{int(min_px)}px" if unit == "px" else f"{min_px / 16.0:.3g}{unit}"
+        return match.group(0).replace(match.group(1) + match.group(2), replacement, 1)
+
+    return re_mod.sub(r"font-size\s*:\s*clamp\(\s*([\d.]+)\s*(px|rem|em)\s*,", clamp_repl, css, flags=re_mod.IGNORECASE)
+
+
+def _cap_font_sizes_above_in_css(css: str, max_px: float) -> str:
+    """Cap oversized title font-size declarations while preserving units."""
+    import re as re_mod
+
+    def repl(match):
+        value = float(match.group(1))
+        unit = match.group(2).lower()
+        px = value * 16.0 if unit in {"rem", "em"} else value
+        if px <= max_px:
+            return match.group(0)
+        replacement = f"{int(max_px)}px" if unit == "px" else f"{max_px / 16.0:.3g}{unit}"
+        return f"font-size: {replacement}"
+
+    return re_mod.sub(r"font-size\s*:\s*([\d.]+)\s*(px|rem|em)", repl, css, flags=re_mod.IGNORECASE)
+
+
+def _prevent_title_clipping_in_css(css: str) -> str:
+    """Remove CSS declarations that commonly truncate or awkwardly split titles."""
+    import re as re_mod
+
+    had_keep_all = bool(re_mod.search(r"\bword-break\s*:\s*keep-all", css, flags=re_mod.IGNORECASE))
+    had_dangerous_clipping = bool(
+        re_mod.search(r"\bwhite-space\s*:\s*nowrap", css, flags=re_mod.IGNORECASE)
+        or re_mod.search(r"\btext-overflow\s*:\s*(?:clip|ellipsis)", css, flags=re_mod.IGNORECASE)
+        or re_mod.search(r"\boverflow(?:-[xy])?\s*:\s*hidden", css, flags=re_mod.IGNORECASE)
+        or re_mod.search(r"\boverflow-wrap\s*:\s*anywhere", css, flags=re_mod.IGNORECASE)
+    )
+    css = re_mod.sub(r"\bwhite-space\s*:\s*nowrap\s*;?", "", css, flags=re_mod.IGNORECASE)
+    css = re_mod.sub(r"\btext-overflow\s*:\s*(?:clip|ellipsis)\s*;?", "", css, flags=re_mod.IGNORECASE)
+    css = re_mod.sub(r"\boverflow(?:-[xy])?\s*:\s*hidden\s*;?", "", css, flags=re_mod.IGNORECASE)
+    css = re_mod.sub(r"\boverflow-wrap\s*:\s*anywhere\s*;?", "", css, flags=re_mod.IGNORECASE)
+    css = re_mod.sub(r"\bword-break\s*:\s*(?:normal|break-all|break-word|keep-all)\s*;?", "", css, flags=re_mod.IGNORECASE)
+    if had_keep_all and had_dangerous_clipping:
+        css = _cap_font_sizes_above_in_css(css, 72.0)
+    css = css.rstrip()
+    if css and not css.endswith(";"):
+        css += ";"
+    return css + " white-space: normal; overflow: visible; overflow-wrap: normal; word-break: keep-all; line-break: strict; text-wrap: balance;"
+
+
+def _selector_is_title_text(selector: str) -> bool:
+    selector_lower = selector.lower()
+    return bool(
+        re.search(r"(^|[\s,>+~])h[12](?=$|[\s.#:\[,>+~])", selector_lower)
+        or any(marker in selector_lower for marker in (".title", ".headline", ".main-title"))
+    )
+
+
+def _tag_is_title_text(tag: str, attrs: str) -> bool:
+    haystack = f"{tag} {attrs}".lower()
+    return tag.lower() in {"h1", "h2"} or any(marker in haystack for marker in ("title", "headline", "main-title"))
+
+
+def _repair_bad_japanese_title_breaks(html: str) -> str:
+    """Remove hard line breaks that split short Japanese title word units.
+
+    Keep intentional phrase-level title breaks such as ``作る<br/>流れ``.
+    The repair only removes patterns that are likely model artifacts:
+    katakana word splits (``スライ<br/>ド``) and one-character hiragana
+    continuations (``作<br/>る``).
+    """
+    import re as re_mod
+
+    title_pattern = re_mod.compile(
+        r"(<(?P<tag>h[12]|div|span|p)\b(?P<attrs>[^>]*)>)(?P<body>.*?)(</(?P=tag)>)",
+        flags=re_mod.IGNORECASE | re_mod.DOTALL,
+    )
+    br_pattern = re_mod.compile(r"\s*<br\s*/?>\s*", flags=re_mod.IGNORECASE)
+
+    def should_remove_break(left_text: str, right_text: str) -> bool:
+        if not left_text or not right_text:
+            return False
+        left_char = left_text[-1]
+        right_char = right_text[0]
+        # 作<br/>る, 見<br/>る, 伝え<br/>る etc. are word splits.
+        if re_mod.match(r"[ぁ-ん]", right_char) and re_mod.match(r"[ぁ-んァ-ン一-龥]", left_char):
+            return True
+        # スライ<br/>ド, デザイ<br/>ン etc. are katakana word splits.
+        left_katakana_run = re_mod.search(r"[ァ-ンー]{2,}$", left_text)
+        if left_katakana_run and re_mod.match(r"[ァ-ンー]", right_char):
+            return True
+        return False
+
+    def repair_title_body(body: str) -> str:
+        pieces = []
+        cursor = 0
+        for br_match in br_pattern.finditer(body):
+            left = body[: br_match.start()]
+            right = body[br_match.end() :]
+            if should_remove_break(re_mod.sub(r"<[^>]+>", "", left).strip(), re_mod.sub(r"<[^>]+>", "", right).strip()):
+                pieces.append(body[cursor : br_match.start()])
+            else:
+                pieces.append(body[cursor : br_match.end()])
+            cursor = br_match.end()
+        pieces.append(body[cursor:])
+        return "".join(pieces)
+
+    def repl(match):
+        opening = match.group(1)
+        attrs = match.group("attrs") or ""
+        body = match.group("body")
+        closing = match.group(5)
+        tag = match.group("tag")
+        if not _tag_is_title_text(tag, attrs):
+            return match.group(0)
+        return opening + repair_title_body(body) + closing
+
+    return title_pattern.sub(repl, html)
+
+
+def harden_generated_html_typography(html: str) -> str:
+    """Deterministically remove regular-content small text from generated HTML.
+
+    This does not make decorative chrome larger. It targets normal content
+    selectors/inline styles so the Design QA hard fail (<=20px regular text)
+    is not left entirely to the model prompt.
+    """
+    if not html:
+        return html
+    html = _repair_bad_japanese_title_breaks(html)
+    if "font-size" not in html:
+        return html
+
+    import re as re_mod
+
+    def css_rule_repl(match):
+        selector = match.group(1)
+        declarations = match.group(2)
+        if _selector_is_typography_chrome(selector):
+            return match.group(0)
+        min_px = 72.0 if _selector_is_title_text(selector) else 28.0
+        hardened_declarations = _raise_font_sizes_below_in_css(declarations, min_px)
+        if _selector_is_title_text(selector):
+            hardened_declarations = _prevent_title_clipping_in_css(hardened_declarations)
+        return f"{selector}{{{hardened_declarations}}}"
+
+    def style_block_repl(match):
+        before, css, after = match.group(1), match.group(2), match.group(3)
+        return before + re_mod.sub(r"([^{}]+)\{([^{}]*)\}", css_rule_repl, css, flags=re_mod.DOTALL) + after
+
+    html = re_mod.sub(r"(<style[^>]*>)(.*?)(</style>)", style_block_repl, html, flags=re_mod.IGNORECASE | re_mod.DOTALL)
+
+    def inline_repl(match):
+        tag, attrs_prefix, quote, style, attrs_suffix = match.groups()
+        attrs = attrs_prefix + attrs_suffix
+        if _attrs_are_typography_chrome(attrs):
+            return match.group(0)
+        min_px = 72.0 if _tag_is_title_text(tag, attrs) else 28.0
+        hardened_style = _raise_font_sizes_below_in_css(style, min_px)
+        if _tag_is_title_text(tag, attrs):
+            hardened_style = _prevent_title_clipping_in_css(hardened_style)
+        return f"<{tag}{attrs_prefix}style={quote}{hardened_style}{quote}{attrs_suffix}>"
+
+    return re_mod.sub(
+        r"<([a-zA-Z][\w:-]*)([^>]*?)style\s*=\s*([\"'])(.*?)\3([^>]*)>",
+        inline_repl,
+        html,
+        flags=re_mod.IGNORECASE | re_mod.DOTALL,
+    )
+
+
+def self_review_preserves_slide_title(original_html: str, improved_html: str) -> bool:
+    """Return False when self-review rewrote/removed the original title."""
+    from bs4 import BeautifulSoup as BS4
+
+    original_soup = BS4(original_html or "", 'html.parser')
+    original_title_el = original_soup.find(["h1", "h2"]) or original_soup.select_one(".title, .headline")
+    original_title = original_title_el.get_text(strip=True) if original_title_el else ""
+    if not original_title:
+        return True
+    improved_text = BS4(improved_html or "", 'html.parser').get_text(strip=True)
+    return _title_present(original_title, improved_text)
+
+
+def save_self_review_title_diagnostic_snapshot(
+    original_html: str,
+    improved_html: str,
+    *,
+    design_mode: str,
+    slide_number: Optional[int] = None,
+    job_id: Optional[str] = None,
+    output_dir: Optional[str] = None,
+) -> Optional[Dict[str, str]]:
+    """Persist redacted self-review pre/post HTML for QA-only diagnostics.
+
+    The normal telemetry intentionally stores only booleans. When title rewrite is
+    detected, this optional artifact gives QA enough evidence to inspect the
+    exact model change without printing secrets to stdout or API responses.
+    """
+    import difflib
+    import os as _os
+
+    collector = get_current_collector()
+    resolved_job_id = job_id or (collector.job_id if collector else None)
+    if not resolved_job_id:
+        return None
+    if output_dir is None:
+        try:
+            from config import OUTPUT_DIR
+            output_dir = OUTPUT_DIR
+        except Exception:
+            return None
+
+    slide_label = f"slide_{slide_number:03d}" if slide_number else "slide_unknown"
+    safe_mode = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in (design_mode or "unknown"))
+    diagnostics_dir = _os.path.join(output_dir, f"{resolved_job_id}_slides", "self_review_diagnostics")
+    _os.makedirs(diagnostics_dir, exist_ok=True)
+
+    original_redacted = redact_secrets(original_html or "") or ""
+    improved_redacted = redact_secrets(improved_html or "") or ""
+    base = f"{slide_label}_{safe_mode}_title_rewrite"
+    original_path = _os.path.join(diagnostics_dir, f"{base}_original.html")
+    improved_path = _os.path.join(diagnostics_dir, f"{base}_improved.html")
+    diff_path = _os.path.join(diagnostics_dir, f"{base}_diff.patch")
+
+    with open(original_path, "w", encoding="utf-8") as f:
+        f.write(original_redacted)
+    with open(improved_path, "w", encoding="utf-8") as f:
+        f.write(improved_redacted)
+    diff_text = "".join(difflib.unified_diff(
+        original_redacted.splitlines(keepends=True),
+        improved_redacted.splitlines(keepends=True),
+        fromfile=f"{base}_original.html",
+        tofile=f"{base}_improved.html",
+    ))
+    with open(diff_path, "w", encoding="utf-8") as f:
+        f.write(diff_text)
+
+    return {"original_html": original_path, "improved_html": improved_path, "diff": diff_path}
 
 async def generate_design_strategy(
     outline: Dict[str, Any],
@@ -1757,22 +2150,26 @@ variety is encouraged) but the stylistic DNA is constant.
 """
 
     try:
-        response_text = await safe_gemini_generate(
-            model_name,
-            user_prompt,
-            key,
-            config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                # Pro mode wants a bit more creativity; Flash is balanced.
-                temperature=0.75 if design_mode == "pro" else 0.7,
-                # Pro mode returns more fields, needs more tokens
-                max_output_tokens=(12288 if design_mode == "pro" else 8192),
-            ),
-            use_design_model=True,
-            system_prompt=effective_system_prompt,
-        )
+        telemetry_tokens = set_telemetry_context(design_mode=design_mode, stage="strategy", slide_number=None)
+        try:
+            response_text = await safe_gemini_generate(
+                model_name,
+                user_prompt,
+                key,
+                config=genai.GenerationConfig(
+                    response_mime_type="application/json",
+                    # Pro mode wants a bit more creativity; Flash is balanced.
+                    temperature=0.75 if design_mode == "pro" else 0.7,
+                    # Pro mode returns more fields, needs more tokens
+                    max_output_tokens=(12288 if design_mode == "pro" else 8192),
+                ),
+                use_design_model=True,
+                system_prompt=effective_system_prompt,
+            )
+        finally:
+            reset_telemetry_context(telemetry_tokens)
 
-        strategy = json.loads(response_text)
+        strategy = _parse_design_strategy_response(response_text)
         print(f"[Design Architect] Strategy: {strategy['design_style']['concept_name']}")
 
         # Force apply color theme if specified (override AI's choice)
@@ -1805,7 +2202,19 @@ variety is encouraged) but the stylistic DNA is constant.
         return strategy
 
     except Exception as e:
-        print(f"[Design Architect] Strategy generation failed: {e}")
+        redacted_error = redact_secrets(str(e))
+        print(f"[Design Architect] Strategy generation failed: {redacted_error}")
+        record_current_telemetry(
+            requested_model=model_name,
+            actual_model=model_name,
+            provider=("openrouter" if _openrouter_key_var.get(None) else "gemini"),
+            duration_ms=0,
+            fallback_reason="Strategy generation failed",
+            warning=redacted_error,
+            stage="fallback",
+            slide_number=None,
+            design_mode=design_mode,
+        )
         fallback = get_fallback_strategy(color_theme)
         fallback["_design_mode"] = design_mode
         return fallback
@@ -2250,17 +2659,21 @@ expressive composition). Keep the stylistic DNA consistent project-wide.
         # Pro mode sometimes produces richer HTML → give it more output budget
         max_output = 12288 if design_mode == "pro" else 8192
 
-        html = await safe_gemini_generate(
-            model_name,
-            prompt,
-            key,
-            config=genai.GenerationConfig(
-                temperature=0.8,
-                max_output_tokens=max_output,
-            ),
-            use_design_model=True,
-            system_prompt=system_for_this_slide,
-        )
+        telemetry_tokens = set_telemetry_context(design_mode=design_mode, stage="slide_html", slide_number=slide_number)
+        try:
+            html = await safe_gemini_generate(
+                model_name,
+                prompt,
+                key,
+                config=genai.GenerationConfig(
+                    temperature=0.8,
+                    max_output_tokens=max_output,
+                ),
+                use_design_model=True,
+                system_prompt=system_for_this_slide,
+            )
+        finally:
+            reset_telemetry_context(telemetry_tokens)
         
         # Extract HTML from markdown code block if present (case-insensitive)
         html_lower = html.lower()
@@ -2282,6 +2695,16 @@ expressive composition). Keep the stylistic DNA consistent project-wide.
 
         if not html.startswith("<!DOCTYPE") and not html.startswith("<html"):
             print(f"[Design Architect] Invalid HTML for slide {slide_number}, using fallback")
+            record_current_telemetry(
+                requested_model=model_name,
+                actual_model=model_name,
+                provider=("openrouter" if _openrouter_key_var.get(None) else "gemini"),
+                duration_ms=0,
+                fallback_reason="Invalid HTML fallback",
+                stage="fallback",
+                slide_number=slide_number,
+                design_mode=design_mode,
+            )
             return generate_fallback_html(slide, slide_number, total_slides, strategy)
 
         # Validate that generated HTML contains the slide text content
@@ -2352,12 +2775,26 @@ expressive composition). Keep the stylistic DNA consistent project-wide.
             print(f"[Design Architect] Injected user image {img_index + 1}/{len(user_images_list)} into slide {slide_number} (lowercase)")
         
         print(f"[Design Architect] Generated slide {slide_number}: {slide_type}")
+        # Sprint 14: deterministically raise regular small text before metrics/rendering.
+        html = harden_generated_html_typography(html)
         # Apply deterministic PiP safe zone CSS padding
         html = inject_pip_safe_zone(html, facecam_position, facecam_size, video_width, video_height)
         return html
         
     except Exception as e:
-        print(f"[Design Architect] Slide {slide_number} error: {e}")
+        redacted_error = redact_secrets(str(e))
+        print(f"[Design Architect] Slide {slide_number} error: {redacted_error}")
+        record_current_telemetry(
+            requested_model=model_name,
+            actual_model=model_name,
+            provider=("openrouter" if _openrouter_key_var.get(None) else "gemini"),
+            duration_ms=0,
+            fallback_reason="Slide HTML generation failed",
+            warning=redacted_error,
+            stage="fallback",
+            slide_number=slide_number,
+            design_mode=design_mode,
+        )
         return generate_fallback_html(slide, slide_number, total_slides, strategy)
 
 
@@ -2581,16 +3018,200 @@ def ensure_text_visible(html: str, slide: Dict[str, Any], slide_number: int, tot
     visible_text2 = soup2.get_text(strip=True)
 
     if not visible_text2 or len(visible_text2) < 5:
+        reason = "TextSafety fallback: no visible text"
         print(f"[TextSafety] Slide {slide_number}: no visible text at all, using fallback HTML")
+        _record_text_safety_fallback(slide_number, strategy, reason)
         return generate_fallback_html(slide, slide_number, total_slides, strategy)
 
     if title and not _title_present(title, visible_text2):
-        print(f"[TextSafety] Slide {slide_number}: title '{title[:30]}' not found (even with fuzzy match), using fallback HTML")
+        reason = "TextSafety fallback: title missing"
+        redacted_title_preview = redact_secrets(title[:30])
+        print(f"[TextSafety] Slide {slide_number}: title '{redacted_title_preview}' not found (even with fuzzy match), using fallback HTML")
+        _record_text_safety_fallback(slide_number, strategy, reason, warning=f"Title not found: {title[:80]}")
         return generate_fallback_html(slide, slide_number, total_slides, strategy)
 
     if title and title not in visible_text and _title_present(title, visible_text2):
         print(f"[TextSafety] Slide {slide_number}: text recovered after CSS sanitization")
     return html
+
+
+def _relax_title_layout_for_render(css: str) -> str:
+    """Give title text enough box space during final render safety pass."""
+    import re as re_mod
+
+    css = re_mod.sub(r"\bmax-width\s*:\s*\d+(?:\.\d+)?%\s*;?", "max-width: 100%;", css, flags=re_mod.IGNORECASE)
+
+    def line_height_repl(match):
+        value = float(match.group(1))
+        return "line-height: 1.3;" if value < 1.3 else match.group(0)
+
+    css = re_mod.sub(r"\bline-height\s*:\s*([\d.]+)\s*;?", line_height_repl, css, flags=re_mod.IGNORECASE)
+    return css
+
+
+def _cap_title_font_sizes_for_render(html: str, max_px: float | None = None) -> str:
+    """Relax title layout and optionally cap title-like font sizes in final render safety pass."""
+    if not html or "font-size" not in html:
+        return html
+
+    import re as re_mod
+
+    def css_rule_repl(match):
+        selector = match.group(1)
+        declarations = match.group(2)
+        if not _selector_is_title_text(selector):
+            return match.group(0)
+        capped_declarations = _relax_title_layout_for_render(declarations)
+        if max_px is not None:
+            capped_declarations = _cap_font_sizes_above_in_css(capped_declarations, max_px)
+        return f"{selector}{{{capped_declarations}}}"
+
+    def style_block_repl(match):
+        before, css, after = match.group(1), match.group(2), match.group(3)
+        return before + re_mod.sub(r"([^{}]+)\{([^{}]*)\}", css_rule_repl, css, flags=re_mod.DOTALL) + after
+
+    html = re_mod.sub(r"(<style[^>]*>)(.*?)(</style>)", style_block_repl, html, flags=re_mod.IGNORECASE | re_mod.DOTALL)
+
+    def inline_repl(match):
+        tag, attrs_prefix, quote, style, attrs_suffix = match.groups()
+        attrs = attrs_prefix + attrs_suffix
+        if not _tag_is_title_text(tag, attrs):
+            return match.group(0)
+        capped_style = _relax_title_layout_for_render(style)
+        if max_px is not None:
+            capped_style = _cap_font_sizes_above_in_css(capped_style, max_px)
+        return f"<{tag}{attrs_prefix}style={quote}{capped_style}{quote}{attrs_suffix}>"
+
+    return re_mod.sub(
+        r"<([a-zA-Z][\w:-]*)([^>]*?)style\s*=\s*([\"'])(.*?)\3([^>]*)>",
+        inline_repl,
+        html,
+        flags=re_mod.IGNORECASE | re_mod.DOTALL,
+    )
+
+
+def _ensure_title_only_main_content_container(html: str) -> str:
+    """Wrap title-only slides with an explicit main content container for layout metrics."""
+    if not html or "voislide-main-content" in html:
+        return html
+
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        body = soup.body
+        if body is None:
+            return html
+
+        title = body.find(["h1", "h2"], recursive=False)
+        if title is None:
+            return html
+
+        direct_content = [
+            child
+            for child in body.find_all(recursive=False)
+            if getattr(child, "name", None) not in {"script", "style"}
+        ]
+        main_markers = ("main", "content", "hero", "container", "layout", "stage", "panel", "message")
+        for child in direct_content:
+            marker = " ".join(str(value) for value in (child.get("class") or [])) + " " + str(child.get("id") or "")
+            if any(part in marker.lower() for part in main_markers):
+                return html
+
+        chrome_markers = ("brand", "slide-number", "page-number", "footer", "caption", "decorative")
+        to_wrap = []
+        for child in direct_content:
+            marker = " ".join(str(value) for value in (child.get("class") or [])) + " " + str(child.get("id") or "")
+            marker_lower = marker.lower()
+            if any(part in marker_lower for part in chrome_markers):
+                continue
+            if child.name in {"h1", "h2"} or "eyebrow" in marker_lower or "headline" in marker_lower or "title" in marker_lower:
+                to_wrap.append(child)
+
+        if title not in to_wrap:
+            return html
+        if len(to_wrap) < 1:
+            return html
+
+        wrapper = soup.new_tag("div")
+        wrapper["class"] = "voislide-main-content"
+        first = to_wrap[0]
+        first.insert_before(wrapper)
+        for child in to_wrap:
+            wrapper.append(child.extract())
+
+        css = """
+.voislide-main-content {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 1680px);
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+"""
+        style = soup.find("style")
+        if style is not None:
+            style.append(css)
+        elif soup.head is not None:
+            style_tag = soup.new_tag("style")
+            style_tag.string = css
+            soup.head.append(style_tag)
+        return str(soup)
+    except Exception:
+        return html
+
+
+def finalize_generated_html_for_render(
+    html: str,
+    slide: Dict[str, Any],
+    slide_number: int,
+    total_slides: int,
+    strategy: Dict[str, Any],
+) -> str:
+    """Apply all deterministic final safety checks before browser rendering."""
+    visible_html = ensure_text_visible(html, slide, slide_number, total_slides, strategy)
+    finalized = harden_generated_html_typography(visible_html)
+    finalized = _ensure_title_only_main_content_container(finalized)
+
+    try:
+        from services.design_quality_metrics import analyze_design_quality_with_browser_layout
+
+        metrics = analyze_design_quality_with_browser_layout(finalized)
+        if metrics.get("text_clipping_detected"):
+            finalized = _cap_title_font_sizes_for_render(finalized, 72.0)
+
+        for max_px in (64.0, 56.0):
+            metrics = analyze_design_quality_with_browser_layout(finalized)
+            if not metrics.get("text_clipping_detected"):
+                break
+            finalized = _cap_title_font_sizes_for_render(finalized, max_px)
+    except Exception as exc:
+        print(f"[TypographySafety] Browser title clipping check skipped: {type(exc).__name__}: {exc}")
+
+    return finalized
+
+
+def _record_text_safety_fallback(
+    slide_number: int,
+    strategy: Dict[str, Any],
+    fallback_reason: str,
+    warning: Optional[str] = None,
+) -> None:
+    """Record deterministic slide-level fallback from text safety checks."""
+    design_mode = strategy.get("_design_mode", "flash_standard") if strategy else "flash_standard"
+    record_current_telemetry(
+        requested_model="deterministic-text-safety",
+        actual_model="deterministic-text-safety",
+        provider="local",
+        duration_ms=0,
+        fallback_reason=fallback_reason,
+        warning=warning,
+        stage="fallback",
+        slide_number=slide_number,
+        design_mode=design_mode,
+    )
 
 
 def generate_fallback_html(
@@ -2625,7 +3246,8 @@ def generate_fallback_html(
     bg_end = colors.get("background_end", "#1e293b")
 
     icons = ["◆", "◇", "▶", "●", "★", "✦"]
-    variant = (slide_number - 1) % 4
+    design_mode = strategy.get("_design_mode", "flash_standard")
+    variant = (slide_number if design_mode == "pro" else slide_number - 1) % 4
 
     # Build point list HTML
     point_items = []
@@ -2636,7 +3258,7 @@ def generate_fallback_html(
 
     # Shared font import + base styles
     base_head = f'''<!DOCTYPE html>
-<html>
+<html data-voislide-fallback="true">
 <head>
     <meta charset="UTF-8">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -2743,7 +3365,7 @@ def generate_fallback_html(
     <div style="position:absolute;inset:0;background:linear-gradient(115deg,{bg_start} 0%,{bg_start} 45%,{secondary}40 45%,{accent}30 100%);"></div>
     <div class="glow" style="width:550px;height:550px;background:{primary};top:-180px;right:-180px;"></div>
     <div style="position:relative;z-index:2;height:100%;display:flex;flex-direction:column;padding:90px 110px;">
-        <div style="display:inline-block;padding:8px 22px;background:rgba(255,255,255,0.1);backdrop-filter:blur(12px);border-radius:30px;border:1px solid rgba(255,255,255,0.2);align-self:flex-start;font-size:16px;letter-spacing:3px;color:{accent};margin-bottom:32px;text-transform:uppercase;">SECTION {slide_number:02d}</div>
+        <div class="section-label" style="display:inline-block;padding:8px 22px;background:rgba(255,255,255,0.1);backdrop-filter:blur(12px);border-radius:30px;border:1px solid rgba(255,255,255,0.2);align-self:flex-start;font-size:16px;letter-spacing:3px;color:{accent};margin-bottom:32px;text-transform:uppercase;">SECTION {slide_number:02d}</div>
         <h1 class="gradient-text" style="font-size:88px;font-weight:900;line-height:1.1;margin-bottom:20px;max-width:75%;">{title}</h1>
         {f'<p style="font-size:28px;color:rgba(255,255,255,0.78);margin-bottom:50px;max-width:70%;">{subtitle}</p>' if subtitle else ''}
         <ul style="list-style:none;display:flex;flex-direction:column;gap:22px;font-size:24px;line-height:1.5;color:rgba(255,255,255,0.95);max-width:75%;">
@@ -3219,7 +3841,8 @@ Concept to illustrate: """
                     html=html,
                     strategy=strategy,
                     gemini_key=gemini_key,
-                    model_name=model_name
+                    model_name=model_name,
+                    slide_number=slide_number,
                 )
                 
                 # Step 3d: Post-processing - forcibly remove any remaining caption text
@@ -3228,8 +3851,8 @@ Concept to illustrate: """
             else:
                 print(f"[Design Architect] Skipping self-review for illustration slide {slide_number}")
 
-            # Step 3e: Final safety — ensure text content exists and is visible
-            html = ensure_text_visible(html, slide, slide_number, total_slides, strategy)
+            # Step 3e: Final safety — ensure text content exists, is visible, and final typography is render-safe
+            html = finalize_generated_html_for_render(html, slide, slide_number, total_slides, strategy)
 
             html_contents.append(html)
             
@@ -3327,8 +3950,17 @@ Concept to illustrate: """
         del queue_waiters[job_id]
     print(f"[Queue] Job {job_id} completed (waiters: {len(queue_waiters)}, active: {len(queue_active)})")
     
-    # Save HTML contents for feedback editing
+    # Save HTML contents and deterministic design QA metrics for feedback editing
     save_html_contents(job_id, html_contents)
+    fallback_slide_numbers = {
+        idx
+        for idx, html in enumerate(html_contents, start=1)
+        if 'data-voislide-fallback="true"' in html
+    }
+    save_design_quality_metrics(
+        job_id,
+        build_design_quality_metrics(html_contents, fallback_slide_numbers=fallback_slide_numbers),
+    )
     
     print(f"[Design Architect] Generated {len(image_paths)} slides with unified design strategy")
     return image_paths
@@ -3489,7 +4121,8 @@ async def validate_and_regenerate_slide(
                 strategy=strategy,
                 gemini_key=gemini_key,
                 additional_feedback=feedback,
-                model_name=model_name
+                model_name=model_name,
+                slide_number=slide_number,
             )
             
             # Re-render
@@ -3703,6 +4336,27 @@ def load_slide_data_from_disk(job_id: str) -> bool:
         return False
 
 
+def build_design_quality_metrics(
+    html_contents: List[str],
+    fallback_slide_numbers: Optional[set[int]] = None,
+) -> List[Dict[str, Any]]:
+    """Build per-slide deterministic design QA metrics from generated HTML.
+
+    This is intentionally HTML/CSS-only for Sprint 2. Screenshot/image-based
+    occupancy checks come later.
+    """
+    fallback_slide_numbers = fallback_slide_numbers or set()
+    metrics: List[Dict[str, Any]] = []
+    for idx, html in enumerate(html_contents, start=1):
+        item = analyze_design_quality(
+            html,
+            fallback_used=idx in fallback_slide_numbers,
+        )
+        item["slide_number"] = idx
+        metrics.append(item)
+    return metrics
+
+
 def save_slide_data(job_id: str, slides: List[Dict], strategy: Dict):
     """Save slide data and strategy for later feedback editing.
 
@@ -3730,6 +4384,14 @@ def save_html_contents(job_id: str, html_contents: List[str]):
     with _get_slide_data_lock(job_id):
         if job_id in _slide_data_cache:
             _slide_data_cache[job_id]["html_contents"] = html_contents
+            _persist_slide_data(job_id)
+
+
+def save_design_quality_metrics(job_id: str, metrics: List[Dict[str, Any]]):
+    """Replace deterministic per-slide design QA metrics for a job."""
+    with _get_slide_data_lock(job_id):
+        if job_id in _slide_data_cache:
+            _slide_data_cache[job_id]["design_quality_metrics"] = metrics
             _persist_slide_data(job_id)
 
 def load_html_contents(job_id: str) -> List[str]:
@@ -3799,7 +4461,14 @@ AI_SELF_REVIEW_PROMPT = """# Role
 もし不要なテキストがあれば、**そのHTML要素を完全に削除**してください。
 
 ## 1. コピー（テキスト）
-- タイトルは簡潔でインパクトがあるか？
+
+### ⛔ Sprint 15 最重要: タイトル非改変
+- **タイトル文字列は絶対に書き換えないでください。**
+- h1 / h2 / .title / .headline のテキストは、文字列・意味・主語・語尾をそのまま保持してください。
+- タイトルを短くする、広告的に強める、言い換える、主語を省く、語尾を変えることは禁止です。
+- 改善してよいのは、タイトルのフォントサイズ、色、余白、改行、装飾だけです。
+
+- タイトルは簡潔でインパクトがあるか？（ただし文字列は変更禁止）
 - ポイントは具体的で理解しやすいか？
 - 冗長な表現はないか？
 - キーメッセージは心に残るか？
@@ -3855,7 +4524,8 @@ async def self_review_slide(
     strategy: Dict[str, Any],
     gemini_key: Optional[str] = None,
     additional_feedback: Optional[str] = None,  # Additional fix instructions from validation
-    model_name: str = "gemini-3-flash-preview"
+    model_name: str = "gemini-3-flash-preview",
+    slide_number: Optional[int] = None,
 ) -> str:
     """
     AI self-reviews and improves a slide before showing to user
@@ -3892,16 +4562,21 @@ async def self_review_slide(
     
     try:
         # Self-review of slide HTML (uses design model via OpenRouter)
-        improved_html = await safe_gemini_generate(
-            model_name,
-            prompt,
-            key,
-            config=genai.GenerationConfig(
-                temperature=0.7,
-                max_output_tokens=8192
-            ),
-            use_design_model=True,
-        )
+        design_mode = strategy.get("_design_mode", "flash_standard")
+        telemetry_tokens = set_telemetry_context(design_mode=design_mode, stage="self_review")
+        try:
+            improved_html = await safe_gemini_generate(
+                model_name,
+                prompt,
+                key,
+                config=genai.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=8192
+                ),
+                use_design_model=True,
+            )
+        finally:
+            reset_telemetry_context(telemetry_tokens)
 
         # Extract HTML from markdown code block if present (case-insensitive)
         improved_lower = improved_html.lower()
@@ -3922,8 +4597,35 @@ async def self_review_slide(
         if improved_html.startswith("<!DOCTYPE") or improved_html.startswith("<html"):
             # Validate that self-review didn't remove essential text content
             from bs4 import BeautifulSoup as BS4
-            original_text = BS4(html, 'html.parser').get_text(strip=True)
+            original_soup = BS4(html, 'html.parser')
             improved_text = BS4(improved_html, 'html.parser').get_text(strip=True)
+            original_text = original_soup.get_text(strip=True)
+
+            # Self-review may improve layout/style, but it must not rewrite or
+            # remove the original slide title. If it does, keep the pre-review
+            # HTML so the later TextSafety check does not need to fallback.
+            original_title_el = original_soup.find(["h1", "h2"]) or original_soup.select_one(".title, .headline")
+            original_title = original_title_el.get_text(strip=True) if original_title_el else ""
+            if original_title and not self_review_preserves_slide_title(html, improved_html):
+                save_self_review_title_diagnostic_snapshot(
+                    html,
+                    improved_html,
+                    design_mode=design_mode,
+                    slide_number=slide_number,
+                )
+                record_current_telemetry(
+                    requested_model="deterministic-self-review-title-check",
+                    actual_model="deterministic-self-review-title-check",
+                    provider="local",
+                    duration_ms=0,
+                    stage="self_review_diagnostic",
+                    slide_number=slide_number,
+                    design_mode=design_mode,
+                    fallback_reason=None,
+                    warning="SelfReview title diagnostic: original_title_present=true improved_title_present=false decision=keep_original",
+                )
+                print("[Self-Review] ⚠ Improved version lost the original title, keeping original")
+                return html
 
             # If improved version lost >60% of text, keep original
             if len(original_text) > 20 and len(improved_text) < len(original_text) * 0.4:
@@ -3937,7 +4639,8 @@ async def self_review_slide(
             return html
             
     except Exception as e:
-        print(f"[Self-Review] Error: {e}, keeping original")
+        redacted_error = redact_secrets(str(e))
+        print(f"[Self-Review] Error: {redacted_error}, keeping original")
         return html
 
 

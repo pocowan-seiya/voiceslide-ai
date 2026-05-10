@@ -1,0 +1,181 @@
+{
+  "ok": true,
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "975651f2-89bf-4110-b96f-81577034c27b",
+      "generation_telemetry_summary": {
+        "job_id": "975651f2-89bf-4110-b96f-81577034c27b",
+        "entry_count": 7,
+        "total_calls": 7,
+        "total_duration_ms": 63295,
+        "fallback_count": 2,
+        "total_input_tokens": 12652,
+        "total_output_tokens": 9704,
+        "total_estimated_cost_usd": null
+      },
+      "stage_counts": {
+        "strategy": 1,
+        "fallback": 2,
+        "slide_html": 2,
+        "self_review": 2
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:TextSafety fallback: title missing": 1
+      },
+      "fallback_entries": [
+        {
+          "design_mode": "flash_standard",
+          "stage": "fallback",
+          "slide_number": null,
+          "requested_model": "gemini-3-flash-preview",
+          "actual_model": "gemini-3-flash-preview",
+          "provider": "openrouter",
+          "duration_ms": 0,
+          "fallback_reason": "Strategy generation failed",
+          "warning": "Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "design_mode": "flash_standard",
+          "stage": "fallback",
+          "slide_number": 2,
+          "requested_model": "deterministic-text-safety",
+          "actual_model": "deterministic-text-safety",
+          "provider": "local",
+          "duration_ms": 0,
+          "fallback_reason": "TextSafety fallback: title missing",
+          "warning": "Title not found: 日本語が読みやすく、自然に繋がること"
+        }
+      ],
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 14.0,
+          "title_font_size_px": 48.0,
+          "small_text_count": 2,
+          "fallback_used": false,
+          "quality_gate": "fail",
+          "warnings_count": 2,
+          "warnings": [
+            "2個のフォントサイズが20px以下です（最小: 14.0px）。通常テキストで20px以下は禁止です。",
+            "タイトルフォントサイズが48.0pxです。最低56.0px必要です。"
+          ]
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "mode": "pro",
+      "job_id": "5c29f10c-3f77-4250-92b5-c7740e9cac0b",
+      "generation_telemetry_summary": {
+        "job_id": "5c29f10c-3f77-4250-92b5-c7740e9cac0b",
+        "entry_count": 5,
+        "total_calls": 5,
+        "total_duration_ms": 21822,
+        "fallback_count": 3,
+        "total_input_tokens": 5266,
+        "total_output_tokens": 3294,
+        "total_estimated_cost_usd": null
+      },
+      "stage_counts": {
+        "fallback": 3,
+        "self_review": 2
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:Slide HTML generation failed": 2
+      },
+      "fallback_entries": [
+        {
+          "design_mode": "pro",
+          "stage": "fallback",
+          "slide_number": null,
+          "requested_model": "gemini-3-flash-preview",
+          "actual_model": "gemini-3-flash-preview",
+          "provider": "openrouter",
+          "duration_ms": 0,
+          "fallback_reason": "Strategy generation failed",
+          "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+        },
+        {
+          "design_mode": "pro",
+          "stage": "fallback",
+          "slide_number": 1,
+          "requested_model": "gemini-3-flash-preview",
+          "actual_model": "gemini-3-flash-preview",
+          "provider": "openrouter",
+          "duration_ms": 0,
+          "fallback_reason": "Slide HTML generation failed",
+          "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+        },
+        {
+          "design_mode": "pro",
+          "stage": "fallback",
+          "slide_number": 2,
+          "requested_model": "gemini-3-flash-preview",
+          "actual_model": "gemini-3-flash-preview",
+          "provider": "openrouter",
+          "duration_ms": 0,
+          "fallback_reason": "Slide HTML generation failed",
+          "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10116. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+        }
+      ],
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 16.0,
+          "title_font_size_px": 88.0,
+          "small_text_count": 1,
+          "fallback_used": true,
+          "quality_gate": "fail",
+          "warnings_count": 1,
+          "warnings": [
+            "1個のフォントサイズが20px以下です（最小: 16.0px）。通常テキストで20px以下は禁止です。"
+          ]
+        }
+      ]
+    }
+  ],
+  "artifact_hashes": [
+    {
+      "file": "flash_standard_slide_001.png",
+      "sha256": "afa731291db35ce737e16c83c7ba7f796e4c0d8a8790536d79e949c4bad3d8f3",
+      "size": 926431
+    },
+    {
+      "file": "flash_standard_slide_002.png",
+      "sha256": "cbed7a9ff8e9b2c4ee570aa3cd390f54175102ca8eace5abc6194fa14cf97057",
+      "size": 655400
+    },
+    {
+      "file": "pro_slide_001.png",
+      "sha256": "c0791541d41fa1ea6a96995eca712d6d433df86a99d2166d5e034506c66db909",
+      "size": 637654
+    },
+    {
+      "file": "pro_slide_002.png",
+      "sha256": "0e81578eee2ff61bb1ce3d076b14daabd899665d894fccb20d1963943e2075e2",
+      "size": 771610
+    }
+  ]
+}

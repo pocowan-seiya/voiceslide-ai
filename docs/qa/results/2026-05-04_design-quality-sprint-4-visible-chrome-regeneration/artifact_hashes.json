@@ -1,0 +1,22 @@
+[
+  {
+    "file": "flash_standard_slide_001.png",
+    "sha256": "abb51af2c42058ea51f5035bc260dfaa3eb00a18cea714ef2787592f3c6bb8c7",
+    "size": 717098
+  },
+  {
+    "file": "flash_standard_slide_002.png",
+    "sha256": "3179e11eeee8ef954e3b86838b223c012ce40917e18f7ebd8d0c2a1164225439",
+    "size": 655227
+  },
+  {
+    "file": "pro_slide_001.png",
+    "sha256": "56f632b57ae227bbf0855feea820508e8e2cca99859066845d9b1ae5eeb45ef6",
+    "size": 961898
+  },
+  {
+    "file": "pro_slide_002.png",
+    "sha256": "7ecd3111dad9a38412d73e25d653cd8f9b05c33c958192c37a90039c21a6c02e",
+    "size": 772682
+  }
+]

@@ -1,0 +1,188 @@
+{
+  "ok": true,
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "c80e32b9-3aa0-4a94-9e15-96c1a1c9e07d",
+      "generation_telemetry_summary": {
+        "job_id": "c80e32b9-3aa0-4a94-9e15-96c1a1c9e07d",
+        "entry_count": 8,
+        "total_calls": 8,
+        "total_duration_ms": 58936,
+        "fallback_count": 3,
+        "total_input_tokens": 12195,
+        "total_output_tokens": 8783,
+        "total_estimated_cost_usd": null
+      },
+      "stage_counts": {
+        "strategy": 1,
+        "fallback": 3,
+        "slide_html": 2,
+        "self_review": 2
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:TextSafety fallback: title missing": 2
+      },
+      "fallback_entries": [
+        {
+          "design_mode": "flash_standard",
+          "stage": "fallback",
+          "slide_number": null,
+          "requested_model": "gemini-3-flash-preview",
+          "actual_model": "gemini-3-flash-preview",
+          "provider": "openrouter",
+          "duration_ms": 0,
+          "fallback_reason": "Strategy generation failed",
+          "warning": "Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "design_mode": "flash_standard",
+          "stage": "fallback",
+          "slide_number": 1,
+          "requested_model": "deterministic-text-safety",
+          "actual_model": "deterministic-text-safety",
+          "provider": "local",
+          "duration_ms": 0,
+          "fallback_reason": "TextSafety fallback: title missing",
+          "warning": "Title not found: 音声からスライド動画を作る流れを確認します"
+        },
+        {
+          "design_mode": "flash_standard",
+          "stage": "fallback",
+          "slide_number": 2,
+          "requested_model": "deterministic-text-safety",
+          "actual_model": "deterministic-text-safety",
+          "provider": "local",
+          "duration_ms": 0,
+          "fallback_reason": "TextSafety fallback: title missing",
+          "warning": "Title not found: 日本語が読みやすく、自然に繋がること"
+        }
+      ],
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 84.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ],
+      "started_at": "2026-05-05T10:19:22+0900",
+      "completed_at": "2026-05-05T10:20:51+0900"
+    },
+    {
+      "mode": "pro",
+      "job_id": "8d894ee0-6216-4055-9bc4-8f91255ff0ba",
+      "generation_telemetry_summary": {
+        "job_id": "8d894ee0-6216-4055-9bc4-8f91255ff0ba",
+        "entry_count": 7,
+        "total_calls": 7,
+        "total_duration_ms": 68074,
+        "fallback_count": 2,
+        "total_input_tokens": 13893,
+        "total_output_tokens": 10176,
+        "total_estimated_cost_usd": null
+      },
+      "stage_counts": {
+        "strategy": 1,
+        "fallback": 2,
+        "slide_html": 2,
+        "self_review": 2
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:TextSafety fallback: title missing": 1
+      },
+      "fallback_entries": [
+        {
+          "design_mode": "pro",
+          "stage": "fallback",
+          "slide_number": null,
+          "requested_model": "gemini-3-flash-preview",
+          "actual_model": "gemini-3-flash-preview",
+          "provider": "openrouter",
+          "duration_ms": 0,
+          "fallback_reason": "Strategy generation failed",
+          "warning": "Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "design_mode": "pro",
+          "stage": "fallback",
+          "slide_number": 2,
+          "requested_model": "deterministic-text-safety",
+          "actual_model": "deterministic-text-safety",
+          "provider": "local",
+          "duration_ms": 0,
+          "fallback_reason": "TextSafety fallback: title missing",
+          "warning": "Title not found: 日本語が読みやすく、自然に繋がること"
+        }
+      ],
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 13.6,
+          "title_font_size_px": 48.0,
+          "small_text_count": 2,
+          "fallback_used": false,
+          "quality_gate": "fail",
+          "warnings_count": 2,
+          "warnings": [
+            "2個のフォントサイズが20px以下です（最小: 13.6px）。通常テキストで20px以下は禁止です。",
+            "タイトルフォントサイズが48.0pxです。最低56.0px必要です。"
+          ]
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 16.0,
+          "title_font_size_px": 88.0,
+          "small_text_count": 1,
+          "fallback_used": true,
+          "quality_gate": "fail",
+          "warnings_count": 1,
+          "warnings": [
+            "1個のフォントサイズが20px以下です（最小: 16.0px）。通常テキストで20px以下は禁止です。"
+          ]
+        }
+      ],
+      "started_at": "2026-05-05T10:20:51+0900",
+      "completed_at": "2026-05-05T10:22:21+0900"
+    }
+  ],
+  "artifact_hashes": [
+    {
+      "file": "flash_standard_slide_001.png",
+      "sha256": "abb51af2c42058ea51f5035bc260dfaa3eb00a18cea714ef2787592f3c6bb8c7",
+      "size": 717098
+    },
+    {
+      "file": "flash_standard_slide_002.png",
+      "sha256": "cbed7a9ff8e9b2c4ee570aa3cd390f54175102ca8eace5abc6194fa14cf97057",
+      "size": 655400
+    },
+    {
+      "file": "pro_slide_001.png",
+      "sha256": "71a32377cc9f8595f59834ecc2d094a76b53ea03f5a99084bab8f9763c0ab36e",
+      "size": 1002101
+    },
+    {
+      "file": "pro_slide_002.png",
+      "sha256": "0e81578eee2ff61bb1ce3d076b14daabd899665d894fccb20d1963943e2075e2",
+      "size": 771610
+    }
+  ],
+  "contact_sheet": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-05_design-quality-sprint-5-visible-chrome-regeneration/comparison_contact_sheet.jpg"
+}

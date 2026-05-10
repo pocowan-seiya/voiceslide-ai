@@ -4,7 +4,23 @@ All OpenAI/Gemini API calls are mocked.
 """
 
 import pytest
+import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
+
+
+def test_get_available_gemini_model_does_not_print_key_fragments(capsys):
+    """Gemini model discovery logs must not reveal API key prefixes/suffixes."""
+    from services.transcription import get_available_gemini_model
+
+    synthetic_key = "AIzaSy1234567890abcdef"
+    with patch("services.transcription.genai.configure"), \
+         patch("services.transcription.genai.list_models", return_value=[]):
+        get_available_gemini_model(synthetic_key)
+
+    captured = capsys.readouterr()
+    assert "AIzaSy1234" not in captured.out
+    assert "cdef" not in captured.out
+    assert "[REDACTED]" in captured.out
 
 
 def test_format_timestamp():
@@ -53,8 +69,7 @@ def test_get_openai_client_no_key():
             get_openai_client(None)
 
 
-@pytest.mark.asyncio
-async def test_transcribe_audio_mocked():
+def test_transcribe_audio_mocked():
     """Test transcribe_audio with mocked OpenAI Whisper"""
     mock_segment = MagicMock()
     mock_segment.id = 0
@@ -82,18 +97,16 @@ async def test_transcribe_audio_mocked():
     assert result["duration"] == 3.0
 
 
-@pytest.mark.asyncio
-async def test_polish_transcript_no_key():
+def test_polish_transcript_no_key():
     """Test polish_transcript returns original text when no API key"""
     with patch("services.transcription.GEMINI_API_KEY", ""):
         from services.transcription import polish_transcript
 
-        result = await polish_transcript("Test text", gemini_key=None)
+        result = asyncio.run(polish_transcript("Test text", gemini_key=None))
         assert result == "Test text"
 
 
-@pytest.mark.asyncio
-async def test_polish_transcript_mocked():
+def test_polish_transcript_mocked():
     """Test polish_transcript with mocked Gemini API"""
     with patch("services.transcription.GEMINI_API_KEY", "test-key"), \
          patch("services.transcription.get_available_gemini_model", return_value="gemini-pro"), \
@@ -101,5 +114,5 @@ async def test_polish_transcript_mocked():
 
         from services.transcription import polish_transcript
 
-        result = await polish_transcript("Raw text", gemini_key="test-key")
+        result = asyncio.run(polish_transcript("Raw text", gemini_key="test-key"))
         assert result == "Polished text"

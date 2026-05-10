@@ -1,0 +1,32 @@
+[
+  {
+    "file": "flash_standard_slide_001.png",
+    "sha256": "98afac3f1dc839120e6a7778bd7236c6a654a9e037eefbd0ead37140a5b0293f",
+    "size": 874524
+  },
+  {
+    "file": "flash_standard_slide_002.png",
+    "sha256": "9ffa046571678a847d24787cf2b7dbe45104b932d6c0ad47162b0858e5b3f860",
+    "size": 754571
+  },
+  {
+    "file": "pro_slide_001.png",
+    "sha256": "3f979978342865e66a4871abc6eea6d6e6007578e0f1f191854622f3b546825d",
+    "size": 901901
+  },
+  {
+    "file": "pro_slide_002.png",
+    "sha256": "74a22771165c17c06975bd1734d8ec2cc0e578b5e0f6be57020ed864965ec9a0",
+    "size": 770959
+  },
+  {
+    "file": "sanitized_api_result.json",
+    "sha256": "a59cfc8c25b682a82018363d952e7504b4bdb789655aae20b7c14c62d0f899ed",
+    "size": 24696
+  },
+  {
+    "file": "summary.json",
+    "sha256": "bd4d79f6d7b28ca8e3224094f63279387b55f86b0dc9700f125ecea59fdd5c4d",
+    "size": 3980
+  }
+]

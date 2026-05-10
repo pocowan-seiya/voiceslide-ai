@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<title>音声からスライド動画を作る流れを確認します</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&amp;family=Zen+Kaku+Gothic+New:wght@400;700;900&amp;display=swap" rel="stylesheet"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    width: 1920px;
+    height: 1080px;
+    background: linear-gradient(135deg, #0E1B2E 0%, #1E3A5F 100%);
+    font-family: 'Noto Sans JP', sans-serif;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+    padding: 80px 100px !important;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Ambient glow */
+  .glow-1 {
+    position: absolute;
+    width: 780px;
+    height: 780px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(59,122,140,0.28) 0%, transparent 70%);
+    top: -220px;
+    right: -180px;
+    filter: blur(40px);
+  }
+  .glow-2 {
+    position: absolute;
+    width: 560px;
+    height: 560px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(240,185,91,0.14) 0%, transparent 70%);
+    bottom: -120px;
+    right: 220px;
+    filter: blur(50px);
+  }
+
+  /* Geometric lines */
+  .geo-circle {
+    position: absolute;
+    border: 1px solid rgba(240,185,91,0.22);
+    border-radius: 50%;
+    right: 160px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 580px;
+    height: 580px;
+  }
+  .geo-circle::before {
+    content: '';
+    position: absolute;
+    inset: 70px;
+    border: 1px solid rgba(59,122,140,0.38);
+    border-radius: 50%;
+  }
+  .geo-circle::after {
+    content: '';
+    position: absolute;
+    inset: 160px;
+    border: 1px solid rgba(240,185,91,0.32);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(240,185,91,0.1) 0%, transparent 70%);
+  }
+
+  .geo-dot {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #F0B95B;
+    box-shadow: 0 0 20px #F0B95B, 0 0 40px rgba(240,185,91,0.6);
+  }
+  .dot-1 { right: 448px; top: 50%; transform: translateY(-50%); }
+  .dot-2 { right: 160px; top: 50%; transform: translateY(-50%); width: 10px; height: 10px; opacity: 0.7; }
+
+  /* Left accent line */
+  .accent-line {
+    position: absolute;
+    left: 60px;
+    top: 180px;
+    bottom: 180px;
+    width: 2px;
+    background: linear-gradient(180deg, transparent 0%, #F0B95B 30%, #F0B95B 70%, transparent 100%);
+  }
+  .accent-line::before {
+    content: '';
+    position: absolute;
+    left: -4px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    background: #F0B95B;
+    border-radius: 50%;
+    box-shadow: 0 0 15px #F0B95B;
+  }
+
+  /* Main content */
+  .content {
+    width: 62%;
+    padding-left: 40px;
+    position: relative;
+    z-index: 10;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 19px;
+    letter-spacing: 0.32em;
+    color: #F0B95B;
+    font-weight: 500;
+    margin-bottom: 40px;
+    text-transform: uppercase;
+  }
+  .eyebrow::before {
+    content: '';
+    width: 48px;
+    height: 1px;
+    background: #F0B95B;
+  }
+
+  h1.title {
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 72px;
+    font-weight: 900;
+    line-height: 1.22;
+    letter-spacing: -0.015em;
+    color: #FFFFFF;
+    
+    white-space: normal;
+    overflow: visible;
+    text-align: left;
+    max-width: 100%;
+    margin: 0 0 44px 0;
+    padding: 0;
+    text-shadow: 0 0 40px rgba(255,255,255,0.18); white-space: normal; overflow: visible; overflow-wrap: normal; word-break: normal; line-break: strict; text-wrap: balance;}
+
+  h1.title .accent-word {
+    background: linear-gradient(120deg, #F0B95B 0%, #FFD98A 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent; white-space: normal; overflow: visible; overflow-wrap: normal; word-break: normal; line-break: strict; text-wrap: balance;}
+
+  .subtitle {
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 28px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.5;
+    margin-bottom: 60px;
+    letter-spacing: 0.02em;
+    word-break: keep-all;
+  }
+
+  .key-message {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 32px 40px;
+    background: linear-gradient(90deg, rgba(59,122,140,0.3) 0%, rgba(59,122,140,0.05) 100%);
+    border-left: 4px solid #F0B95B;
+    border-radius: 4px;
+    backdrop-filter: blur(10px);
+    max-width: 760px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+
+  .key-number {
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 64px;
+    font-weight: 900;
+    color: #F0B95B;
+    line-height: 1;
+    text-shadow: 0 0 24px rgba(240,185,91,0.5);
+  }
+
+  .key-text {
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    color: #FFFFFF;
+    line-height: 1.4;
+    word-break: keep-all;
+  }
+
+  .key-text small {
+    display: block;
+    font-size: 28px;
+    font-weight: 500;
+    color: rgba(240,185,91,0.75);
+    margin-top: 8px;
+    letter-spacing: 0.28em;
+  }
+
+  /* Footer */
+  .slide-number {
+    position: absolute;
+    bottom: 50px;
+    right: 60px;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 16px;
+    letter-spacing: 0.3em;
+    color: rgba(255,255,255,0.5);
+    z-index: 10;
+  }
+  .slide-number strong {
+    color: #F0B95B;
+    font-weight: 700;
+  }
+
+  .brand {
+    position: absolute;
+    top: 50px;
+    right: 80px;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 28px;
+    letter-spacing: 0.42em;
+    color: rgba(255,255,255,0.45);
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div class="glow-1"></div>
+<div class="glow-2"></div>
+<div class="geo-circle"></div>
+<div class="geo-dot dot-1"></div>
+<div class="geo-dot dot-2"></div>
+<div class="accent-line"></div>
+<div class="brand">QUIET · PRECISION</div>
+<div class="content">
+<div class="eyebrow">Voice to Slide Movie</div>
+<h1 class="title">音声からスライド動画を作る<br/>流れを<span class="accent-word">確認します</span></h1>
+<p class="subtitle">ボイスライドムービーの品質評価用サンプル</p>
+<div class="key-message">
+<div class="key-number">3</div>
+<div class="key-text">
+        大事なポイントは3つあります
+        <small>KEY POINTS</small>
+</div>
+</div>
+</div>
+<div class="slide-number"><strong>01</strong>  /  02</div>
+</body>
+</html>

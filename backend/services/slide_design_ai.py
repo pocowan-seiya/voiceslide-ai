@@ -9,6 +9,7 @@ import google.generativeai as genai
 
 from config import GEMINI_API_KEY
 from services.ai_utils import safe_gemini_generate
+from services.generation_telemetry import redact_secrets
 
 
 # Design templates available
@@ -200,14 +201,14 @@ async def analyze_slide_design(
                 return design
                 
             except Exception as e:
-                print(f"[Design AI] Model {model_name} failed: {str(e)[:80]}")
+                print(f"[Design AI] Model {model_name} failed: {redact_secrets(str(e))[:80]}")
                 continue
         
         # Fallback to rule-based design
         return get_fallback_design(slide, slide_number, total_slides)
         
     except Exception as e:
-        print(f"[Design AI] Error: {e}")
+        print(f"[Design AI] Error: {redact_secrets(str(e))}")
         return get_fallback_design(slide, slide_number, total_slides)
 
 
@@ -333,5 +334,5 @@ Requirements:
         return None
         
     except Exception as e:
-        print(f"[Background Gen] Error: {e}")
+        print(f"[Background Gen] Error: {redact_secrets(str(e))}")
         return None

@@ -1,6 +1,7 @@
 import asyncio
 import random
 import json
+import time
 import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 
@@ -48,7 +49,7 @@ async def safe_gemini_generate(
     # OpenRouter routing: text-only prompts can go through OpenRouter
     if openrouter_key and openrouter_model and isinstance(prompt, str):
         from services.openrouter_utils import openrouter_generate
-        # Extract json_mode, max_tokens, temperature from Gemini config if available
+        started = time.monotonic()
         json_mode = False
         max_tokens = 8192
         temperature = None
@@ -59,7 +60,7 @@ async def safe_gemini_generate(
                 max_tokens = config.max_output_tokens
             if hasattr(config, 'temperature') and config.temperature is not None:
                 temperature = config.temperature
-        return await openrouter_generate(
+        result = await openrouter_generate(
             model_name=openrouter_model,
             prompt=prompt,
             key=openrouter_key,
@@ -69,6 +70,7 @@ async def safe_gemini_generate(
             temperature=temperature,
             system_prompt=system_prompt,
         )
+        return result
 
     # Direct Gemini API
     genai.configure(api_key=key)
@@ -87,6 +89,7 @@ async def safe_gemini_generate(
     for attempt in range(max_retries):
         try:
             # model.generate_content is blocking, run in executor
+            started = time.monotonic()
             response = await asyncio.to_thread(model.generate_content, prompt, generation_config=config)
 
             # Check if response has parts (safety check)
@@ -97,6 +100,22 @@ async def safe_gemini_generate(
                     continue
                 return ""
 
+            try:
+                from services.generation_telemetry import record_current_telemetry
+                usage = getattr(response, "usage_metadata", None)
+                input_tokens = getattr(usage, "prompt_token_count", None) if usage else None
+                output_tokens = getattr(usage, "candidates_token_count", None) if usage else None
+                record_current_telemetry(
+                    requested_model=model_name,
+                    actual_model=model_name,
+                    provider="gemini",
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    estimated_cost_usd=None,
+                )
+            except Exception:
+                pass
             return response.text.strip()
 
         except Exception as e:

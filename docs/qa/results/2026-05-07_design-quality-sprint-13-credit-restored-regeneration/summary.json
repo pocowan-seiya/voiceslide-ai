@@ -1,0 +1,133 @@
+{
+  "ok": true,
+  "started_at": "2026-05-07T11:15:57+0900",
+  "completed_at": "2026-05-07T11:19:19+0900",
+  "origin": "http://127.0.0.1:3010/",
+  "backend": "http://127.0.0.1:8001",
+  "fixture": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/fixtures/short_voislide_quality_check_32s.mp3",
+  "key_presence": {
+    "openai": true,
+    "gemini": true,
+    "geminiModel": true,
+    "openrouter": true,
+    "openrouterModel": true,
+    "openrouterDesignModel": true
+  },
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "eec8c920-a619-4b2a-a96e-2003309f89f6",
+      "transcript_length": 189,
+      "outline_slide_count": 2,
+      "entry_count": 7,
+      "total_calls": 7,
+      "fallback_count": 1,
+      "total_input_tokens": 12181,
+      "total_output_tokens": 8676,
+      "stage_counts": {
+        "strategy": 1,
+        "fallback": 1,
+        "slide_html": 2,
+        "self_review": 2,
+        "self_review_diagnostic": 1
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1
+      },
+      "strategy_count": 1,
+      "slide_html_count": 2,
+      "self_review_count": 2,
+      "self_review_diagnostic_count": 1,
+      "design_quality": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 17.6,
+          "title_font_size_px": 96.0,
+          "small_text_count": 1,
+          "fallback_used": false,
+          "quality_gate": "fail",
+          "warnings_count": 1,
+          "warnings": [
+            "1個のフォントサイズが20px以下です（最小: 17.6px）。通常テキストで20px以下は禁止です。"
+          ]
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 15.2,
+          "title_font_size_px": 48.0,
+          "small_text_count": 5,
+          "fallback_used": false,
+          "quality_gate": "fail",
+          "warnings_count": 2,
+          "warnings": [
+            "5個のフォントサイズが20px以下です（最小: 15.2px）。通常テキストで20px以下は禁止です。",
+            "タイトルフォントサイズが48.0pxです。最低56.0px必要です。"
+          ]
+        }
+      ],
+      "quality_gate_counts": {
+        "pass": 0,
+        "warn": 0,
+        "fail": 2
+      },
+      "small_text_total": 6
+    },
+    {
+      "mode": "pro",
+      "job_id": "e5d27c62-ba0a-4483-a1d0-19775449b509",
+      "transcript_length": 189,
+      "outline_slide_count": 2,
+      "entry_count": 8,
+      "total_calls": 8,
+      "fallback_count": 1,
+      "total_input_tokens": 13936,
+      "total_output_tokens": 9765,
+      "stage_counts": {
+        "strategy": 1,
+        "fallback": 1,
+        "slide_html": 2,
+        "self_review": 2,
+        "self_review_diagnostic": 2
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1
+      },
+      "strategy_count": 1,
+      "slide_html_count": 2,
+      "self_review_count": 2,
+      "self_review_diagnostic_count": 2,
+      "design_quality": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 16.0,
+          "title_font_size_px": 112.0,
+          "small_text_count": 1,
+          "fallback_used": false,
+          "quality_gate": "fail",
+          "warnings_count": 1,
+          "warnings": [
+            "1個のフォントサイズが20px以下です（最小: 16.0px）。通常テキストで20px以下は禁止です。"
+          ]
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 16.0,
+          "title_font_size_px": 112.0,
+          "small_text_count": 4,
+          "fallback_used": false,
+          "quality_gate": "fail",
+          "warnings_count": 1,
+          "warnings": [
+            "4個のフォントサイズが20px以下です（最小: 16.0px）。通常テキストで20px以下は禁止です。"
+          ]
+        }
+      ],
+      "quality_gate_counts": {
+        "pass": 0,
+        "warn": 0,
+        "fail": 2
+      },
+      "small_text_total": 5
+    }
+  ]
+}

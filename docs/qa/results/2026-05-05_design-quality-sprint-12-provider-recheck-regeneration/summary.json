@@ -1,0 +1,125 @@
+{
+  "ok": true,
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "748c1a19-26c8-4bf7-ba55-5fffd1fde226",
+      "transcript_length": 189,
+      "outline_slide_count": 5,
+      "status": "uploaded",
+      "generation_telemetry_summary": {
+        "job_id": "748c1a19-26c8-4bf7-ba55-5fffd1fde226",
+        "entry_count": 3,
+        "total_calls": 3,
+        "total_duration_ms": 0,
+        "fallback_count": 3,
+        "total_input_tokens": null,
+        "total_output_tokens": null,
+        "total_estimated_cost_usd": null
+      },
+      "telemetry_count": 3,
+      "stage_counts": {
+        "fallback": 3
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:Slide HTML generation failed": 2
+      },
+      "fallback_count": 3,
+      "strategy_count": 0,
+      "slide_html_count": 0,
+      "self_review_count": 0,
+      "self_review_diagnostic_count": 0,
+      "text_safety_title_missing_count": 0,
+      "design_quality_pass": 2,
+      "design_quality_total": 2,
+      "small_text_total": 0,
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 84.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "mode": "pro",
+      "job_id": "e6a171c7-a723-448f-bc45-98d636c720e5",
+      "transcript_length": 189,
+      "outline_slide_count": 5,
+      "status": "uploaded",
+      "generation_telemetry_summary": {
+        "job_id": "e6a171c7-a723-448f-bc45-98d636c720e5",
+        "entry_count": 3,
+        "total_calls": 3,
+        "total_duration_ms": 0,
+        "fallback_count": 3,
+        "total_input_tokens": null,
+        "total_output_tokens": null,
+        "total_estimated_cost_usd": null
+      },
+      "telemetry_count": 3,
+      "stage_counts": {
+        "fallback": 3
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:Slide HTML generation failed": 2
+      },
+      "fallback_count": 3,
+      "strategy_count": 0,
+      "slide_html_count": 0,
+      "self_review_count": 0,
+      "self_review_diagnostic_count": 0,
+      "text_safety_title_missing_count": 0,
+      "design_quality_pass": 2,
+      "design_quality_total": 2,
+      "small_text_total": 0,
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 24.0,
+          "title_font_size_px": 88.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ]
+    }
+  ],
+  "key_presence": {
+    "openai": true,
+    "gemini": true,
+    "geminiModel": true,
+    "openrouter": true,
+    "openrouterModel": true,
+    "openrouterDesignModel": true
+  }
+}

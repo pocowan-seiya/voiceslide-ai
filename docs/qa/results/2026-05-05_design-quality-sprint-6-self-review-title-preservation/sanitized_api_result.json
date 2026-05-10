@@ -1,0 +1,656 @@
+{
+  "started_at": "2026-05-05T11:48:32+0900",
+  "origin": "http://127.0.0.1:3010/",
+  "backend": "http://127.0.0.1:8001",
+  "fixture": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/fixtures/short_voislide_quality_check_32s.mp3",
+  "key_presence": {
+    "openai": true,
+    "gemini": true,
+    "geminiModel": true,
+    "openrouter": true,
+    "openrouterModel": true,
+    "openrouterDesignModel": true
+  },
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "started_at": "2026-05-05T11:48:32+0900",
+      "job_id": "975651f2-89bf-4110-b96f-81577034c27b",
+      "audio_storage_status": "skipped",
+      "transcript_length": 189,
+      "outline_slide_count": 2,
+      "batch_status_api": {
+        "status": "complete",
+        "message": "バッチ完了 (1-2)",
+        "generation_telemetry_summary": {
+          "job_id": "975651f2-89bf-4110-b96f-81577034c27b",
+          "entry_count": 7,
+          "total_calls": 7,
+          "total_duration_ms": 63295,
+          "fallback_count": 2,
+          "total_input_tokens": 12652,
+          "total_output_tokens": 9704,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 7,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "strategy",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 7218,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Expecting value: line 1 column 1 (char 0)"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 1,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 16794,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 17057,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 2,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 9713,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 12513,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "deterministic-text-safety",
+              "actual_model": "deterministic-text-safety",
+              "provider": "local",
+              "duration_ms": 0,
+              "fallback_reason": "TextSafety fallback: title missing",
+              "warning": "Title not found: 日本語が読みやすく、自然に繋がること"
+            }
+          ],
+          "stage_counts": {
+            "strategy": 1,
+            "fallback": 2,
+            "slide_html": 2,
+            "self_review": 2
+          },
+          "fallback_entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Expecting value: line 1 column 1 (char 0)"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "deterministic-text-safety",
+              "actual_model": "deterministic-text-safety",
+              "provider": "local",
+              "duration_ms": 0,
+              "fallback_reason": "TextSafety fallback: title missing",
+              "warning": "Title not found: 日本語が読みやすく、自然に繋がること"
+            }
+          ],
+          "fallback_stage_counts": {
+            "fallback:Strategy generation failed": 1,
+            "fallback:TextSafety fallback: title missing": 1
+          }
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 14.0,
+            "title_font_size_px": 48.0,
+            "small_text_count": 2,
+            "fallback_used": false,
+            "quality_gate": "fail",
+            "warnings_count": 2,
+            "warnings": [
+              "2個のフォントサイズが20px以下です（最小: 14.0px）。通常テキストで20px以下は禁止です。",
+              "タイトルフォントサイズが48.0pxです。最低56.0px必要です。"
+            ]
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 72.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 2,
+        "warnings_count": 0,
+        "batch_start": 1,
+        "batch_end": 2,
+        "total_slides": 2,
+        "is_complete": true
+      },
+      "status_api": {
+        "status": "uploaded",
+        "message": null,
+        "generation_telemetry_summary": {
+          "job_id": "975651f2-89bf-4110-b96f-81577034c27b",
+          "entry_count": 7,
+          "total_calls": 7,
+          "total_duration_ms": 63295,
+          "fallback_count": 2,
+          "total_input_tokens": 12652,
+          "total_output_tokens": 9704,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 7,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "strategy",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 7218,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Expecting value: line 1 column 1 (char 0)"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 1,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 16794,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 17057,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 2,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 9713,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 12513,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "deterministic-text-safety",
+              "actual_model": "deterministic-text-safety",
+              "provider": "local",
+              "duration_ms": 0,
+              "fallback_reason": "TextSafety fallback: title missing",
+              "warning": "Title not found: 日本語が読みやすく、自然に繋がること"
+            }
+          ],
+          "stage_counts": {
+            "strategy": 1,
+            "fallback": 2,
+            "slide_html": 2,
+            "self_review": 2
+          },
+          "fallback_entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Expecting value: line 1 column 1 (char 0)"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "deterministic-text-safety",
+              "actual_model": "deterministic-text-safety",
+              "provider": "local",
+              "duration_ms": 0,
+              "fallback_reason": "TextSafety fallback: title missing",
+              "warning": "Title not found: 日本語が読みやすく、自然に繋がること"
+            }
+          ],
+          "fallback_stage_counts": {
+            "fallback:Strategy generation failed": 1,
+            "fallback:TextSafety fallback: title missing": 1
+          }
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 14.0,
+            "title_font_size_px": 48.0,
+            "small_text_count": 2,
+            "fallback_used": false,
+            "quality_gate": "fail",
+            "warnings_count": 2,
+            "warnings": [
+              "2個のフォントサイズが20px以下です（最小: 14.0px）。通常テキストで20px以下は禁止です。",
+              "タイトルフォントサイズが48.0pxです。最低56.0px必要です。"
+            ]
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 72.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 0,
+        "warnings_count": 0,
+        "batch_start": null,
+        "batch_end": null,
+        "total_slides": null,
+        "is_complete": null
+      },
+      "completed_at": "2026-05-05T11:50:03+0900"
+    },
+    {
+      "mode": "pro",
+      "started_at": "2026-05-05T11:50:03+0900",
+      "job_id": "5c29f10c-3f77-4250-92b5-c7740e9cac0b",
+      "audio_storage_status": "skipped",
+      "transcript_length": 189,
+      "outline_slide_count": 2,
+      "batch_status_api": {
+        "status": "complete",
+        "message": "バッチ完了 (1-2)",
+        "generation_telemetry_summary": {
+          "job_id": "5c29f10c-3f77-4250-92b5-c7740e9cac0b",
+          "entry_count": 5,
+          "total_calls": 5,
+          "total_duration_ms": 21822,
+          "fallback_count": 3,
+          "total_input_tokens": 5266,
+          "total_output_tokens": 3294,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 5,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 9405,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10116. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 12417,
+              "fallback_reason": null,
+              "warning": null
+            }
+          ],
+          "stage_counts": {
+            "fallback": 3,
+            "self_review": 2
+          },
+          "fallback_entries": [
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10116. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "fallback_stage_counts": {
+            "fallback:Strategy generation failed": 1,
+            "fallback:Slide HTML generation failed": 2
+          }
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 72.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 16.0,
+            "title_font_size_px": 88.0,
+            "small_text_count": 1,
+            "fallback_used": true,
+            "quality_gate": "fail",
+            "warnings_count": 1,
+            "warnings": [
+              "1個のフォントサイズが20px以下です（最小: 16.0px）。通常テキストで20px以下は禁止です。"
+            ]
+          }
+        ],
+        "slide_previews_count": 2,
+        "warnings_count": 0,
+        "batch_start": 1,
+        "batch_end": 2,
+        "total_slides": 2,
+        "is_complete": true
+      },
+      "status_api": {
+        "status": "uploaded",
+        "message": null,
+        "generation_telemetry_summary": {
+          "job_id": "5c29f10c-3f77-4250-92b5-c7740e9cac0b",
+          "entry_count": 5,
+          "total_calls": 5,
+          "total_duration_ms": 21822,
+          "fallback_count": 3,
+          "total_input_tokens": 5266,
+          "total_output_tokens": 3294,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 5,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 9405,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10116. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 12417,
+              "fallback_reason": null,
+              "warning": null
+            }
+          ],
+          "stage_counts": {
+            "fallback": 3,
+            "self_review": 2
+          },
+          "fallback_entries": [
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10328. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 10116. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "fallback_stage_counts": {
+            "fallback:Strategy generation failed": 1,
+            "fallback:Slide HTML generation failed": 2
+          }
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 72.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 16.0,
+            "title_font_size_px": 88.0,
+            "small_text_count": 1,
+            "fallback_used": true,
+            "quality_gate": "fail",
+            "warnings_count": 1,
+            "warnings": [
+              "1個のフォントサイズが20px以下です（最小: 16.0px）。通常テキストで20px以下は禁止です。"
+            ]
+          }
+        ],
+        "slide_previews_count": 0,
+        "warnings_count": 0,
+        "batch_start": null,
+        "batch_end": null,
+        "total_slides": null,
+        "is_complete": null
+      },
+      "completed_at": "2026-05-05T11:50:52+0900"
+    }
+  ],
+  "completed_at": "2026-05-05T11:50:52+0900",
+  "ok": true
+}

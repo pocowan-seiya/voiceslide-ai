@@ -1,0 +1,111 @@
+{
+  "flash_standard": {
+    "job_id": "17ed0f93-d70b-42ae-867d-99d908e2146b",
+    "slides_dir": "/Users/seiyaeto/Antigravity/voiceslide-ai/outputs/17ed0f93-d70b-42ae-867d-99d908e2146b_slides",
+    "slides": [
+      {
+        "slide": 1,
+        "png": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint23_real-generation-metrics-qa/flash_standard_slide_001.png",
+        "sha256": "b98abe66e7c8a497044623fb2f037f4466bfc211616d7c3a29b1625af13a55c1",
+        "size": [
+          1920,
+          1080
+        ],
+        "static_quality_gate": "pass",
+        "static_occupancy": null,
+        "browser_quality_gate": "pass",
+        "browser_occupancy": 0.975317,
+        "screenshot_gate": "warn",
+        "screenshot_blank": 0.0,
+        "screenshot_content": 1.0,
+        "screenshot_visual_blank": 0.929821,
+        "screenshot_visual_content": 0.070179,
+        "static_warnings": [],
+        "browser_warnings": [],
+        "screenshot_warnings": [
+          "背景との差分で見た表示密度が0.07です。主な表示要素は0.10以上の密度が目標です。"
+        ]
+      },
+      {
+        "slide": 2,
+        "png": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint23_real-generation-metrics-qa/flash_standard_slide_002.png",
+        "sha256": "660f83cce25e35524265a91581b47df7355591983bcb203eeb774d532be72a9d",
+        "size": [
+          1920,
+          1080
+        ],
+        "static_quality_gate": "warn",
+        "static_occupancy": 0.000868,
+        "browser_quality_gate": "warn",
+        "browser_occupancy": 0.000868,
+        "screenshot_gate": "pass",
+        "screenshot_blank": 0.0,
+        "screenshot_content": 1.0,
+        "screenshot_visual_blank": 0.758802,
+        "screenshot_visual_content": 0.241198,
+        "static_warnings": [
+          "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+        ],
+        "browser_warnings": [
+          "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+        ],
+        "screenshot_warnings": []
+      }
+    ],
+    "slide_data_copy": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint23_real-generation-metrics-qa/flash_standard_slide_data.json"
+  },
+  "pro": {
+    "job_id": "c540ed73-f944-4139-8729-099382e4f184",
+    "slides_dir": "/Users/seiyaeto/Antigravity/voiceslide-ai/outputs/c540ed73-f944-4139-8729-099382e4f184_slides",
+    "slides": [
+      {
+        "slide": 1,
+        "png": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint23_real-generation-metrics-qa/pro_slide_001.png",
+        "sha256": "abafda1ea82a7e8ea78ffd3d203e61fc187fbd2a499e852ac5d714387cd891b0",
+        "size": [
+          1920,
+          1080
+        ],
+        "static_quality_gate": "warn",
+        "static_occupancy": 0.000347,
+        "browser_quality_gate": "warn",
+        "browser_occupancy": 0.000347,
+        "screenshot_gate": "pass",
+        "screenshot_blank": 0.0,
+        "screenshot_content": 1.0,
+        "screenshot_visual_blank": 0.857788,
+        "screenshot_visual_content": 0.142212,
+        "static_warnings": [
+          "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+        ],
+        "browser_warnings": [
+          "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+        ],
+        "screenshot_warnings": []
+      },
+      {
+        "slide": 2,
+        "png": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint23_real-generation-metrics-qa/pro_slide_002.png",
+        "sha256": "c97187c1b60eef99ff80fb00e887a053c5484a2b8e25bc7dab44dfeb3d14df8d",
+        "size": [
+          1920,
+          1080
+        ],
+        "static_quality_gate": "pass",
+        "static_occupancy": 1.0,
+        "browser_quality_gate": "pass",
+        "browser_occupancy": 1.0,
+        "screenshot_gate": "pass",
+        "screenshot_blank": 0.0,
+        "screenshot_content": 1.0,
+        "screenshot_visual_blank": 0.805321,
+        "screenshot_visual_content": 0.194679,
+        "static_warnings": [],
+        "browser_warnings": [],
+        "screenshot_warnings": []
+      }
+    ],
+    "slide_data_copy": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint23_real-generation-metrics-qa/pro_slide_data.json"
+  },
+  "contact_sheet": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-08_sprint23_real-generation-metrics-qa/contact_sheet_flash_vs_pro_sprint23.png"
+}

@@ -1,0 +1,249 @@
+{
+  "started_at": "2026-05-07T12:20:00+0900",
+  "completed_at": "2026-05-07T12:35:00+0900",
+  "origin": "http://127.0.0.1:3010/",
+  "backend": "http://127.0.0.1:8001",
+  "fixture": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/fixtures/short_voislide_quality_check_32s.mp3",
+  "key_presence": "checked via Chrome localStorage during QA script; values omitted",
+  "ok": true,
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "67f87e3d-342f-4059-9fd0-fcb8489aad5f",
+      "batch_status_api": {
+        "status": "complete",
+        "message": "バッチ完了 (1-2)",
+        "generation_telemetry_summary": {
+          "job_id": "67f87e3d-342f-4059-9fd0-fcb8489aad5f",
+          "entry_count": 6,
+          "total_calls": 6,
+          "total_duration_ms": 97721,
+          "fallback_count": 0,
+          "total_input_tokens": 13806,
+          "total_output_tokens": 9399,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 6,
+        "telemetry_detail_summary": {
+          "stage_counts": {
+            "strategy": 1,
+            "slide_html": 2,
+            "self_review": 2,
+            "self_review_diagnostic": 1
+          },
+          "fallback_entries": [],
+          "fallback_stage_counts": {},
+          "entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "strategy",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 7313,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 1,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 19611,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 40915,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 2,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 17740,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 12142,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review_diagnostic",
+              "slide_number": null,
+              "requested_model": "deterministic-self-review-title-check",
+              "actual_model": "deterministic-self-review-title-check",
+              "provider": "local",
+              "duration_ms": 0,
+              "fallback_reason": null,
+              "warning": "SelfReview title diagnostic: original_title_present=true improved_title_present=false decision=keep_original"
+            }
+          ]
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 24.0,
+            "title_font_size_px": 112.0,
+            "body_font_size_px_min": 38.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 24.0,
+            "title_font_size_px": 104.0,
+            "body_font_size_px_min": 32.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 2,
+        "batch_start": 1,
+        "batch_end": 2,
+        "total_slides": 2,
+        "is_complete": true
+      }
+    },
+    {
+      "mode": "pro",
+      "job_id": "4d6161bd-1ec9-4841-ab12-8b8daa54f56c",
+      "batch_status_api": {
+        "status": "complete",
+        "message": "バッチ完了 (1-2)",
+        "generation_telemetry_summary": {
+          "job_id": "4d6161bd-1ec9-4841-ab12-8b8daa54f56c",
+          "entry_count": 5,
+          "total_calls": 5,
+          "total_duration_ms": 130141,
+          "fallback_count": 0,
+          "total_input_tokens": 16453,
+          "total_output_tokens": 12822,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 5,
+        "telemetry_detail_summary": {
+          "stage_counts": {
+            "strategy": 1,
+            "slide_html": 2,
+            "self_review": 2
+          },
+          "fallback_entries": [],
+          "fallback_stage_counts": {},
+          "entries": [
+            {
+              "design_mode": "pro",
+              "stage": "strategy",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 12088,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "slide_html",
+              "slide_number": 1,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 21381,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 55176,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "slide_html",
+              "slide_number": 2,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 22820,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 18676,
+              "fallback_reason": null,
+              "warning": null
+            }
+          ]
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 24.0,
+            "title_font_size_px": 120.0,
+            "body_font_size_px_min": 28.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 88.0,
+            "body_font_size_px_min": 32.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 2,
+        "batch_start": 1,
+        "batch_end": 2,
+        "total_slides": 2,
+        "is_complete": true
+      }
+    }
+  ]
+}

@@ -8,8 +8,11 @@ import asyncio
 import contextvars
 import random
 import json
+import time
 from typing import Any, Optional, List, Dict
 from openai import AsyncOpenAI
+
+from services.generation_telemetry import redact_secrets
 
 
 # Known-working Gemini flash-class fallback. Used when a caller specifies
@@ -169,6 +172,7 @@ async def openrouter_generate(
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
 
+            started = time.monotonic()
             response = await client.chat.completions.create(**kwargs)
 
             content = response.choices[0].message.content
@@ -179,11 +183,27 @@ async def openrouter_generate(
                     continue
                 return ""
 
+            try:
+                from services.generation_telemetry import record_current_telemetry
+                usage = getattr(response, "usage", None)
+                record_current_telemetry(
+                    requested_model=model_name,
+                    actual_model=current_model,
+                    provider="openrouter",
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    input_tokens=getattr(usage, "prompt_tokens", None) if usage else None,
+                    output_tokens=getattr(usage, "completion_tokens", None) if usage else None,
+                    estimated_cost_usd=None,
+                    fallback_reason=("openrouter_invalid_model_fallback" if current_model != model_name else None),
+                )
+            except Exception:
+                pass
             return content.strip()
 
         except Exception as e:
             last_err = e
             err_str = str(e)
+            safe_err_str = redact_secrets(err_str)
 
             is_rate_limit = any(x in err_str for x in ["429", "rate_limit", "Rate limit", "quota"])
             is_busy = any(x in err_str for x in ["503", "502", "Service Unavailable", "overloaded"])
@@ -219,7 +239,7 @@ async def openrouter_generate(
                 await asyncio.sleep(wait_time)
                 continue
             else:
-                print(f"[OpenRouter] Error ({current_model}): {type(e).__name__}: {err_str[:200]}")
+                print(f"[OpenRouter] Error ({current_model}): {type(e).__name__}: {safe_err_str[:200]}")
                 raise e
 
     raise last_err
