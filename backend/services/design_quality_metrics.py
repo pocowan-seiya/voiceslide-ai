@@ -58,6 +58,19 @@ _RE_START_TAG = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _RE_STYLE_ATTR = re.compile(r"style\s*=\s*(['\"])(.*?)\1", re.IGNORECASE | re.DOTALL)
+_RE_SCRIPT_LIKE_TAG = re.compile(
+    r"<\s*(script|iframe|object|embed|link|meta)\b[^>]*>.*?<\s*/\s*\1\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_SELF_CLOSING_SCRIPT_LIKE_TAG = re.compile(
+    r"<\s*(script|iframe|object|embed|link|meta)\b[^>]*?/?>",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_EVENT_HANDLER_ATTR = re.compile(r"\s+on[a-zA-Z]+\s*=\s*(['\"]).*?\1", re.IGNORECASE | re.DOTALL)
+_RE_JAVASCRIPT_URL_ATTR = re.compile(
+    r"\s+(href|src)\s*=\s*(['\"])\s*javascript:.*?\2",
+    re.IGNORECASE | re.DOTALL,
+)
 _RE_CLASS_ATTR = re.compile(r"class\s*=\s*(['\"])(.*?)\1", re.IGNORECASE | re.DOTALL)
 _RE_ID_ATTR = re.compile(r"id\s*=\s*(['\"])(.*?)\1", re.IGNORECASE | re.DOTALL)
 _RE_WIDTH_DECL = re.compile(r"(?:^|[;\s])width\s*:\s*([\d.]+)\s*(px|rem|em|%|vw|vh)", re.IGNORECASE)
@@ -327,6 +340,15 @@ def _extract_dimension_px(
     return _css_length_to_px(float(match.group(1)), match.group(2), axis_px)
 
 
+def _sanitize_html_for_browser_metric(html: str) -> str:
+    """Strip active content before measuring untrusted generated HTML in Playwright."""
+    sanitized = _RE_SCRIPT_LIKE_TAG.sub("", html)
+    sanitized = _RE_SELF_CLOSING_SCRIPT_LIKE_TAG.sub("", sanitized)
+    sanitized = _RE_EVENT_HANDLER_ATTR.sub("", sanitized)
+    sanitized = _RE_JAVASCRIPT_URL_ATTR.sub("", sanitized)
+    return sanitized
+
+
 def _estimate_main_element_occupancy_ratio(html: str) -> Optional[float]:
     """Estimate the largest content element occupancy from HTML/CSS dimensions.
 
@@ -573,12 +595,11 @@ def _estimate_main_element_occupancy_ratio_with_browser(html: str) -> Optional[f
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
             context = browser.new_context(
-                java_script_enabled=False,
                 viewport={"width": int(_CANVAS_WIDTH_PX), "height": int(_CANVAS_HEIGHT_PX)},
             )
             context.route("**/*", lambda route: route.abort())
             page = context.new_page()
-            page.set_content(html, wait_until="domcontentloaded")
+            page.set_content(_sanitize_html_for_browser_metric(html), wait_until="domcontentloaded")
             try:
                 page.evaluate("document.fonts ? document.fonts.ready : Promise.resolve()")
             except Exception:
@@ -653,12 +674,11 @@ def _detect_title_clipping_with_browser(html: str) -> bool:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
             context = browser.new_context(
-                java_script_enabled=False,
                 viewport={"width": int(_CANVAS_WIDTH_PX), "height": int(_CANVAS_HEIGHT_PX)},
             )
             context.route("**/*", lambda route: route.abort())
             page = context.new_page()
-            page.set_content(html, wait_until="domcontentloaded")
+            page.set_content(_sanitize_html_for_browser_metric(html), wait_until="domcontentloaded")
             try:
                 page.evaluate("document.fonts ? document.fonts.ready : Promise.resolve()")
             except Exception:
