@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from services.ai_slide_generator import (
     AI_SELF_REVIEW_PROMPT,
+    build_design_quality_metrics,
     finalize_generated_html_for_render,
     harden_generated_html_typography,
 )
@@ -58,6 +59,55 @@ def test_harden_generated_html_typography_raises_regular_card_body_text_to_body_
     assert metrics["quality_gate"] == "pass"
 
 
+def test_finalize_generated_html_restores_expected_slide_title_when_model_rephrases_it():
+    html = """<!DOCTYPE html><html><head><style>
+    h1 { font-size: 112px; }
+    .body { font-size: 32px; }
+    </style></head><body>
+    <h1>音声からスライド<span class="accent">動画</span>を<span>つくる、その流れ</span></h1>
+    <p class="body">品質評価用サンプル</p>
+    </body></html>"""
+    slide = {"title": "音声からスライド動画を作る流れ"}
+
+    finalized = finalize_generated_html_for_render(html, slide, 1, 2, {"_design_mode": "pro"})
+
+    assert "音声からスライド動画を<br/>作る流れ" in finalized
+    assert "font-size: 88px" in finalized
+    assert "つくる、その流れ" not in finalized
+
+
+def test_finalize_generated_html_restores_visible_heading_even_when_document_title_matches():
+    html = """<!DOCTYPE html><html><head><title>日本語の読みやすさと復元確認</title><style>
+    h1 { font-size: 112px; }
+    .body { font-size: 32px; }
+    </style></head><body>
+    <h1>日本語の読みやすさそして復元の確認</h1>
+    <p class="body">品質評価用サンプル</p>
+    </body></html>"""
+    slide = {"title": "日本語の読みやすさと復元確認"}
+
+    finalized = finalize_generated_html_for_render(html, slide, 2, 2, {"_design_mode": "pro"})
+
+    assert "<h1>日本語の読みやすさと復元確認</h1>" in finalized
+    assert "日本語の読みやすさそして復元の確認" not in finalized
+
+
+def test_finalize_generated_html_inserts_safe_phrase_break_for_long_restored_title():
+    html = """<!DOCTYPE html><html><head><title>音声からスライド動画を作る流れ</title><style>
+    h1 { font-size: 104px; }
+    .body { font-size: 32px; }
+    </style></head><body>
+    <h1>音声からスライド動画をつくる、その流れ</h1>
+    <p class="body">品質評価用サンプル</p>
+    </body></html>"""
+    slide = {"title": "音声からスライド動画を作る流れ"}
+
+    finalized = finalize_generated_html_for_render(html, slide, 1, 2, {"_design_mode": "pro"})
+
+    assert "音声からスライド動画を<br/>作る流れ" in finalized
+    assert "音声からスライド動画をつくる、その流れ" not in finalized
+
+
 def test_harden_generated_html_typography_prevents_title_clipping_rules():
     html = """<!DOCTYPE html><html><head><style>
     h1.headline {
@@ -102,6 +152,23 @@ def test_harden_generated_html_typography_prevents_browser_japanese_title_one_ch
     assert "line-break: strict" in hardened
     assert "text-wrap: balance" in hardened
     assert "overflow-wrap: anywhere" not in hardened
+
+
+def test_harden_generated_html_typography_caps_extreme_pro_title_font_sizes():
+    html = """<!DOCTYPE html><html><head><style>
+    h1 { font-size: 168px; max-width: 95%; word-break: keep-all; }
+    .body { font-size: 32px; }
+    </style></head><body>
+    <h1><span>音声からスライド動画を</span><span>つくる流れ</span></h1>
+    <p class="body">品質評価用サンプル</p>
+    </body></html>"""
+
+    hardened = harden_generated_html_typography(html)
+
+    assert "font-size: 112px" in hardened
+    assert "font-size: 168px" not in hardened
+    assert "word-break: keep-all" in hardened
+    assert "overflow-wrap: normal" in hardened
 
 
 def test_harden_generated_html_typography_repairs_bad_japanese_title_breaks():
@@ -236,6 +303,22 @@ def test_finalize_generated_html_for_render_wraps_title_only_slide_in_main_conte
     assert metrics["main_element_occupancy_ratio"] >= 0.30
     assert metrics["text_clipping_detected"] is False
     assert metrics["quality_gate"] == "pass"
+
+
+def test_build_design_quality_metrics_uses_browser_layout_for_generated_titles():
+    html = """<!DOCTYPE html><html><head><style>
+    body { width: 1920px; height: 1080px; margin: 0; }
+    .container { width: 1680px; height: 600px; display: grid; grid-template-columns: 58% 42%; }
+    h1 { font-size: 88px; line-height: 1.16; width: 900px; }
+    </style></head><body>
+    <div class="container"><div class="left"><h1>音声からスライド動画を<br/>作る流れ</h1></div></div>
+    </body></html>"""
+
+    metrics = build_design_quality_metrics([html])
+
+    assert metrics[0]["main_element_occupancy_ratio"] >= 0.30
+    assert metrics[0]["quality_gate"] == "pass"
+    assert not any("主役要素の画面占有率" in warning for warning in metrics[0]["warnings"])
 
 
 def test_design_quality_ignores_decorative_pseudo_element_labels():

@@ -242,6 +242,37 @@ class TestAnalyzeDesignQuality:
         assert result["quality_gate"] == "pass"
         assert result["small_text_count"] == 0
 
+    def test_browser_layout_counts_large_title_as_main_occupancy_without_wrapper_class(self):
+        html = """<!DOCTYPE html><html><head><style>
+        body { width: 1920px; height: 1080px; margin: 0; display: flex; align-items: center; justify-content: center; }
+        h1 { font-size: 112px; line-height: 1.3; width: 1200px; min-height: 560px; text-align: center; }
+        </style></head><body>
+        <h1>日本語の読みやすさと復元確認</h1>
+        </body></html>"""
+
+        result = analyze_design_quality_with_browser_layout(html)
+
+        assert result["main_element_occupancy_ratio"] >= 0.30
+        assert result["quality_gate"] == "pass"
+        assert not any("主役要素の画面占有率" in warning for warning in result["warnings"])
+
+    def test_browser_layout_metric_does_not_execute_generated_scripts(self):
+        html = """<!DOCTYPE html><html><head><style>
+        body { width: 1920px; height: 1080px; margin: 0; display: flex; align-items: center; justify-content: center; }
+        h1 { font-size: 112px; line-height: 1.3; width: 1200px; min-height: 560px; text-align: center; }
+        </style><script>
+        document.addEventListener('DOMContentLoaded', () => {
+          document.querySelector('h1').style.display = 'none';
+        });
+        </script></head><body>
+        <h1>日本語の読みやすさと復元確認</h1>
+        </body></html>"""
+
+        result = analyze_design_quality_with_browser_layout(html)
+
+        assert result["main_element_occupancy_ratio"] >= 0.30
+        assert result["quality_gate"] == "pass"
+
     def test_clamp_small_lower_bound_warns(self):
         html = '<p style="font-size: clamp(0.5rem, 2vw, 2rem);">text</p>'
         result = analyze_design_quality(html)
@@ -665,7 +696,9 @@ class TestAnalyzeScreenshotBlankArea:
 class TestDesignQualityIntegrationHelpers:
     def test_build_design_quality_metrics_adds_slide_numbers_and_fallback_flags(self):
         html_contents = [
-            '<h1 style="font-size: 82px">Title</h1><p style="font-size: 32px">Body</p>',
+            '''<div class="container" style="width: 1680px; height: 640px">
+                <h1 style="font-size: 82px">Title</h1><p style="font-size: 32px">Body</p>
+            </div>''',
             '<h1 style="font-size: 72px">Title</h1><p style="font-size: 18px">Tiny</p>',
         ]
 

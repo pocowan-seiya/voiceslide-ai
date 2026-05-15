@@ -26,7 +26,7 @@ from services.generation_telemetry import (
     reset_telemetry_context,
     set_telemetry_context,
 )
-from services.design_quality_metrics import analyze_design_quality
+from services.design_quality_metrics import analyze_design_quality_with_browser_layout
 
 # Context vars for OpenRouter routing (set per-request, read by safe_gemini_generate)
 _openrouter_key_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar('_openrouter_key', default=None)
@@ -1773,6 +1773,12 @@ def _prevent_title_clipping_in_css(css: str) -> str:
     css = re_mod.sub(r"\bword-break\s*:\s*(?:normal|break-all|break-word|keep-all)\s*;?", "", css, flags=re_mod.IGNORECASE)
     if had_keep_all and had_dangerous_clipping:
         css = _cap_font_sizes_above_in_css(css, 72.0)
+    else:
+        # Pro-mode models sometimes generate huge title sizes (150px+) that do
+        # not trigger DOM clipping metrics but visually run off the 16:9 canvas,
+        # especially on Japanese headline lines. Keep the title large, but cap
+        # the extreme values before the browser render pass.
+        css = _cap_font_sizes_above_in_css(css, 112.0)
     css = css.rstrip()
     if css and not css.endswith(";"):
         css += ";"
@@ -2924,6 +2930,72 @@ def _title_present(title: str, visible_text: str) -> bool:
     return False
 
 
+def _restore_expected_title_text(html: str, slide: Dict[str, Any]) -> str:
+    """Restore the expected slide title if the model rephrased the first heading."""
+    if not html or not slide:
+        return html
+
+    slide_copy = slide.get("slide_copy", {}) if isinstance(slide, dict) else {}
+    expected_title = slide_copy.get("headline") or slide.get("title", "")
+    if not expected_title:
+        return html
+
+    def split_title_for_safe_render(title: str) -> Optional[tuple[str, str]]:
+        compact = _normalize_for_match(title)
+        if len(compact) < 15:
+            return None
+        for pattern in ("を作", "をつく", "を創"):
+            idx = title.find(pattern)
+            if idx >= 0:
+                split_at = idx + 1
+                if 3 <= split_at <= len(title) - 3:
+                    return title[:split_at], title[split_at:]
+        preferred_tokens = ("を", "と", "から", "へ")
+        midpoint = max(1, len(title) // 2)
+        best_index = None
+        best_distance = 10**6
+        for token in preferred_tokens:
+            search_from = 0
+            while True:
+                idx = title.find(token, search_from)
+                if idx < 0:
+                    break
+                split_at = idx + len(token)
+                if 3 <= split_at <= len(title) - 3:
+                    distance = abs(split_at - midpoint)
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_index = split_at
+                search_from = idx + 1
+        if best_index is None:
+            return None
+        return title[:best_index], title[best_index:]
+
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        title_el = soup.find(["h1", "h2"]) or soup.select_one(".title, .headline, .main-title")
+        if title_el is None:
+            return html
+        if _normalize_for_match(expected_title) in _normalize_for_match(title_el.get_text(strip=True)):
+            return html
+
+        title_el.clear()
+        split_title = split_title_for_safe_render(expected_title)
+        if split_title:
+            first, second = split_title
+            existing_style = str(title_el.get("style") or "").rstrip(";")
+            safe_style = "font-size: 88px; line-height: 1.16; max-width: 100%;"
+            title_el["style"] = f"{existing_style}; {safe_style}" if existing_style else safe_style
+            title_el.append(first)
+            title_el.append(soup.new_tag("br"))
+            title_el.append(second)
+        else:
+            title_el.string = expected_title
+        return str(soup)
+    except Exception:
+        return html
+
+
 def _has_valid_gradient_text(css_block: str) -> bool:
     """
     Detect if a CSS block (a single declaration list or selector body) is
@@ -3171,7 +3243,8 @@ def finalize_generated_html_for_render(
     strategy: Dict[str, Any],
 ) -> str:
     """Apply all deterministic final safety checks before browser rendering."""
-    visible_html = ensure_text_visible(html, slide, slide_number, total_slides, strategy)
+    title_restored_html = _restore_expected_title_text(html, slide)
+    visible_html = ensure_text_visible(title_restored_html, slide, slide_number, total_slides, strategy)
     finalized = harden_generated_html_typography(visible_html)
     finalized = _ensure_title_only_main_content_container(finalized)
 
@@ -4340,15 +4413,11 @@ def build_design_quality_metrics(
     html_contents: List[str],
     fallback_slide_numbers: Optional[set[int]] = None,
 ) -> List[Dict[str, Any]]:
-    """Build per-slide deterministic design QA metrics from generated HTML.
-
-    This is intentionally HTML/CSS-only for Sprint 2. Screenshot/image-based
-    occupancy checks come later.
-    """
+    """Build per-slide design QA metrics from generated HTML with browser layout fallback."""
     fallback_slide_numbers = fallback_slide_numbers or set()
     metrics: List[Dict[str, Any]] = []
     for idx, html in enumerate(html_contents, start=1):
-        item = analyze_design_quality(
+        item = analyze_design_quality_with_browser_layout(
             html,
             fallback_used=idx in fallback_slide_numbers,
         )

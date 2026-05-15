@@ -546,7 +546,7 @@ def _estimate_main_element_occupancy_ratio_with_browser(html: str) -> Optional[f
         const markerText = `${el.className || ''} ${el.id || ''}`.toLowerCase();
         if (decorativeMarkers.some(marker => markerText.includes(marker))) continue;
         if (wrapperMarkers.some(marker => markerText.includes(marker)) && !candidateMarkers.some(marker => markerText.includes(marker))) continue;
-        if (!candidateMarkers.some(marker => markerText.includes(marker)) && !['main', 'article'].includes(tag)) continue;
+        if (!candidateMarkers.some(marker => markerText.includes(marker)) && !['main', 'article', 'h1', 'h2'].includes(tag)) continue;
 
         const rect = el.getBoundingClientRect();
         if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) continue;
@@ -568,11 +568,17 @@ def _estimate_main_element_occupancy_ratio_with_browser(html: str) -> Optional[f
     """
 
     browser = None
+    context = None
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-            page = browser.new_page(viewport={"width": int(_CANVAS_WIDTH_PX), "height": int(_CANVAS_HEIGHT_PX)})
-            page.set_content(html, wait_until="load")
+            context = browser.new_context(
+                java_script_enabled=False,
+                viewport={"width": int(_CANVAS_WIDTH_PX), "height": int(_CANVAS_HEIGHT_PX)},
+            )
+            context.route("**/*", lambda route: route.abort())
+            page = context.new_page()
+            page.set_content(html, wait_until="domcontentloaded")
             try:
                 page.evaluate("document.fonts ? document.fonts.ready : Promise.resolve()")
             except Exception:
@@ -588,6 +594,8 @@ def _estimate_main_element_occupancy_ratio_with_browser(html: str) -> Optional[f
                     "decorativeMarkers": list(_OCCUPANCY_DECORATIVE_CLASS_OR_ID_PARTS),
                 },
             )
+            context.close()
+            context = None
             browser.close()
             browser = None
             if ratio is None:
@@ -595,6 +603,17 @@ def _estimate_main_element_occupancy_ratio_with_browser(html: str) -> Optional[f
             return float(ratio)
     except Exception:
         return None
+    finally:
+        try:
+            if context is not None:
+                context.close()
+        except Exception:
+            pass
+        try:
+            if browser is not None:
+                browser.close()
+        except Exception:
+            pass
 
 
 def _detect_title_clipping_with_browser(html: str) -> bool:
@@ -620,7 +639,7 @@ def _detect_title_clipping_with_browser(html: str) -> bool:
         const style = window.getComputedStyle(el);
         if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || '1') === 0) continue;
         const horizontalOverflow = el.scrollWidth > el.clientWidth + 4;
-        const verticalTolerance = Math.max(6, Math.ceil(el.clientHeight * 0.04));
+        const verticalTolerance = Math.max(18, Math.ceil(el.clientHeight * 0.08));
         const verticalOverflow = el.scrollHeight > el.clientHeight + verticalTolerance;
         if (horizontalOverflow || verticalOverflow) return true;
       }
@@ -629,22 +648,41 @@ def _detect_title_clipping_with_browser(html: str) -> bool:
     """
 
     browser = None
+    context = None
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-            page = browser.new_page(viewport={"width": int(_CANVAS_WIDTH_PX), "height": int(_CANVAS_HEIGHT_PX)})
-            page.set_content(html, wait_until="load")
+            context = browser.new_context(
+                java_script_enabled=False,
+                viewport={"width": int(_CANVAS_WIDTH_PX), "height": int(_CANVAS_HEIGHT_PX)},
+            )
+            context.route("**/*", lambda route: route.abort())
+            page = context.new_page()
+            page.set_content(html, wait_until="domcontentloaded")
             try:
                 page.evaluate("document.fonts ? document.fonts.ready : Promise.resolve()")
             except Exception:
                 pass
             page.wait_for_timeout(100)
             detected = bool(page.evaluate(script))
+            context.close()
+            context = None
             browser.close()
             browser = None
             return detected
     except Exception:
         return False
+    finally:
+        try:
+            if context is not None:
+                context.close()
+        except Exception:
+            pass
+        try:
+            if browser is not None:
+                browser.close()
+        except Exception:
+            pass
 
 
 def analyze_design_quality_with_browser_layout(
