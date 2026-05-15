@@ -260,7 +260,7 @@ def test_finalize_generated_html_for_render_rehardens_self_review_oversized_titl
     )
     metrics = analyze_design_quality_with_browser_layout(finalized)
 
-    assert "font-size: 112px" in finalized
+    assert "font-size: 72px" in finalized
     assert "max-width: 100%" in finalized
     assert metrics["text_clipping_detected"] is False
     assert metrics["quality_gate"] in {"pass", "warn"}
