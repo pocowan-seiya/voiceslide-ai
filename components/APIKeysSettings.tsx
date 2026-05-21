@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { UserSettings } from "@/lib/supabase/types";
 
 // Model IDs MUST match what Google / OpenRouter actually serve.
 //
@@ -66,11 +65,16 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
     const [saving, setSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
-    useEffect(() => {
-        loadKeys();
+    const syncToLocalStorage = useCallback((openai: string, gemini: string, model: string, openrouter: string, openrouterModel: string, openrouterDesignModel: string) => {
+        localStorage.setItem("voiceslide_openai_key", openai);
+        localStorage.setItem("voiceslide_gemini_key", gemini);
+        localStorage.setItem("voiceslide_gemini_model", model || "gemini-3-flash-preview");
+        localStorage.setItem("voiceslide_openrouter_key", openrouter);
+        localStorage.setItem("voiceslide_openrouter_model", openrouterModel || "google/gemini-3-flash-preview");
+        localStorage.setItem("voiceslide_openrouter_design_model", openrouterDesignModel || "google/gemini-3-flash-preview");
     }, []);
 
-    const loadKeys = async () => {
+    const loadKeys = useCallback(async () => {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
 
@@ -130,16 +134,11 @@ export function APIKeysSettings({ onClose }: APIKeysSettingsProps) {
             setOpenrouterDesignModel(localStorage.getItem("voiceslide_openrouter_design_model") || "google/gemini-3-flash-preview");
         }
         setIsLoading(false);
-    };
+    }, [syncToLocalStorage]);
 
-    const syncToLocalStorage = (openai: string, gemini: string, model: string, openrouter: string, openrouterModel: string, openrouterDesignModel: string) => {
-        localStorage.setItem("voiceslide_openai_key", openai);
-        localStorage.setItem("voiceslide_gemini_key", gemini);
-        localStorage.setItem("voiceslide_gemini_model", model || "gemini-3-flash-preview");
-        localStorage.setItem("voiceslide_openrouter_key", openrouter);
-        localStorage.setItem("voiceslide_openrouter_model", openrouterModel || "google/gemini-3-flash-preview");
-        localStorage.setItem("voiceslide_openrouter_design_model", openrouterDesignModel || "google/gemini-3-flash-preview");
-    };
+    useEffect(() => {
+        void Promise.resolve().then(loadKeys);
+    }, [loadKeys]);
 
     const handleSave = async () => {
         setSaving(true);

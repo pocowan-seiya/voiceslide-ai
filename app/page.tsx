@@ -70,6 +70,25 @@ async function fetchWithRetry(
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 type WorkflowMode = "hybrid" | "full-ai" | null;
 
+interface DesignQualityMetricSnapshot {
+  slide_number?: number;
+  quality_gate?: string;
+  fallback_used?: boolean;
+  text_clipping_detected?: boolean;
+  small_text_count?: number;
+  min_font_size_px?: number;
+  main_element_occupancy_ratio?: number;
+  warnings?: unknown[];
+}
+
+interface ManualEditFrictionSummary {
+  event_count?: number;
+  by_type?: Record<string, number>;
+  by_slide?: Record<string, unknown>;
+  first_at?: string | null;
+  last_at?: string | null;
+}
+
 interface JobState {
   jobId: string | null;
   step: Step;
@@ -110,6 +129,8 @@ interface JobState {
   // Persisted to projects.design_mode; defaults to flash_standard for
   // backward compatibility with existing projects.
   designMode: "flash_standard" | "pro";
+  designQualityMetrics: DesignQualityMetricSnapshot[];
+  manualEditFrictionSummary: ManualEditFrictionSummary | null;
 }
 
 const HYBRID_STEPS = [
@@ -183,6 +204,8 @@ function HomeInner() {
     slidesStoragePrefix: null,
     apiWarnings: [],
     designMode: "flash_standard",
+    designQualityMetrics: [],
+    manualEditFrictionSummary: null,
   });
 
   const [editedTranscript, setEditedTranscript] = useState<string>("");
@@ -783,6 +806,75 @@ function HomeInner() {
   useEffect(() => { projectIdRef.current = projectId; }, [projectId]);
   useEffect(() => { audioStoragePathRef.current = audioStoragePath; }, [audioStoragePath]);
 
+  const manualEditSessionStartedAtRef = useRef<number | null>(null);
+  const manualEditSaveStartedAtRef = useRef<number | null>(null);
+
+  const getManualEditQualitySnapshot = useCallback((slideNumber: number | null) => {
+    if (!slideNumber) return undefined;
+    const metrics = stateRef.current.designQualityMetrics || [];
+    const metric = metrics.find((m: DesignQualityMetricSnapshot) => Number(m?.slide_number) === slideNumber);
+    if (!metric) return undefined;
+    return {
+      slide_number: metric.slide_number,
+      quality_gate: metric.quality_gate,
+      fallback_used: Boolean(metric.fallback_used),
+      text_clipping_detected: Boolean(metric.text_clipping_detected),
+      small_text_count: metric.small_text_count,
+      min_font_size_px: metric.min_font_size_px,
+      main_element_occupancy_ratio: metric.main_element_occupancy_ratio,
+      warnings_count: Array.isArray(metric.warnings) ? metric.warnings.length : 0,
+    };
+  }, []);
+
+  const recordManualEditFriction = useCallback(async (
+    eventType: string,
+    options: { slideNumber?: number | null; details?: Record<string, unknown>; source?: string } = {}
+  ) => {
+    const currentState = stateRef.current;
+    if (!currentState.jobId) return;
+    const startedAt = manualEditSessionStartedAtRef.current;
+    const slideNumber = options.slideNumber ?? selectedSlide;
+    try {
+      const res = await fetch(`${API_URL}/api/manual-edit-friction/${currentState.jobId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAPIHeadersWithProject(userId, projectIdRef.current),
+        },
+        body: JSON.stringify({
+          event_type: eventType,
+          slide_number: slideNumber ?? undefined,
+          workflow_mode: currentState.workflowMode,
+          design_mode: currentState.designMode,
+          elapsed_ms: startedAt ? Math.max(0, Date.now() - startedAt) : undefined,
+          source: options.source || "frontend",
+          details: options.details || {},
+          quality_snapshot: getManualEditQualitySnapshot(slideNumber ?? null),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        updateState({ manualEditFrictionSummary: data.manual_edit_friction_summary || null });
+      }
+    } catch (e) {
+      console.debug("[ManualEditFriction] record skipped", e);
+    }
+  }, [getManualEditQualitySnapshot, selectedSlide, userId]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type !== 'MANUAL_EDIT_FRICTION') return;
+      const slideNumber = Number(event.data.slide_number || selectedSlide || 0) || undefined;
+      recordManualEditFriction(event.data.event_type, {
+        slideNumber,
+        source: "iframe",
+        details: event.data.details || {},
+      });
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [recordManualEditFriction, selectedSlide]);
+
   useEffect(() => {
     const handleBeforeUnload = () => {
       const pid = projectIdRef.current;
@@ -1366,6 +1458,8 @@ function HomeInner() {
               slidePreviews: newSlidePreviews,
               step: newStep,
               isProcessing: isPreviewMode.current ? false : !statusData.is_complete,
+              designQualityMetrics: Array.isArray(statusData.design_quality_metrics) ? statusData.design_quality_metrics : [],
+              manualEditFrictionSummary: statusData.manual_edit_friction_summary || null,
               ...(warningMessages.length > 0 ? { apiWarnings: warningMessages } : {}),
             });
             setSelectedSlide(null);
@@ -1424,6 +1518,8 @@ function HomeInner() {
   // Direct slide editing: Load slide HTML for iframe editing
   const handleLoadSlideText = async (slideNum: number) => {
     if (!state.jobId) return;
+    manualEditSessionStartedAtRef.current = Date.now();
+    recordManualEditFriction("direct_editor_opened", { slideNumber: slideNum });
     setIsLoadingText(true);
     try {
       const res = await fetch(`${API_URL}/api/slides/${state.jobId}/html/${slideNum}`, {
@@ -1499,6 +1595,39 @@ function HomeInner() {
     
     makeEditable(document.body);
     makeDecorativePassthrough(document.body);
+
+    function classHint(el) {
+      if (!el || !el.className) return '';
+      return String(el.className).split(/\s+/).slice(0, 3).join(' ').slice(0, 80);
+    }
+    document.addEventListener('focusin', function(e) {
+      var el = e.target;
+      if (!el || el.contentEditable !== 'true') return;
+      window.parent.postMessage({
+        type: 'MANUAL_EDIT_FRICTION',
+        event_type: 'direct_editor_text_focused',
+        slide_number: ${slideNum},
+        details: {
+          target_tag: el.tagName,
+          target_class_hint: classHint(el),
+          text_length_before: (el.textContent || '').length
+        }
+      }, '*');
+    });
+    document.addEventListener('input', function(e) {
+      var el = e.target;
+      if (!el || el.contentEditable !== 'true') return;
+      window.parent.postMessage({
+        type: 'MANUAL_EDIT_FRICTION',
+        event_type: 'direct_editor_text_input',
+        slide_number: ${slideNum},
+        details: {
+          target_tag: el.tagName,
+          target_class_hint: classHint(el),
+          text_length_after: (el.textContent || '').length
+        }
+      }, '*');
+    });
     
     window.addEventListener('message', function(e) {
       if (e.data === 'GET_HTML') {
@@ -1539,6 +1668,8 @@ function HomeInner() {
   // Direct slide editing: Save modified HTML
   const handleSaveSlideText = async () => {
     if (!state.jobId || !selectedSlide) return;
+    manualEditSaveStartedAtRef.current = Date.now();
+    recordManualEditFriction("direct_editor_save_started", { slideNumber: selectedSlide });
     setIsSavingText(true);
     try {
       // Request HTML from iframe via postMessage
@@ -1578,10 +1709,18 @@ function HomeInner() {
         newPreviews[selectedSlide - 1] = `${API_URL}${data.preview_url}`;
         updateState({ slidePreviews: newPreviews });
         setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
+        recordManualEditFriction("direct_editor_save_succeeded", {
+          slideNumber: selectedSlide,
+          details: { save_duration_ms: manualEditSaveStartedAtRef.current ? Date.now() - manualEditSaveStartedAtRef.current : undefined }
+        });
         setIsTextEditing(false);
       }
     } catch (err) {
       console.error("Failed to save slide HTML:", err);
+      recordManualEditFriction("direct_editor_save_failed", {
+        slideNumber: selectedSlide,
+        details: { error_kind: "save_exception" }
+      });
     } finally {
       setIsSavingText(false);
     }
@@ -1596,6 +1735,15 @@ function HomeInner() {
     const isImageRegen = type === "image" || type === "regenerate_image";
     if (!isImageRegen && !slideFeedback.trim() && !slideImage.file) return;
 
+    recordManualEditFriction("ai_feedback_started", {
+      slideNumber: selectedSlide,
+      details: {
+        feedback_type: type,
+        has_feedback_text: Boolean(slideFeedback.trim()),
+        feedback_length: slideFeedback.trim().length,
+        has_image: Boolean(slideImage.file),
+      }
+    });
     setIsRegenerating(true);
 
     try {
@@ -1638,6 +1786,7 @@ function HomeInner() {
         setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
       }
 
+      recordManualEditFriction("ai_feedback_succeeded", { slideNumber: selectedSlide, details: { feedback_type: type } });
       setSlideFeedback("");
       setSlideImage({ file: null, preview: null });
 
@@ -1652,6 +1801,7 @@ function HomeInner() {
         return;
       }
     } catch (err: any) {
+      recordManualEditFriction("ai_feedback_failed", { slideNumber: selectedSlide, details: { feedback_type: type, error_kind: "request_failed" } });
       updateState({ error: err.message });
     } finally {
       setIsRegenerating(false);
@@ -1696,6 +1846,7 @@ function HomeInner() {
   const handleSlideUndo = async () => {
     if (!selectedSlide || !slideCanUndo[selectedSlide]) return;
 
+    recordManualEditFriction("undo_clicked", { slideNumber: selectedSlide });
     setIsUndoing(true);
 
     try {
@@ -1713,8 +1864,10 @@ function HomeInner() {
 
       // Update undo state
       setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
+      recordManualEditFriction("undo_succeeded", { slideNumber: selectedSlide });
 
     } catch (err: any) {
+      recordManualEditFriction("undo_failed", { slideNumber: selectedSlide, details: { error_kind: "request_failed" } });
       updateState({ error: err.message });
     } finally {
       setIsUndoing(false);
@@ -2310,6 +2463,8 @@ function HomeInner() {
       slidesStoragePrefix: null,
       apiWarnings: [],
       designMode: "flash_standard",
+      designQualityMetrics: [],
+      manualEditFrictionSummary: null,
     });
     setEditText("");
     setIsEditingTranscript(false);
@@ -3666,8 +3821,8 @@ function HomeInner() {
                                   return (
                                     <div
                                       key={slideNum}
-                                      onClick={() => setSelectedSlide(slideNum)}
-                                      onDoubleClick={() => setZoomedSlide(startIdx + i)}
+                                      onClick={() => { setSelectedSlide(slideNum); recordManualEditFriction("slide_selected", { slideNumber: slideNum }); }}
+                                      onDoubleClick={() => { setZoomedSlide(startIdx + i); recordManualEditFriction("zoom_opened", { slideNumber: slideNum }); }}
                                       className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all relative group ${selectedSlide === slideNum
                                         ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
                                         : 'border-zinc-700 hover:border-zinc-500'
@@ -3716,7 +3871,7 @@ function HomeInner() {
                                         スライド {slideNum}
                                       </div>
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); setZoomedSlide(startIdx + i); }}
+                                        onClick={(e) => { e.stopPropagation(); setZoomedSlide(startIdx + i); recordManualEditFriction("zoom_opened", { slideNumber: slideNum }); }}
                                         className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-sm px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                                       >
                                         🔍
@@ -3736,6 +3891,7 @@ function HomeInner() {
                                     <button
                                       onClick={() => {
                                         if (isTextEditing) {
+                                          recordManualEditFriction("direct_editor_closed", { slideNumber: selectedSlide });
                                           setIsTextEditing(false);
                                         } else {
                                           handleLoadSlideText(selectedSlide);
@@ -3909,6 +4065,7 @@ function HomeInner() {
                                             setSelectedSlide(null);
                                             setSlideFeedback("");
                                             setSlideImage({ file: null, preview: null });
+                                            recordManualEditFriction("direct_editor_closed", { slideNumber: selectedSlide });
                                             setIsTextEditing(false);
                                           }}
                                           className="px-4 text-sm py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-700"
@@ -3981,7 +4138,7 @@ function HomeInner() {
 
                   <div className="flex gap-4 flex-wrap">
                     <button
-                      onClick={handleGenerateVideo}
+                      onClick={() => { recordManualEditFriction("video_generate_clicked", { slideNumber: selectedSlide }); handleGenerateVideo(); }}
                       disabled={state.isProcessing || state.audioMissing}
                       className="btn-primary flex-1"
                       title={state.audioMissing ? "音声を再アップロードしてください" : ""}

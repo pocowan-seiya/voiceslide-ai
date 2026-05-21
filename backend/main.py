@@ -99,6 +99,10 @@ slide_progress: Dict[str, Dict[str, Any]] = {}
 # Slide history for undo (job_id -> slide_number -> list of previous versions)
 slide_history: Dict[str, Dict[int, List[Dict[str, Any]]]] = {}
 
+# Manual edit friction events (job_id -> events)
+# Privacy note: stores interaction metadata only, never edited slide text.
+manual_edit_friction_events: Dict[str, List[Dict[str, Any]]] = {}
+
 # Job timestamps for cleanup tracking
 job_timestamps: Dict[str, datetime] = {}
 
@@ -132,6 +136,7 @@ async def cleanup_old_jobs():
                 api_keys.pop(job_id, None)
                 slide_progress.pop(job_id, None)
                 slide_history.pop(job_id, None)
+                manual_edit_friction_events.pop(job_id, None)
                 job_timestamps.pop(job_id, None)
 
                 # Clean memory caches in services/ai_slide_generator.py
@@ -2196,6 +2201,7 @@ async def get_batch_status(job_id: str):
         "generation_telemetry": generation_telemetry,
         "generation_telemetry_summary": generation_telemetry_summary,
         "design_quality_metrics": design_quality_metrics,
+        "manual_edit_friction_summary": jobs.get(job_id, {}).get("manual_edit_friction_summary", {}),
     }
 
 
@@ -2504,6 +2510,182 @@ async def update_slide_text(
         print(f"[Text Edit] Error: {e}")
         raise HTTPException(500, f"Failed to update text: {str(e)}")
 
+
+
+# ========== Manual Edit Friction Recorder ==========
+
+class ManualEditFrictionEventRequest(BaseModel):
+    event_type: str
+    slide_number: Optional[int] = None
+    workflow_mode: Optional[str] = None
+    design_mode: Optional[str] = None
+    elapsed_ms: Optional[int] = None
+    source: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    quality_snapshot: Optional[Dict[str, Any]] = None
+
+
+_ALLOWED_MANUAL_EDIT_EVENT_TYPES = {
+    "slide_selected",
+    "zoom_opened",
+    "direct_editor_opened",
+    "direct_editor_closed",
+    "direct_editor_text_focused",
+    "direct_editor_text_input",
+    "direct_editor_save_started",
+    "direct_editor_save_succeeded",
+    "direct_editor_save_failed",
+    "ai_feedback_started",
+    "ai_feedback_succeeded",
+    "ai_feedback_failed",
+    "undo_clicked",
+    "undo_succeeded",
+    "undo_failed",
+    "video_generate_clicked",
+}
+
+_ALLOWED_MANUAL_EDIT_DETAIL_KEYS = {
+    "feedback_type",
+    "has_feedback_text",
+    "feedback_length",
+    "has_image",
+    "image_count",
+    "target_tag",
+    "target_class_hint",
+    "text_length_before",
+    "text_length_after",
+    "text_length_delta",
+    "save_duration_ms",
+    "result",
+    "error_kind",
+}
+
+_ALLOWED_QUALITY_KEYS = {
+    "slide_number",
+    "quality_gate",
+    "fallback_used",
+    "text_clipping_detected",
+    "small_text_count",
+    "min_font_size_px",
+    "main_element_occupancy_ratio",
+    "warnings_count",
+}
+
+
+def _safe_int(value: Any, *, minimum: int = 0, maximum: int = 86_400_000) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(minimum, min(parsed, maximum))
+
+
+def _sanitize_manual_edit_details(details: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(details, dict):
+        return {}
+    sanitized: Dict[str, Any] = {}
+    for key in _ALLOWED_MANUAL_EDIT_DETAIL_KEYS:
+        if key not in details:
+            continue
+        value = details[key]
+        if isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, (int, float)):
+            sanitized[key] = _safe_int(value, maximum=1_000_000)
+        elif isinstance(value, str):
+            sanitized[key] = value[:80]
+    return sanitized
+
+
+def _sanitize_quality_snapshot(snapshot: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        return {}
+    sanitized: Dict[str, Any] = {}
+    if isinstance(snapshot.get("warnings"), list):
+        sanitized["warnings_count"] = len(snapshot["warnings"])
+    for key in _ALLOWED_QUALITY_KEYS:
+        if key not in snapshot:
+            continue
+        value = snapshot[key]
+        if isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, (int, float)):
+            sanitized[key] = value
+        elif isinstance(value, str):
+            sanitized[key] = value[:80]
+        elif isinstance(value, list) and key == "warnings_count":
+            sanitized[key] = len(value)
+    return sanitized
+
+
+def _summarize_manual_edit_friction(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_type: Dict[str, int] = {}
+    by_slide: Dict[str, Dict[str, Any]] = {}
+    first_at = events[0]["created_at"] if events else None
+    last_at = events[-1]["created_at"] if events else None
+    for event in events:
+        event_type = event.get("event_type", "unknown")
+        by_type[event_type] = by_type.get(event_type, 0) + 1
+        slide_number = event.get("slide_number")
+        if slide_number is not None:
+            key = str(slide_number)
+            slide_bucket = by_slide.setdefault(key, {"event_count": 0, "event_types": {}, "quality_snapshot": event.get("quality_snapshot") or {}})
+            slide_bucket["event_count"] += 1
+            slide_bucket["event_types"][event_type] = slide_bucket["event_types"].get(event_type, 0) + 1
+            if event.get("quality_snapshot"):
+                slide_bucket["quality_snapshot"] = event["quality_snapshot"]
+    return {
+        "event_count": len(events),
+        "by_type": by_type,
+        "by_slide": by_slide,
+        "first_at": first_at,
+        "last_at": last_at,
+    }
+
+
+@app.post("/api/manual-edit-friction/{job_id}")
+async def record_manual_edit_friction(job_id: str, request: ManualEditFrictionEventRequest):
+    """Record privacy-safe interaction events from the post-generation slide editor."""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    if request.event_type not in _ALLOWED_MANUAL_EDIT_EVENT_TYPES:
+        raise HTTPException(400, "Unsupported manual edit friction event_type")
+
+    event = {
+        "event_type": request.event_type,
+        "slide_number": request.slide_number,
+        "workflow_mode": request.workflow_mode,
+        "design_mode": request.design_mode,
+        "elapsed_ms": _safe_int(request.elapsed_ms),
+        "source": (request.source or "frontend")[:40],
+        "details": _sanitize_manual_edit_details(request.details),
+        "quality_snapshot": _sanitize_quality_snapshot(request.quality_snapshot),
+        "created_at": datetime.now().isoformat(),
+    }
+    events = manual_edit_friction_events.setdefault(job_id, [])
+    events.append(event)
+    # Keep memory bounded per job. The summary still reflects the retained recent window.
+    if len(events) > 500:
+        del events[:-500]
+
+    summary = _summarize_manual_edit_friction(events)
+    jobs[job_id]["manual_edit_friction_events"] = events
+    jobs[job_id]["manual_edit_friction_summary"] = summary
+    return {"ok": True, "manual_edit_friction_summary": summary}
+
+
+@app.get("/api/manual-edit-friction/{job_id}")
+async def get_manual_edit_friction(job_id: str):
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    events = manual_edit_friction_events.get(job_id, jobs[job_id].get("manual_edit_friction_events", []))
+    return {
+        "job_id": job_id,
+        "events": events,
+        "manual_edit_friction_summary": _summarize_manual_edit_friction(events),
+    }
 
 # ========== Direct Slide HTML Editor ==========
 
@@ -3838,6 +4020,7 @@ async def delete_job(job_id: str):
     """Delete job and cleanup files"""
     if job_id in jobs:
         del jobs[job_id]
+    manual_edit_friction_events.pop(job_id, None)
     delete_pipeline(job_id)
     
     # Cleanup files

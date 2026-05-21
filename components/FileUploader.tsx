@@ -8,6 +8,11 @@ interface FileUploaderProps {
     disabled?: boolean;
 }
 
+const isValidAudioFile = (file: File) => {
+    const validTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/x-wav", "audio/m4a", "audio/x-m4a", "audio/mp4"];
+    return validTypes.includes(file.type) || file.name.endsWith(".mp3") || file.name.endsWith(".wav") || file.name.endsWith(".m4a");
+};
+
 export function FileUploader({ onFileSelect, selectedFile, disabled }: FileUploaderProps) {
     const [isDragOver, setIsDragOver] = useState(false);
 
@@ -50,11 +55,6 @@ export function FileUploader({ onFileSelect, selectedFile, disabled }: FileUploa
             }
         }
     }, [onFileSelect]);
-
-    const isValidAudioFile = (file: File) => {
-        const validTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/x-wav", "audio/m4a", "audio/x-m4a", "audio/mp4"];
-        return validTypes.includes(file.type) || file.name.endsWith(".mp3") || file.name.endsWith(".wav") || file.name.endsWith(".m4a");
-    };
 
     const formatFileSize = (bytes: number) => {
         if (bytes < 1024) return `${bytes} B`;
