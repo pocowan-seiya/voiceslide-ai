@@ -1093,6 +1093,10 @@ function HomeInner() {
         silence_threshold: audioSettings.silenceThreshold.toString(),
         speed_factor: audioSettings.speedFactor.toString(),
       });
+      const qaTranscriptFixture = searchParams.get("qaTranscriptFixture");
+      if (qaTranscriptFixture) {
+        params.set("qa_transcript_fixture", qaTranscriptFixture);
+      }
 
       const startRes = await fetchWithRetry(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
         method: "POST",

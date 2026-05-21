@@ -106,6 +106,30 @@ manual_edit_friction_events: Dict[str, List[Dict[str, Any]]] = {}
 # Job timestamps for cleanup tracking
 job_timestamps: Dict[str, datetime] = {}
 
+
+def resolve_qa_transcript_fixture_path(fixture_name: str) -> str:
+    """Resolve a local QA transcript fixture when explicitly enabled.
+
+    This is intentionally env-gated and restricted to docs/qa/fixtures so it
+    cannot become an accidental production bypass for real transcription.
+    """
+    enabled = os.environ.get("VOICESLIDE_ENABLE_QA_TRANSCRIPT_FIXTURE", "").lower() in {"1", "true", "yes"}
+    if not enabled:
+        raise HTTPException(403, "QA transcript fixture mode is disabled")
+
+    safe_name = os.path.basename(fixture_name)
+    if safe_name != fixture_name or not safe_name.endswith(".json"):
+        raise HTTPException(400, "Invalid QA transcript fixture name")
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    fixtures_dir = os.path.join(repo_root, "docs", "qa", "fixtures")
+    fixture_path = os.path.abspath(os.path.join(fixtures_dir, safe_name))
+    if not fixture_path.startswith(os.path.abspath(fixtures_dir) + os.sep):
+        raise HTTPException(400, "Invalid QA transcript fixture path")
+    if not os.path.exists(fixture_path):
+        raise HTTPException(404, "QA transcript fixture not found")
+    return fixture_path
+
 # Cleanup configuration
 CLEANUP_INTERVAL_HOURS = 1  # Run cleanup every hour
 JOB_MAX_AGE_HOURS = 24  # Delete jobs older than 24 hours
@@ -967,6 +991,7 @@ async def transcribe(
     cleanup_mode: str = "natural",  # "strict" or "natural"
     silence_threshold: float = 0.5,  # user-adjustable
     speed_factor: float = 1.0,  # 1.0, 1.2, 1.5, 2.0
+    qa_transcript_fixture: Optional[str] = None,
     x_openai_key: Optional[str] = Header(None),
     x_gemini_key: Optional[str] = Header(None),
     x_gemini_model: Optional[str] = Header(None),
@@ -985,6 +1010,11 @@ async def transcribe(
         jobs[job_id]["gemini_key"] = x_gemini_key
     if x_gemini_model:
         jobs[job_id]["gemini_model"] = x_gemini_model
+    qa_transcript_fixture_path = None
+    if qa_transcript_fixture:
+        qa_transcript_fixture_path = resolve_qa_transcript_fixture_path(qa_transcript_fixture)
+        jobs[job_id]["transcription_provider"] = "qa_fixture"
+        jobs[job_id]["qa_transcript_fixture"] = os.path.basename(qa_transcript_fixture_path)
     # Remember which Supabase project this job belongs to — needed so the
     # post-cleanup / post-speed audio can be uploaded to Storage and survive
     # a Railway redeploy. Without this, restore falls back to the ORIGINAL
@@ -1010,7 +1040,8 @@ async def transcribe(
     background_tasks.add_task(
         run_transcribe_background,
         job_id,
-        x_openai_key
+        x_openai_key,
+        qa_transcript_fixture_path,
     )
 
     return {
@@ -1020,7 +1051,11 @@ async def transcribe(
     }
 
 
-async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
+async def run_transcribe_background(
+    job_id: str,
+    openai_key: Optional[str],
+    qa_transcript_fixture_path: Optional[str] = None,
+):
     """Background task for transcription"""
     try:
         audio_path = jobs[job_id].get("audio_path")
@@ -1057,7 +1092,12 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
         
         # Step 2b: Transcription
         jobs[job_id]["transcribe_progress"] = "AI文字起こし中..."
-        result = await pipeline.step_transcribe(openai_key=openai_key)
+        if qa_transcript_fixture_path:
+            jobs[job_id]["transcribe_progress"] = "QAフィクスチャ文字起こしを読み込み中..."
+        result = await pipeline.step_transcribe(
+            openai_key=openai_key,
+            fixture_transcript_path=qa_transcript_fixture_path,
+        )
         
         # Step 2c: Audio cleanup
         cleanup_result = None

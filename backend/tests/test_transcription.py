@@ -97,6 +97,63 @@ def test_transcribe_audio_mocked():
     assert result["duration"] == 3.0
 
 
+def test_load_transcription_fixture_returns_segments_without_openai(tmp_path):
+    """QA fixture transcription should return timestamped segments without OpenAI."""
+    fixture = tmp_path / "fixture.transcript.json"
+    fixture.write_text(
+        '{"full_text":"Fixture text","segments":[{"id":0,"start":0,"end":1.5,"text":" Fixture text "}],"duration":1.5}',
+        encoding="utf-8",
+    )
+
+    from services.transcription import load_transcription_fixture
+
+    result = load_transcription_fixture(str(fixture))
+
+    assert result["full_text"] == "Fixture text"
+    assert result["segments"] == [{"id": 0, "start": 0.0, "end": 1.5, "text": "Fixture text"}]
+    assert result["duration"] == 1.5
+    assert result["srt_path"].endswith("fixture.transcript.srt")
+
+
+def test_transcribe_audio_fixture_path_does_not_call_openai(tmp_path):
+    """fixture_transcript_path should bypass Whisper for OpenAI-quota-free QA."""
+    fixture = tmp_path / "fixture.transcript.json"
+    fixture.write_text(
+        '{"full_text":"Fixture text","segments":[{"id":0,"start":0,"end":1,"text":"Fixture text"}]}',
+        encoding="utf-8",
+    )
+
+    with patch("services.transcription.get_openai_client") as get_client:
+        from services.transcription import _transcribe_sync
+
+        result = _transcribe_sync("/fake/audio.mp3", openai_key=None, fixture_transcript_path=str(fixture))
+
+    get_client.assert_not_called()
+    assert result["full_text"] == "Fixture text"
+    assert result["segments"][0]["end"] == 1.0
+
+
+def test_resolve_qa_transcript_fixture_requires_env_gate(monkeypatch):
+    """QA fixture API path must be explicitly enabled for local/browser QA."""
+    monkeypatch.delenv("VOICESLIDE_ENABLE_QA_TRANSCRIPT_FIXTURE", raising=False)
+
+    from main import resolve_qa_transcript_fixture_path
+
+    with pytest.raises(Exception, match="QA transcript fixture mode is disabled"):
+        resolve_qa_transcript_fixture_path("short_voislide_quality_check_32s.transcript.json")
+
+
+def test_resolve_qa_transcript_fixture_allows_docs_fixture_when_enabled(monkeypatch):
+    """Enabled QA fixture API path resolves only docs/qa/fixtures JSON files."""
+    monkeypatch.setenv("VOICESLIDE_ENABLE_QA_TRANSCRIPT_FIXTURE", "1")
+
+    from main import resolve_qa_transcript_fixture_path
+
+    path = resolve_qa_transcript_fixture_path("short_voislide_quality_check_32s.transcript.json")
+
+    assert path.endswith("docs/qa/fixtures/short_voislide_quality_check_32s.transcript.json")
+
+
 def test_polish_transcript_no_key():
     """Test polish_transcript returns original text when no API key"""
     with patch("services.transcription.GEMINI_API_KEY", ""):

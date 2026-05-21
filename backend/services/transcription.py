@@ -7,6 +7,7 @@ import os
 import asyncio
 import subprocess
 import re
+import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
@@ -163,8 +164,49 @@ def get_available_gemini_model(api_key: str) -> str:
     return "gemini-pro"
 
 
-def _transcribe_sync(audio_path: str, openai_key: Optional[str] = None) -> Dict[str, Any]:
+def load_transcription_fixture(fixture_path: str) -> Dict[str, Any]:
+    """Load timestamped transcript fixture for OpenAI-free local QA."""
+    with open(fixture_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    segments = []
+    for index, segment in enumerate(payload.get("segments", [])):
+        text = str(segment.get("text", "")).strip()
+        start = float(segment.get("start", 0.0))
+        end = float(segment.get("end", start))
+        segments.append({
+            "id": int(segment.get("id", index)),
+            "start": start,
+            "end": end,
+            "text": text,
+        })
+
+    full_text = str(payload.get("full_text") or " ".join([s["text"] for s in segments])).strip()
+    duration = float(payload.get("duration") or (segments[-1]["end"] if segments else 0.0))
+    srt_path = fixture_path.rsplit(".", 1)[0] + ".srt"
+
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write(generate_srt(segments))
+
+    return {
+        "srt_path": srt_path,
+        "segments": segments,
+        "full_text": full_text,
+        "duration": duration,
+        "provider": "qa_fixture",
+    }
+
+
+def _transcribe_sync(
+    audio_path: str,
+    openai_key: Optional[str] = None,
+    fixture_transcript_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """Synchronous transcription (runs in thread pool)"""
+    if fixture_transcript_path:
+        print(f"[Transcribe] Using QA transcript fixture: {fixture_transcript_path}")
+        return load_transcription_fixture(fixture_transcript_path)
+
     client = get_openai_client(openai_key)
     
     # Whisper API has a 25MB limit - compress if needed
@@ -232,10 +274,20 @@ def _transcribe_sync(audio_path: str, openai_key: Optional[str] = None) -> Dict[
                 print(f"[Transcribe] failed to remove temp file {compressed_path}: {e}")
 
 
-async def transcribe_audio(audio_path: str, openai_key: Optional[str] = None) -> Dict[str, Any]:
+async def transcribe_audio(
+    audio_path: str,
+    openai_key: Optional[str] = None,
+    fixture_transcript_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """Async wrapper for transcription"""
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(executor, _transcribe_sync, audio_path, openai_key)
+    result = await loop.run_in_executor(
+        executor,
+        _transcribe_sync,
+        audio_path,
+        openai_key,
+        fixture_transcript_path,
+    )
     return result
 
 

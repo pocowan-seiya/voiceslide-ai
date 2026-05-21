@@ -1995,11 +1995,13 @@ async def generate_design_strategy(
                  cheaper) or "pro" (AI decides layouts/fonts/accents for
                  each slide, better on Claude/GPT, higher token cost).
     """
-    key = gemini_key or GEMINI_API_KEY
+    openrouter_key = _openrouter_key_var.get(None)
+    key = gemini_key or GEMINI_API_KEY or ("openrouter-routed" if openrouter_key else "")
     if not key:
         raise ValueError("Gemini API key is required")
     
-    genai.configure(api_key=key)
+    if not openrouter_key:
+        genai.configure(api_key=key)
     
     # Format slides content
     slides = outline.get("slides", [])
@@ -2284,11 +2286,13 @@ async def generate_slide_html(
     Step 3: Generate individual slide HTML based on strategy.
     For illustration mode, uses ILLUSTRATION_LAYOUT_TYPES for image-focused designs.
     """
-    key = gemini_key or GEMINI_API_KEY
+    openrouter_key = _openrouter_key_var.get(None)
+    key = gemini_key or GEMINI_API_KEY or ("openrouter-routed" if openrouter_key else "")
     if not key:
         raise ValueError("Gemini API key is required")
     
-    genai.configure(api_key=key)
+    if not openrouter_key:
+        genai.configure(api_key=key)
     
     # Extract slide content (explicitly exclude transcript/speakers_words data)
     slide_copy = slide.get("slide_copy", {})

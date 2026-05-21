@@ -96,9 +96,17 @@ class HybridPipeline:
         return synced_segments
     
     # Step 2: Transcription
-    async def step_transcribe(self, openai_key: Optional[str] = None) -> Dict[str, Any]:
+    async def step_transcribe(
+        self,
+        openai_key: Optional[str] = None,
+        fixture_transcript_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Transcribe audio to text with timestamps"""
-        result = await transcribe_audio(self.audio_path, openai_key=openai_key)
+        result = await transcribe_audio(
+            self.audio_path,
+            openai_key=openai_key,
+            fixture_transcript_path=fixture_transcript_path,
+        )
         
         self.raw_transcript = result["full_text"]
         self.segments = result["segments"]
