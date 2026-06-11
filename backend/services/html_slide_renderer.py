@@ -680,6 +680,92 @@ def generate_quote_layout(slide: Dict, title: str) -> str:
     """
 
 
+async def _apply_render_safe_text_layout(page: Any, video_width: int, video_height: int) -> None:
+    """Shrink and translate important text that would render outside the canvas.
+
+    Pro-mode HTML is AI-generated and can place large Japanese headlines close to
+    the bottom edge. The browser screenshot clips anything outside the fixed
+    1920x1080 body, so apply a final DOM-level guard immediately before capture.
+    """
+    await page.evaluate(
+        r"""
+        ({ canvasWidth, canvasHeight }) => {
+          const safeMargin = Math.max(24, Math.round(Math.min(canvasWidth, canvasHeight) * 0.03));
+          const minFontSizePx = 28;
+          const candidateSelector = [
+            'h1', 'h2', '.title', '.headline', '.main-title', '.subtitle',
+            '.quote-text', '.key-message', '.message', '.catchcopy', '.copy'
+          ].join(',');
+          const excludedMarkers = ['slide-number', 'page-number', 'footer', 'caption', 'brand', 'logo'];
+
+          function isVisibleTextElement(el) {
+            const marker = `${el.className || ''} ${el.id || ''}`.toLowerCase();
+            if (excludedMarkers.some(part => marker.includes(part))) return false;
+            const text = (el.textContent || '').replace(/\s+/g, '').trim();
+            if (text.length < 4) return false;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || '1') === 0) return false;
+            const rect = el.getBoundingClientRect();
+            return Number.isFinite(rect.width) && Number.isFinite(rect.height) && rect.width > 0 && rect.height > 0;
+          }
+
+          function isUnsafe(el) {
+            const rect = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+            const horizontalOverflow = el.scrollWidth > el.clientWidth + 4;
+            const verticalTolerance = Math.max(18, Math.ceil(el.clientHeight * 0.08));
+            const verticalOverflow = el.scrollHeight > el.clientHeight + verticalTolerance;
+            const offCanvas = (
+              rect.left < safeMargin ||
+              rect.right > canvasWidth - safeMargin ||
+              rect.top < safeMargin ||
+              rect.bottom > canvasHeight - safeMargin
+            );
+            return {
+              detected: horizontalOverflow || verticalOverflow || offCanvas,
+              rect,
+              fontSize: parseFloat(style.fontSize || '0') || 0,
+            };
+          }
+
+          for (const el of Array.from(document.querySelectorAll(candidateSelector)).filter(isVisibleTextElement)) {
+            el.style.boxSizing = 'border-box';
+            el.style.maxWidth = `calc(100vw - ${safeMargin * 2}px)`;
+            el.style.maxHeight = `calc(100vh - ${safeMargin * 2}px)`;
+            el.style.overflowWrap = 'normal';
+            el.style.wordBreak = 'keep-all';
+            el.style.whiteSpace = 'normal';
+            el.style.lineBreak = 'strict';
+
+            for (let i = 0; i < 24; i += 1) {
+              const state = isUnsafe(el);
+              if (!state.detected) break;
+              if (state.fontSize <= minFontSizePx) break;
+              el.style.fontSize = `${Math.max(minFontSizePx, Math.floor(state.fontSize * 0.92))}px`;
+              el.style.lineHeight = '1.12';
+            }
+
+            const rect = el.getBoundingClientRect();
+            let dx = 0;
+            let dy = 0;
+            if (rect.left < safeMargin) dx = safeMargin - rect.left;
+            if (rect.right > canvasWidth - safeMargin) dx = (canvasWidth - safeMargin) - rect.right;
+            if (rect.top < safeMargin) dy = safeMargin - rect.top;
+            if (rect.bottom > canvasHeight - safeMargin) dy = (canvasHeight - safeMargin) - rect.bottom;
+
+            if (dx !== 0 || dy !== 0) {
+              const computedTransform = window.getComputedStyle(el).transform;
+              const baseTransform = computedTransform && computedTransform !== 'none' ? computedTransform : '';
+              el.style.transform = `${baseTransform} translate(${Math.round(dx)}px, ${Math.round(dy)}px)`;
+              el.dataset.voislideRenderSafeAdjusted = 'true';
+            }
+          }
+        }
+        """,
+        {"canvasWidth": int(video_width), "canvasHeight": int(video_height)},
+    )
+
+
 async def render_html_to_image(
     html: str, 
     output_path: str,
@@ -699,6 +785,7 @@ async def render_html_to_image(
         
         # Wait for fonts to load
         await page.wait_for_timeout(1000)
+        await _apply_render_safe_text_layout(page, video_width, video_height)
         
         # Take screenshot
         await page.screenshot(path=output_path, type="png")
