@@ -547,9 +547,9 @@ async def generate_outline(
     slide_count_mode: str = "auto",
     custom_slide_count: int = 10,
     audio_duration: float = None,  # 実際の音声長（指定がなければセグメントから推定）
-    model_name: str = "gemini-3-flash-preview",
+    model_name: str = "gemini-3.5-flash",
     openrouter_key: str = None,
-    openrouter_model: str = "google/gemini-3-flash-preview",
+    openrouter_model: str = "google/gemini-3.5-flash",
 ) -> Dict[str, Any]:
     """
     高精度タイムスタンプ同期のスライドアウトラインを生成
@@ -563,23 +563,27 @@ async def generate_outline(
         print("[Outline] No Gemini API key available in settings or request")
         # Fallback logic could go here, but for now we expect a key
     
-    if not segments:
-        return create_fallback_outline(transcript)
-    
-    # 正確なタイムスタンプ付きセグメント情報を作成
-    segments_text = format_segments_precisely(segments)
-    
     # 音声の総時間（指定された実際の音声長を優先、なければセグメントから推定）
-    total_duration = audio_duration if audio_duration else segments[-1].get("end", 0)
-    print(f"[Outline] Using audio duration: {total_duration:.1f}s (source: {'actual file' if audio_duration else 'segment end'})")
-    
+    total_duration = audio_duration if audio_duration else (segments[-1].get("end", 0) if segments else 60.0)
+
     # スライド枚数の制限を計算（90-120秒に1枚が目安）
     # 短い音声の場合は枚数を厳しく制限
     min_seconds_per_slide = 30.0  # 最低30秒/スライド
     recommended_seconds_per_slide = 90.0  # 推奨90秒/スライド
-    
+
     max_slides_hard = max(2, int(total_duration / min_seconds_per_slide))  # 絶対最大
     recommended_slides = max(2, int(total_duration / recommended_seconds_per_slide))  # 推奨枚数
+    target_slide_count = None
+    if slide_count_mode == "custom":
+        target_slide_count = max(1, min(int(custom_slide_count or 1), max_slides_hard))
+
+    if not segments:
+        return create_fallback_outline(transcript, slide_count=target_slide_count or 5)
+
+    # 正確なタイムスタンプ付きセグメント情報を作成
+    segments_text = format_segments_precisely(segments)
+
+    print(f"[Outline] Using audio duration: {total_duration:.1f}s (source: {'actual file' if audio_duration else 'segment end'})")
     
     print(f"[Outline] Audio: {total_duration:.1f}s → 推奨スライド数: {recommended_slides}-{max_slides_hard}枚")
     
@@ -591,9 +595,9 @@ async def generate_outline(
         # 「多め」でも絶対最大を超えないように
         slide_count_instruction = f"\\n\\n⚠️ スライド枚数の指示: **多め（最大{max_slides_hard}枚まで）** で細かく分割してください。ただし、各スライドは最低30秒は表示されるようにしてください。\\n"
     elif slide_count_mode == "custom":
-        # ユーザー指定でも絶対最大は超えない
-        safe_count = min(custom_slide_count, max_slides_hard)
-        slide_count_instruction = f"\\n\\n⚠️ スライド枚数の指示: **ちょうど{safe_count}枚** になるように調整してください。\\n"
+        # ユーザー指定でも絶対最大は超えない。safe_countは後段で強制検証する。
+        safe_count = target_slide_count or min(custom_slide_count, max_slides_hard)
+        slide_count_instruction = f"\\n\\n⚠️ スライド枚数の指示: **ちょうど{safe_count}枚** になるように調整してください。これはユーザー指定です。推奨枚数より優先してください。\\n"
     else:
         # auto mode: 推奨枚数を明示
         slide_count_instruction = f"""
@@ -632,7 +636,7 @@ async def generate_outline(
     
     try:
         # Use specified model or auto-detect
-        if model_name != "gemini-3-flash-preview":
+        if model_name != "gemini-3.5-flash":
             actual_model = model_name
         else:
             actual_model = get_available_gemini_model(key)
@@ -673,10 +677,16 @@ async def generate_outline(
             
         except Exception as e2:
             print(f"GPT-4o also failed: {redact_secrets(str(e2))}")
-            return create_fallback_outline(transcript, segments)
+            return create_fallback_outline(transcript, segments, slide_count=target_slide_count or 5)
     
     # タイムスタンプの検証と修正
-    result = validate_and_fix_outline_timestamps(result, segments, total_duration)
+    result = validate_and_fix_outline_timestamps(
+        result,
+        segments,
+        total_duration,
+        transcript=transcript,
+        target_slide_count=target_slide_count,
+    )
     
     # セグメント情報を保持
     result["_segments"] = segments
@@ -685,7 +695,7 @@ async def generate_outline(
     return result
 
 
-async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash-preview", gemini_key: Optional[str] = None) -> Dict[str, Any]:
+async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3.5-flash", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3.5-flash", gemini_key: Optional[str] = None) -> Dict[str, Any]:
     """
     アウトラインのタイムスタンプ精度を維持しながらブラッシュアップ
     """
@@ -703,7 +713,7 @@ async def polish_outline(outline: Dict[str, Any], model_name: str = "gemini-3-fl
     try:
         from services.transcription import get_available_gemini_model
         key = gemini_key or GEMINI_API_KEY
-        if model_name != "gemini-3-flash-preview":
+        if model_name != "gemini-3.5-flash":
             actual_model = model_name
         else:
             actual_model = get_available_gemini_model(key)
@@ -759,10 +769,116 @@ def format_segments_precisely(segments: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+
+def _clean_slide_text(text: str, max_chars: int = 42) -> str:
+    """文字起こし内の言葉だけで、スライドに置ける短い文に整える。"""
+    cleaned = re.sub(r"\s+", " ", (text or "")).strip(" 。、,.")
+    cleaned = re.sub(r"^(えー|あのー|あの|えっと|まあ|その)\s*", "", cleaned)
+    if len(cleaned) <= max_chars:
+        return cleaned or "プレゼンテーション"
+    cut = cleaned[:max_chars]
+    for sep in ("。", "、", " "):
+        pos = cut.rfind(sep)
+        if pos >= max(8, max_chars // 2):
+            cut = cut[:pos]
+            break
+    return cut.strip(" 。、,.") or cleaned[:max_chars].strip()
+
+
+def _split_sentences_from_transcript(text: str) -> List[str]:
+    parts = re.split(r"(?<=[。！？!?])\s*|\n+", text or "")
+    return [p.strip() for p in parts if p and p.strip()]
+
+
+def _collect_segment_text(segments: List[Dict[str, Any]], start: float, end: float) -> tuple[List[int], str]:
+    ids: List[int] = []
+    texts: List[str] = []
+    for seg in segments or []:
+        seg_start = float(seg.get("start", 0) or 0)
+        seg_end = float(seg.get("end", seg_start) or seg_start)
+        if seg_end > start and seg_start < end:
+            ids.append(seg.get("id", len(ids)))
+            text = (seg.get("text") or "").strip()
+            if text:
+                texts.append(text)
+    return ids, " ".join(texts).strip()
+
+
+def create_extractive_outline_from_segments(
+    transcript: str,
+    segments: List[Dict[str, Any]],
+    slide_count: int,
+    total_duration: float,
+    audio_match_score: int = 70,
+) -> Dict[str, Any]:
+    """指定枚数を守るため、文字起こしの言葉だけで決定的にアウトラインを作る。"""
+    slide_count = max(1, int(slide_count or 1))
+    duration_per_slide = total_duration / slide_count if slide_count else total_duration
+    transcript_sentences = _split_sentences_from_transcript(transcript)
+    slides: List[Dict[str, Any]] = []
+
+    for i in range(slide_count):
+        start = round(i * duration_per_slide, 1)
+        end = total_duration if i == slide_count - 1 else round((i + 1) * duration_per_slide, 1)
+        segment_ids, segment_text = _collect_segment_text(segments, start, end)
+
+        if not segment_text and transcript_sentences:
+            sentence_index = min(i, len(transcript_sentences) - 1)
+            segment_text = transcript_sentences[sentence_index]
+
+        sentences = _split_sentences_from_transcript(segment_text)
+        headline_source = sentences[0] if sentences else segment_text or transcript
+        headline = _clean_slide_text(headline_source, 42)
+        bullets = [_clean_slide_text(sentence, 52) for sentence in sentences[1:4]]
+        bullets = [bullet for bullet in bullets if bullet and bullet != headline]
+        if not bullets and segment_text:
+            fallback_bullet = _clean_slide_text(segment_text, 64)
+            if fallback_bullet != headline:
+                bullets = [fallback_bullet]
+
+        key_message = _clean_slide_text(sentences[-1] if sentences else headline_source, 64)
+        speakers_words = segment_text or headline
+
+        slide = {
+            "number": i + 1,
+            "title": headline,
+            "timestamp_start": start,
+            "timestamp_end": round(end, 1),
+            "segment_ids": segment_ids,
+            "slide_copy": {
+                "headline": headline,
+                "subheadline": "",
+                "bullet_points": bullets,
+                "key_message": key_message,
+                "call_to_action": "",
+                "note_for_designer": "文字起こしから抽出した言葉だけで構成",
+            },
+            "speakers_words": speakers_words,
+            "keywords": [headline],
+            "visual_suggestion": {
+                "type": "text_only",
+                "description": "話者の言葉を大きく見せる",
+                "image_prompt": "",
+            },
+            "energy_level": "medium",
+            "timing_reason": "指定枚数に合わせて音声区間を均等に分割し、この時間帯の文字起こしから抽出",
+        }
+        slides.append(slide)
+
+    return {
+        "presentation_title": _clean_slide_text(transcript_sentences[0] if transcript_sentences else transcript, 48),
+        "total_duration": total_duration,
+        "slides": slides,
+        "total_slides": slide_count,
+        "audio_match_score": audio_match_score,
+    }
+
 def validate_and_fix_outline_timestamps(
-    outline: Dict[str, Any], 
-    segments: List[Dict[str, Any]], 
-    total_duration: float
+    outline: Dict[str, Any],
+    segments: List[Dict[str, Any]],
+    total_duration: float,
+    transcript: str = "",
+    target_slide_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     アウトラインのタイムスタンプを検証・修正
@@ -770,23 +886,39 @@ def validate_and_fix_outline_timestamps(
     slides = outline.get("slides", [])
     
     if not slides:
+        if target_slide_count:
+            return create_extractive_outline_from_segments(
+                transcript, segments, target_slide_count, total_duration, audio_match_score=55
+            )
         return outline
-    
+
+    # custom指定では、LLMが推奨枚数へ勝手に寄せても指定枚数へ戻す。
+    if target_slide_count and len(slides) != target_slide_count:
+        print(
+            f"[Outline] ⚠️ custom slide count mismatch: "
+            f"requested {target_slide_count}, got {len(slides)}. Rebuilding extractive outline."
+        )
+        outline = create_extractive_outline_from_segments(
+            transcript, segments, target_slide_count, total_duration, audio_match_score=72
+        )
+        slides = outline.get("slides", [])
+
     # === スライド数の強制制限 ===
     # 30秒/スライドを最低限として、最大枚数を計算
     min_seconds_per_slide = 30.0
     max_slides_allowed = max(2, int(total_duration / min_seconds_per_slide))
     
-    if len(slides) > max_slides_allowed:
-        print(f"[Outline] ⚠️ スライド数超過: {len(slides)}枚 → {max_slides_allowed}枚に削減")
+    max_slides_effective = target_slide_count or max_slides_allowed
+    if len(slides) > max_slides_effective:
+        print(f"[Outline] ⚠️ スライド数超過: {len(slides)}枚 → {max_slides_effective}枚に削減")
         
         # スライドを統合して枚数を減らす
         # 方法: 均等に間引く（重要度の低いスライドをマージ）
         slides.sort(key=lambda x: x.get("number", 0))
         
         # 残すスライドのインデックスを計算
-        step = len(slides) / max_slides_allowed
-        keep_indices = [int(i * step) for i in range(max_slides_allowed)]
+        step = len(slides) / max_slides_effective
+        keep_indices = [int(i * step) for i in range(max_slides_effective)]
         
         merged_slides = []
         for i in keep_indices:
@@ -877,44 +1009,28 @@ def validate_and_fix_outline_timestamps(
     return outline
 
 
-def create_fallback_outline(transcript: str, segments: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+def create_fallback_outline(
+    transcript: str,
+    segments: List[Dict[str, Any]] = None,
+    slide_count: int = 5,
+) -> Dict[str, Any]:
     """
-    フォールバック: 均等分配のアウトラインを作成
+    フォールバック: 指定枚数を守り、文字起こしの言葉だけでアウトラインを作成
     """
     total_duration = 60.0
     if segments and len(segments) > 0:
         total_duration = segments[-1].get("end", 60.0)
-    
-    # 5スライドに均等分配
-    slide_count = 5
-    duration_per_slide = total_duration / slide_count
-    
-    slides = []
-    for i in range(slide_count):
-        slides.append({
-            "number": i + 1,
-            "title": f"セクション {i + 1}",
-            "timestamp_start": round(i * duration_per_slide, 1),
-            "timestamp_end": round((i + 1) * duration_per_slide, 1),
-            "segment_ids": [],
-            "speakers_words": "",
-            "keywords": [],
-            "visual_role": "内容を視覚的に補強",
-            "main_visual": "テキストとアイコン",
-            "energy_level": "medium"
-        })
-    
-    slides[-1]["timestamp_end"] = total_duration
-    
-    return {
-        "presentation_title": "プレゼンテーション",
-        "total_duration": total_duration,
-        "slides": slides,
-        "total_slides": slide_count,
-        "audio_match_score": 50,
-        "_segments": segments or [],
-        "_total_duration": total_duration
-    }
+
+    outline = create_extractive_outline_from_segments(
+        transcript,
+        segments or [],
+        slide_count=slide_count,
+        total_duration=total_duration,
+        audio_match_score=50,
+    )
+    outline["_segments"] = segments or []
+    outline["_total_duration"] = total_duration
+    return outline
 
 
 def format_outline_for_export(outline: Dict[str, Any]) -> str:
