@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<title>Slide 2</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&amp;display=swap" rel="stylesheet"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    width: 1920px;
+    height: 1080px;
+    font-family: 'Noto Sans JP', sans-serif;
+    background: linear-gradient(135deg, #0A1628 0%, #1B3A5B 100%);
+    color: #fff;
+    overflow: hidden;
+    position: relative;
+    padding: 100px 140px !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  /* 流れる波形の装飾 */
+  .wave {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, rgba(0, 180, 216, 0.6) 30%, rgba(72, 202, 228, 0.8) 50%, rgba(0, 180, 216, 0.6) 70%, transparent 100%);
+  }
+  .wave-1 { top: 18%; }
+  .wave-2 { bottom: 18%; opacity: 0.5; }
+
+  .glow-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.35;
+  }
+  .orb-1 {
+    width: 600px; height: 600px;
+    background: #00B4D8;
+    top: -200px; right: -150px;
+  }
+  .orb-2 {
+    width: 500px; height: 500px;
+    background: #FFB703;
+    bottom: -150px; left: -100px;
+    opacity: 0.15;
+  }
+
+  .eyebrow {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.4em;
+    color: #48CAE4;
+    text-transform: uppercase;
+    margin-bottom: 48px;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+  }
+
+  .eyebrow::before, .eyebrow::after {
+    content: '';
+    display: inline-block;
+    width: 60px;
+    height: 1px;
+    background: #48CAE4;
+    vertical-align: middle;
+    margin: 0 24px;
+  }
+
+  h1 {
+    font-size: clamp(3rem, 5.2vw, 6rem);
+    font-weight: 900;
+    line-height: 1.25;
+    text-align: center;
+    letter-spacing: 0.02em;
+    max-width: 90%;
+    margin: 0 auto;
+    padding: 0 20px;
+    word-break: keep-all;
+    white-space: normal;
+    background: linear-gradient(135deg, #FFFFFF 0%, #48CAE4 50%, #FFB703 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    position: relative;
+    z-index: 2;
+  }
+
+  .accent-line {
+    width: 120px;
+    height: 4px;
+    background: linear-gradient(90deg, #00B4D8, #FFB703);
+    margin: 64px auto 0;
+    border-radius: 2px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .slide-number {
+    position: absolute;
+    bottom: 50px;
+    right: 80px;
+    font-size: 16px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.2em;
+    z-index: 3;
+  }
+
+  .brand {
+    position: absolute;
+    bottom: 50px;
+    left: 80px;
+    font-size: 24px;
+    font-weight: 700;
+    color: rgba(72, 202, 228, 0.6);
+    letter-spacing: 0.3em;
+    z-index: 3;
+  }
+</style>
+</head>
+<body>
+<div class="glow-orb orb-1"></div>
+<div class="glow-orb orb-2"></div>
+<div class="wave wave-1"></div>
+<div class="wave wave-2"></div>
+<div class="eyebrow">Key Message</div>
+<h1>音声の流れに合わせて、<br/>スライドが自然に繋がること</h1>
+<div class="accent-line"></div>
+<div class="brand">SONIC FLOW</div>
+<div class="slide-number">02 / 02</div>
+<div class="injected-content" style="position:relative;z-index:10;text-align:center;padding:40px 60px;"><h1 style="color:white;font-size:clamp(2rem,4vw,3.5rem);font-weight:900;margin-bottom:20px;text-shadow:0 2px 8px rgba(0,0,0,0.3);">日本語が読みやすく、自然に繋がること</h1><h3 style="color:rgba(255,255,255,0.85);font-size:clamp(1.5rem,2vw,1.5rem);font-weight:400;margin-bottom:30px;">品質向上のための重要要素</h3><p style="color:rgba(255,255,255,0.9);font-size: 1.5rem;margin:8px 0;">2つ目は、日本語が読みやすく、余白が詰まりすぎていないこと</p><p style="color:rgba(255,255,255,0.9);font-size: 1.5rem;margin:8px 0;">3つ目は、音声の流れに合わせて、スライドが自然に繋がること</p><p style="color:rgba(255,255,255,0.9);font-size: 1.5rem;margin:8px 0;">最後に、作成した動画を保存して、後から復元できることも確認します</p></div></body>
+</html>

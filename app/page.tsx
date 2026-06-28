@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useCallback, DragEvent, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, DragEvent, useEffect, useMemo, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { APIKeysSettings, getAPIKeys, hasAPIKeys } from "@/components/APIKeysSettings";
+import { createClient } from "@/lib/supabase/client";
 import { SupportChat } from "@/components/SupportChat";
 
 // 本番環境：Frontend (Next.js) + Backend (FastAPI) を別々にデプロイ
@@ -21,6 +23,24 @@ function getAPIHeaders(): HeadersInit {
   const headers: HeadersInit = {};
   if (keys.openai) headers["x-openai-key"] = keys.openai;
   if (keys.gemini) headers["x-gemini-key"] = keys.gemini;
+  if (keys.geminiModel) headers["x-gemini-model"] = keys.geminiModel;
+  if (keys.openrouter) headers["x-openrouter-key"] = keys.openrouter;
+  if (keys.openrouterModel) headers["x-openrouter-model"] = keys.openrouterModel;
+  if (keys.openrouterDesignModel) headers["x-openrouter-design-model"] = keys.openrouterDesignModel;
+  return headers;
+}
+
+// Same as getAPIHeaders but also attaches x-user-id / x-project-id so the
+// backend can persist the slide bundle to Supabase Storage (Sprint 2). These
+// IDs are looked up at call time from the caller's closure — passing via
+// parameters keeps the function pure and prevents stale-closure bugs.
+function getAPIHeadersWithProject(
+  userId: string | null,
+  projectId: string | null,
+): Record<string, string> {
+  const headers: Record<string, string> = { ...(getAPIHeaders() as Record<string, string>) };
+  if (userId) headers["x-user-id"] = userId;
+  if (projectId) headers["x-project-id"] = projectId;
   return headers;
 }
 
@@ -50,6 +70,25 @@ async function fetchWithRetry(
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 type WorkflowMode = "hybrid" | "full-ai" | null;
 
+interface DesignQualityMetricSnapshot {
+  slide_number?: number;
+  quality_gate?: string;
+  fallback_used?: boolean;
+  text_clipping_detected?: boolean;
+  small_text_count?: number;
+  min_font_size_px?: number;
+  main_element_occupancy_ratio?: number;
+  warnings?: unknown[];
+}
+
+interface ManualEditFrictionSummary {
+  event_count?: number;
+  by_type?: Record<string, number>;
+  by_slide?: Record<string, unknown>;
+  first_at?: string | null;
+  last_at?: string | null;
+}
+
 interface JobState {
   jobId: string | null;
   step: Step;
@@ -69,6 +108,29 @@ interface JobState {
     removed_fillers: number;
     total_removed_seconds: number;
   } | null;
+  audioMissing: boolean;  // True when restored project has placeholder audio (user must re-upload)
+  // 48h video cache (backend owns these columns; UI communicates "not saved")
+  videoStoragePath: string | null;
+  videoCachedAt: string | null;
+  videoMissing: boolean;        // cache expired on restore — drives "動画を再生成" banner on step 9
+  videoJustGenerated: boolean;  // set right after successful generation; gates download-confirm modal
+  // Permanent slide bundle prefix in Supabase Storage (Sprint 2). Backend
+  // writes it; frontend reads it to pass back on restore so the backend can
+  // download slides when the old job_id's local copy is gone.
+  slidesStoragePrefix: string | null;
+  // Sprint A (design quality): transient warnings from the backend (e.g.
+  // "OpenRouter rejected model X → fell back to Y"). Surfaced as a
+  // dismissible yellow banner so users know they're not actually getting
+  // the model they selected. Reset when a new generation starts.
+  apiWarnings: string[];
+  // Sprint C: per-project design mode. "flash_standard" is the cheap
+  // deterministic path, "pro" hands layout/font/accent decisions to the
+  // AI (expensive on Claude Opus 4.7 but the only way its power shows).
+  // Persisted to projects.design_mode; defaults to flash_standard for
+  // backward compatibility with existing projects.
+  designMode: "flash_standard" | "pro";
+  designQualityMetrics: DesignQualityMetricSnapshot[];
+  manualEditFrictionSummary: ManualEditFrictionSummary | null;
 }
 
 const HYBRID_STEPS = [
@@ -93,7 +155,32 @@ const FULL_AI_STEPS = [
   { id: 6, label: "動画生成", icon: "🎬" },
 ];
 
-export default function Home() {
+function HomeInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = createClient();
+
+  // プロジェクト管理
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>("新しいプロジェクト");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [isSavingProject, setIsSavingProject] = useState(false);
+  const [isRestoringProject, setIsRestoringProject] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  // Supabase Storage path for the uploaded audio (Phase 2 persistence)
+  const [audioStoragePath, setAudioStoragePath] = useState<string | null>(null);
+  // Warning shown when audio upload to Supabase Storage failed (vs intentional skip).
+  // Only set on `status === "failed"` from the backend so the user knows the
+  // current session works but the next restore may require re-upload.
+  const [audioPersistWarning, setAudioPersistWarning] = useState<string | null>(null);
+
+  // Fetch userId once on mount so we can pass it in upload headers for Storage persistence
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.id) setUserId(data.user.id);
+    }).catch(() => {});
+  }, [supabase]);
+
   const [state, setState] = useState<JobState>({
     jobId: null,
     step: 1,
@@ -109,6 +196,16 @@ export default function Home() {
     isProcessing: false,
     error: null,
     cleanupInfo: null,
+    audioMissing: false,
+    videoStoragePath: null,
+    videoCachedAt: null,
+    videoMissing: false,
+    videoJustGenerated: false,
+    slidesStoragePrefix: null,
+    apiWarnings: [],
+    designMode: "flash_standard",
+    designQualityMetrics: [],
+    manualEditFrictionSummary: null,
   });
 
   const [editedTranscript, setEditedTranscript] = useState<string>("");
@@ -158,6 +255,9 @@ export default function Home() {
 
   // Slide zoom modal
   const [zoomedSlide, setZoomedSlide] = useState<number | null>(null);
+
+  // Slide regeneration flag (set during restore when previews are missing)
+  const [showSlideRegenButton, setShowSlideRegenButton] = useState(false);
 
   // Color theme selection
   const [selectedColorTheme, setSelectedColorTheme] = useState<string>(""); // empty = AI chooses
@@ -314,6 +414,538 @@ export default function Home() {
     setState((prev) => ({ ...prev, ...updates }));
   };
 
+  // ===== プロジェクト自動保存 =====
+  const saveProject = useCallback(async (currentState: JobState, settings: object) => {
+    if (!projectId) return;
+    setIsSavingProject(true);
+    try {
+      await supabase.from("projects").update({
+        step: currentState.step,
+        workflow_mode: currentState.workflowMode,
+        transcript: currentState.transcript,
+        polished_transcript: currentState.polishedTranscript,
+        outline: currentState.outline,
+        polished_outline: currentState.polishedOutline,
+        timing_map: currentState.timingMap,
+        slide_count: currentState.slideCount,
+        job_id: currentState.jobId,
+        status: currentState.videoUrl ? "completed" : "draft",
+        video_url: currentState.videoUrl,
+        // Phase 2.3: dual-write to top-level column + JSONB. Column is the
+        // new authoritative location (matches video_storage_path pattern);
+        // JSONB write is kept so older clients still see the value.
+        audio_storage_path: audioStoragePath,
+        // Sprint C: persist design_mode. Column has a DEFAULT 'flash_standard'
+        // in the schema, so writing this every time is safe even when the
+        // user hasn't explicitly picked a mode yet.
+        design_mode: currentState.designMode,
+        settings: {
+          ...settings,
+          slidePreviews: currentState.slidePreviews,
+          audioStoragePath: audioStoragePath,
+        },
+      }).eq("id", projectId);
+      setLastSavedAt(new Date());
+    } catch (e: any) {
+      console.error("[AutoSave] failed:", {
+        projectId,
+        step: currentState.step,
+        error: e?.message || e,
+        code: e?.code,
+        details: e?.details,
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setIsSavingProject(false);
+    }
+  }, [projectId, supabase, audioStoragePath]);
+
+  // ページロード時: URLの ?project= からプロジェクトを復元
+  useEffect(() => {
+    const pid = searchParams.get("project");
+    if (!pid) return;
+    setProjectId(pid);
+
+    const load = async () => {
+      setIsRestoringProject(true);
+      try {
+        const { data, error } = await supabase
+          .from("projects")
+          .select("*")
+          .eq("id", pid)
+          .single();
+        if (error || !data) {
+          console.error("[Restore] Failed to load project:", error);
+          setIsRestoringProject(false);
+          return;
+        }
+
+        setProjectName(data.name);
+
+        const s = data.settings ?? {};
+        const storedPreviews: string[] = s.slidePreviews ?? [];
+        // Phase 2.3: top-level column is the authoritative source;
+        // settings.audioStoragePath is the legacy fallback for projects
+        // saved before the migration ran.
+        const resolvedAudioStoragePath: string | null =
+          data.audio_storage_path ?? s.audioStoragePath ?? null;
+
+        let adjustedStep = data.step as Step;
+
+        // スライド生成ステップの判定（full-aiは6以降、hybridは9以降）
+        const slideCompleteStep = data.workflow_mode === "full-ai" ? 6 : 9;
+
+        // Signals that slides have been generated at least once. Used to
+        // decide whether to trust step 5+ when polished_outline looks missing
+        // — if the user clearly got past the outline step (slides or video
+        // exist), we must NOT rewind them to the outline screen just because
+        // polished_outline went null for some unknown reason.
+        const hasSlideArtifact =
+          storedPreviews.length > 0 ||
+          Boolean(data.slides_storage_prefix) ||
+          Boolean(data.video_url) ||
+          Boolean(data.video_storage_path);
+
+        // ---------------------------------------------------------------
+        // Step promotion for projects whose DB step was corrupted by an
+        // earlier buggy restore pass.
+        // ---------------------------------------------------------------
+        // Before the recent fix, a video-generated project could get rolled
+        // back from step=10 to step=4 during restore (because
+        // `polished_outline` had gone null for reasons we still haven't
+        // pinned). That rolled-back step was then immediately saved back to
+        // the DB by the auto-save useEffect, permanently lowering the
+        // project's step. After the rollback fix, new projects don't hit
+        // this. But EXISTING projects already have step=4 in the DB — the
+        // plain rollback guard (below) can't recover them because the DB
+        // step is already low.
+        //
+        // We fix this here by promoting adjustedStep up based on the
+        // artifacts present:
+        //   - video_url present → user reached step=10 at least once
+        //   - slides_storage_prefix / video_storage_path / slidePreviews →
+        //     user reached at least slideCompleteStep
+        // The downstream video-recovery branch then takes over: if the
+        // video cache is gone, it rewinds step=10 → step=6/8 and shows the
+        // "動画が保存されていませんでした" banner.
+        // (slideCompleteStep was declared above on line 456.)
+        if (adjustedStep < 10 && Boolean(data.video_url)) {
+          console.warn(
+            `[Restore] Promoting step ${adjustedStep} → 10 based on video_url ` +
+            `(DB was corrupted by a past restore rollback; video artifact survives)`
+          );
+          adjustedStep = 10 as Step;
+        } else if (
+          adjustedStep < slideCompleteStep &&
+          (Boolean(data.slides_storage_prefix) ||
+            Boolean(data.video_storage_path) ||
+            storedPreviews.length > 0)
+        ) {
+          console.warn(
+            `[Restore] Promoting step ${adjustedStep} → ${slideCompleteStep} based on slide artifacts`
+          );
+          adjustedStep = slideCompleteStep as Step;
+        }
+
+        // --- 復元データの妥当性チェック ---
+        // step >= 4（アウトライン以降）なのに outline が null/undefined/非object → step=3 に戻す
+        if (
+          adjustedStep >= 4 &&
+          (!data.outline || typeof data.outline !== "object") &&
+          !hasSlideArtifact
+        ) {
+          console.warn("[Restore] outline is missing or invalid, rolling back to step 3");
+          adjustedStep = 3 as Step;
+        }
+        // step >= 5（full-ai でアウトライン改善以降）なのに polished_outline が null/undefined/非object → step=4 に戻す
+        // ただしスライドまで生成されていた痕跡（slidePreviews, slides_storage_prefix,
+        // video_url のいずれか）が残っている場合は rollback しない。実測で、full-ai
+        // モードの動画生成完了プロジェクトを再オープンすると polished_outline が null と
+        // 判定されて step=4 に戻るケースが観測されたため、artifact が存在するなら
+        // 信頼してスライド完了画面へ進めるようにする。
+        if (
+          adjustedStep >= 5 &&
+          data.workflow_mode === "full-ai" &&
+          (!data.polished_outline || typeof data.polished_outline !== "object") &&
+          !hasSlideArtifact
+        ) {
+          console.warn("[Restore] polished_outline is missing or invalid, rolling back to step 4");
+          adjustedStep = 4 as Step;
+        }
+
+        // IMPORTANT: we previously HEAD-checked each stored preview URL to
+        // filter out dead ones. That's unreliable — the URLs point at the OLD
+        // job_id's ephemeral container path, and partial 404s caused
+        // "4 slides → 2 slides" on restore. Now we trust the backend's
+        // `/api/restore-project` response, which rebuilds the slide dir under
+        // the NEW job_id and returns the authoritative URL list.
+        //
+        // finalPreviews is set from the backend response below; storedPreviews
+        // is only used as a hint to tell the backend the old job_id it should
+        // copy from.
+        let finalPreviews: string[] = [];
+        let needsSlideRegeneration = false;
+
+        // バックエンドのパイプラインを復元（スライド再生成に必要）
+        // APIキーも一緒に渡してバックエンドに保存する
+        let restoredJobId = data.job_id;
+        let backendRestoreFailed = false;
+        let restoredAudioMissing = false;  // True if backend returned placeholder audio
+        let restoredVideoUrl: string | null = data.video_url ?? null;
+        let restoredVideoMissing = false;  // True if cache expired / unavailable and user was on step 10
+
+        // Call backend restore whenever the user got past the upload step.
+        // Previously this required outline OR polished_outline to be set, but
+        // that missed projects where both were null in the DB yet slides/video
+        // clearly existed. In that blind spot the frontend would keep stale
+        // `data.video_url` (pointing at a dead old job_id) and skip the
+        // video_expired / videoMissing signalling entirely. Now we also
+        // trigger on hasSlideArtifact so the backend can download slides from
+        // Storage and signal video expiration properly.
+        if (adjustedStep >= 4 && (data.outline || data.polished_outline || hasSlideArtifact)) {
+          try {
+            const restoreRes = await fetch(`${API_URL}/api/restore-project`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...getAPIHeaders(),
+              },
+              body: JSON.stringify({
+                transcript: data.transcript || "",
+                polished_transcript: data.polished_transcript || "",
+                outline: data.outline,
+                polished_outline: data.polished_outline,
+                timing_map: data.timing_map,
+                aspect_ratio: s.aspectRatio || "landscape",
+                step: adjustedStep,
+                slide_previews: storedPreviews,  // backend uses the first one to parse old_job_id
+                audio_storage_path: resolvedAudioStoragePath,  // Phase 2.3: column → settings fallback
+                video_storage_path: data.video_storage_path || null,  // 48h cache
+                video_cached_at: data.video_cached_at || null,
+                // Tells backend "this project reached step 10 at least once".
+                // Combined with video_storage_path=null it's how we detect the
+                // cache-write race (fire-and-forget upload didn't land before
+                // the user navigated away) so restore can mark the video as
+                // expired and the UI rewinds instead of trying a broken URL.
+                video_url_hint: data.video_url || null,
+                // Permanent slide bundle (Sprint 2). If present, backend will
+                // download slides from Supabase Storage when the old job_id's
+                // local copy is gone after a Railway redeploy.
+                slides_storage_prefix: data.slides_storage_prefix || null,
+              }),
+            });
+            if (restoreRes.ok) {
+              const restoreData = await restoreRes.json();
+              restoredJobId = restoreData.job_id;
+              restoredAudioMissing = restoreData.audio_recovered === false;
+
+              // Authoritative slide previews from backend (under new job_id)
+              const backendPreviews: string[] = Array.isArray(restoreData.slide_previews)
+                ? restoreData.slide_previews
+                : [];
+              if (backendPreviews.length > 0) {
+                finalPreviews = backendPreviews.map((p: string) => `${API_URL}${p}`);
+              } else if (adjustedStep >= slideCompleteStep) {
+                // Backend couldn't recover any slide images — prompt regeneration.
+                needsSlideRegeneration = true;
+              }
+
+              if (restoreData.video_recovered && restoreData.video_url) {
+                // Silent restore — new container has a playable MP4 at the new job_id.
+                restoredVideoUrl = `${API_URL}${restoreData.video_url}?t=${Date.now()}`;
+              } else if (
+                restoreData.video_expired ||
+                (adjustedStep === 10 && !data.video_storage_path)
+              ) {
+                // 動画キャッシュが利用不可: (a) 期限切れ or (b) 生成直後に
+                // キャッシュが書き込まれる前にユーザーがダッシュボードへ戻った
+                // — のいずれか。どちらの場合も DB の video_url は古い job_id を
+                // 指して 404 になるので、信用せず再生成フローに戻す。
+                //   hybrid  → step 8 (スライド読み込み完了 → AIマッピング → 動画)
+                //   full-ai → step 6 (スライド生成完了 → 動画)
+                restoredVideoUrl = null;
+                restoredVideoMissing = true;
+                if (adjustedStep === 10) {
+                  adjustedStep = (data.workflow_mode === "full-ai" ? 6 : 8) as Step;
+                }
+              } else if (adjustedStep === 10) {
+                // Defensive: if we're at step 10 but backend didn't confirm
+                // video_recovered AND didn't flag expired, don't trust the
+                // stored video_url either. This shouldn't happen with the new
+                // backend logic, but keep the guard so we never render a
+                // broken video tag silently.
+                restoredVideoUrl = null;
+                restoredVideoMissing = true;
+                adjustedStep = (data.workflow_mode === "full-ai" ? 6 : 8) as Step;
+                console.warn("[Restore] step=10 but neither recovered nor expired — treating as missing");
+              }
+              console.log(`[Restore] Backend pipeline restored with new job_id: ${restoredJobId}, slides_recovered=${restoreData.slides_recovered}, previews=${backendPreviews.length}, audio_recovered=${restoreData.audio_recovered}, video_recovered=${restoreData.video_recovered}, video_expired=${restoreData.video_expired}, coerced_step=${adjustedStep}`);
+            } else {
+              console.error(`[Restore] Backend restore failed: ${restoreRes.status}`);
+              backendRestoreFailed = true;
+            }
+          } catch (e) {
+            console.error("[Restore] Backend restore network error:", e);
+            backendRestoreFailed = true;
+          }
+        }
+
+        // Step was slide-complete or later but no previews came back — banner up.
+        if (adjustedStep >= slideCompleteStep && finalPreviews.length === 0 && storedPreviews.length > 0) {
+          console.warn("[Restore] Slide step reached but no previews recovered from backend — showing regen button");
+          needsSlideRegeneration = true;
+        }
+        if (needsSlideRegeneration) {
+          setShowSlideRegenButton(true);
+        }
+
+        setState((prev) => ({
+          ...prev,
+          jobId: restoredJobId,
+          step: adjustedStep,
+          workflowMode: data.workflow_mode,
+          transcript: data.transcript,
+          polishedTranscript: data.polished_transcript,
+          outline: data.outline,
+          polishedOutline: data.polished_outline,
+          timingMap: data.timing_map ?? [],
+          // Trust the authoritative count from DB when we have real previews,
+          // otherwise fall back to the actual preview array length.
+          // This avoids showing "4 slides" while rendering only 2.
+          slideCount: finalPreviews.length > 0 ? Math.max(data.slide_count ?? 0, finalPreviews.length) : 0,
+          slidePreviews: finalPreviews,
+          error: backendRestoreFailed
+            ? "バックエンドの復元に失敗しました。スライドの再生成や動画生成を行うには、ページを再読み込みしてください。"
+            : null,
+          videoUrl: restoredVideoUrl,
+          audioMissing: restoredAudioMissing,
+          videoStoragePath: data.video_storage_path ?? null,
+          videoCachedAt: data.video_cached_at ?? null,
+          videoMissing: restoredVideoMissing,
+          videoJustGenerated: false,  // always false on restore; only true after a fresh generation this session
+          slidesStoragePrefix: data.slides_storage_prefix ?? null,
+          apiWarnings: [],  // fresh per restore; not persisted
+          // Sprint C: restore design_mode from projects row. Legacy rows
+          // (pre-migration) will return undefined → default to flash_standard
+          // so old projects keep their cheap deterministic behavior.
+          designMode:
+            (data as { design_mode?: string }).design_mode === "pro"
+              ? "pro"
+              : "flash_standard",
+        }));
+
+        if (resolvedAudioStoragePath) setAudioStoragePath(resolvedAudioStoragePath);
+        if (s.audioSettings) setAudioSettings(s.audioSettings);
+        if (s.slideSettings) setSlideSettings(s.slideSettings);
+        if (s.selectedColorTheme !== undefined) setSelectedColorTheme(s.selectedColorTheme);
+        if (s.selectedFontStyle !== undefined) setSelectedFontStyle(s.selectedFontStyle);
+        if (s.designPreference !== undefined) setDesignPreference(s.designPreference);
+        if (s.copyStyleRequest !== undefined) setCopyStyleRequest(s.copyStyleRequest);
+        if (s.textDensity) setTextDensity(s.textDensity);
+        if (s.aspectRatio) setAspectRatio(s.aspectRatio);
+        if (s.bgmEnabled !== undefined) setBgmEnabled(s.bgmEnabled);
+        if (s.bgmVolume !== undefined) setBgmVolume(s.bgmVolume);
+        if (s.bgmPlayMode !== undefined) setBgmPlayMode(s.bgmPlayMode);
+        if (s.bgmFadeIn !== undefined) setBgmFadeIn(s.bgmFadeIn);
+        if (s.bgmFadeOut !== undefined) setBgmFadeOut(s.bgmFadeOut);
+        if (s.addIllustrations !== undefined) setAddIllustrations(s.addIllustrations);
+        if (s.illustrationPercentage !== undefined) setIllustrationPercentage(s.illustrationPercentage);
+        if (s.illustrationRequest !== undefined) setIllustrationRequest(s.illustrationRequest);
+        if (s.facecamPosition !== undefined) setFacecamPosition(s.facecamPosition);
+        if (s.facecamSize !== undefined) setFacecamSize(s.facecamSize);
+        if (s.playbackRate !== undefined) setPlaybackRate(s.playbackRate);
+        if (s.bgmMixed !== undefined) setBgmMixed(s.bgmMixed);
+        if (s.facecamUploaded !== undefined) setFacecamUploaded(s.facecamUploaded);
+      } finally {
+        setIsRestoringProject(false);
+      }
+    };
+    load();
+  }, [searchParams]);
+
+  // 保存用設定オブジェクトを生成
+  const buildSettings = useCallback(() => ({
+    audioSettings, slideSettings, selectedColorTheme,
+    selectedFontStyle, designPreference, copyStyleRequest, textDensity,
+    aspectRatio, bgmEnabled, bgmVolume, bgmPlayMode, bgmFadeIn, bgmFadeOut,
+    addIllustrations, illustrationPercentage, illustrationRequest,
+    facecamPosition, facecamSize,
+    playbackRate, bgmMixed, facecamUploaded,
+  }), [
+    audioSettings, slideSettings, selectedColorTheme,
+    selectedFontStyle, designPreference, copyStyleRequest, textDensity,
+    aspectRatio, bgmEnabled, bgmVolume, bgmPlayMode, bgmFadeIn, bgmFadeOut,
+    addIllustrations, illustrationPercentage, illustrationRequest,
+    facecamPosition, facecamSize,
+    playbackRate, bgmMixed, facecamUploaded,
+  ]);
+
+  // ステップ変化時に保存
+  useEffect(() => {
+    if (!projectId || state.step === 1) return;
+    saveProject(state, buildSettings());
+  }, [state.step, state.outline, state.polishedOutline, state.timingMap, state.videoUrl]);
+
+  // 30秒ごとの自動保存
+  useEffect(() => {
+    if (!projectId) return;
+    const timer = setInterval(() => {
+      saveProject(state, buildSettings());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [projectId, state, saveProject]);
+
+  // ページ離脱時に保存（beforeunload）
+  // useRef で最新の state/settings を参照し、sendBeacon で確実に送信する
+  const stateRef = useRef(state);
+  const settingsRef = useRef(buildSettings());
+  const projectIdRef = useRef(projectId);
+  const audioStoragePathRef = useRef(audioStoragePath);
+  useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { settingsRef.current = buildSettings(); }, [buildSettings]);
+  useEffect(() => { projectIdRef.current = projectId; }, [projectId]);
+  useEffect(() => { audioStoragePathRef.current = audioStoragePath; }, [audioStoragePath]);
+
+  const manualEditSessionStartedAtRef = useRef<number | null>(null);
+  const manualEditSaveStartedAtRef = useRef<number | null>(null);
+
+  const getManualEditQualitySnapshot = useCallback((slideNumber: number | null) => {
+    if (!slideNumber) return undefined;
+    const metrics = stateRef.current.designQualityMetrics || [];
+    const metric = metrics.find((m: DesignQualityMetricSnapshot) => Number(m?.slide_number) === slideNumber);
+    if (!metric) return undefined;
+    return {
+      slide_number: metric.slide_number,
+      quality_gate: metric.quality_gate,
+      fallback_used: Boolean(metric.fallback_used),
+      text_clipping_detected: Boolean(metric.text_clipping_detected),
+      small_text_count: metric.small_text_count,
+      min_font_size_px: metric.min_font_size_px,
+      main_element_occupancy_ratio: metric.main_element_occupancy_ratio,
+      warnings_count: Array.isArray(metric.warnings) ? metric.warnings.length : 0,
+    };
+  }, []);
+
+  const recordManualEditFriction = useCallback(async (
+    eventType: string,
+    options: { slideNumber?: number | null; details?: Record<string, unknown>; source?: string } = {}
+  ) => {
+    const currentState = stateRef.current;
+    if (!currentState.jobId) return;
+    const startedAt = manualEditSessionStartedAtRef.current;
+    const slideNumber = options.slideNumber ?? selectedSlide;
+    try {
+      const res = await fetch(`${API_URL}/api/manual-edit-friction/${currentState.jobId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAPIHeadersWithProject(userId, projectIdRef.current),
+        },
+        body: JSON.stringify({
+          event_type: eventType,
+          slide_number: slideNumber ?? undefined,
+          workflow_mode: currentState.workflowMode,
+          design_mode: currentState.designMode,
+          elapsed_ms: startedAt ? Math.max(0, Date.now() - startedAt) : undefined,
+          source: options.source || "frontend",
+          details: options.details || {},
+          quality_snapshot: getManualEditQualitySnapshot(slideNumber ?? null),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        updateState({ manualEditFrictionSummary: data.manual_edit_friction_summary || null });
+      }
+    } catch (e) {
+      console.debug("[ManualEditFriction] record skipped", e);
+    }
+  }, [getManualEditQualitySnapshot, selectedSlide, userId]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type !== 'MANUAL_EDIT_FRICTION') return;
+      const slideNumber = Number(event.data.slide_number || selectedSlide || 0) || undefined;
+      recordManualEditFriction(event.data.event_type, {
+        slideNumber,
+        source: "iframe",
+        details: event.data.details || {},
+      });
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [recordManualEditFriction, selectedSlide]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const pid = projectIdRef.current;
+      if (!pid) return;
+
+      const currentState = stateRef.current;
+      const settings = settingsRef.current;
+
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseKey) {
+        console.error("[BeforeUnload] Supabase URL or key not available");
+        return;
+      }
+
+      const url = `${supabaseUrl}/rest/v1/projects?id=eq.${pid}`;
+      const body = JSON.stringify({
+        step: currentState.step,
+        workflow_mode: currentState.workflowMode,
+        transcript: currentState.transcript,
+        polished_transcript: currentState.polishedTranscript,
+        outline: currentState.outline,
+        polished_outline: currentState.polishedOutline,
+        timing_map: currentState.timingMap,
+        slide_count: currentState.slideCount,
+        job_id: currentState.jobId,
+        status: currentState.videoUrl ? "completed" : "draft",
+        video_url: currentState.videoUrl,
+        // Phase 2.3: dual-write to column + JSONB.
+        audio_storage_path: audioStoragePathRef.current,
+        settings: {
+          ...settings,
+          slidePreviews: currentState.slidePreviews,
+          // Use ref instead of closure: this useEffect has deps=[] so the
+          // closure captures the INITIAL audioStoragePath (typically null).
+          // The ref is updated every time the state changes.
+          audioStoragePath: audioStoragePathRef.current,
+        },
+      });
+
+      // fetch with keepalive はページ離脱後もブラウザが送信を保証する
+      // sendBeacon は Content-Type 以外のカスタムヘッダーを設定できないため、fetch keepalive を使用
+      try {
+        fetch(url, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${supabaseKey}`,
+            "Prefer": "return=minimal",
+          },
+          body,
+          keepalive: true,
+        }).catch((e) => {
+          console.error("[BeforeUnload] Save failed:", e);
+        });
+      } catch (e) {
+        console.error("[BeforeUnload] Save error:", e);
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
+  // slidePreviews が更新されたら即座に保存
+  useEffect(() => {
+    if (!projectId || state.slidePreviews.length === 0) return;
+    saveProject(state, buildSettings());
+  }, [state.slidePreviews]);
+
   // Helper: Set error with timestamp for easier log correlation
   const setError = (message: string, isProcessing = false) => {
     const now = new Date();
@@ -358,9 +990,16 @@ export default function Home() {
     const formData = new FormData();
     formData.append("file", file);
 
+    // Phase 2: pass user_id + project_id so the backend can persist the audio
+    // to Supabase Storage and we can recover it later after Railway redeploys.
+    const storageHeaders: Record<string, string> = {};
+    if (userId) storageHeaders["x-user-id"] = userId;
+    if (projectId) storageHeaders["x-project-id"] = projectId;
+
     try {
       const res = await fetch(`${API_URL}/api/upload-audio`, {
         method: "POST",
+        headers: storageHeaders,
         body: formData,
       });
       const data = await res.json();
@@ -371,6 +1010,26 @@ export default function Home() {
         setFacecamUploaded(true);
         setFacecamFile(file);
         console.log('[Upload] Video uploaded — face cam auto-set');
+      }
+
+      if (data.audio_storage_path) {
+        setAudioStoragePath(data.audio_storage_path);
+        console.log('[Upload] ✓ Audio persisted to Supabase Storage:', data.audio_storage_path);
+        setAudioPersistWarning(null);
+      } else {
+        const status = data.audio_storage_status || "unknown";
+        const detail = data.audio_storage_detail || "";
+        console.warn(`[Upload] Audio NOT persisted (status=${status}, detail=${detail})`);
+        // Only WARN the user if the failure is unexpected. 'skipped' covers
+        // "no creds configured on backend" which isn't actionable from the
+        // frontend, so we stay quiet there.
+        if (status === "failed") {
+          setAudioPersistWarning(
+            "音声をクラウドに保存できませんでした。このセッション中は問題なく利用できますが、ブラウザを閉じた後の再開では音声の再アップロードが必要になる可能性があります。"
+          );
+        } else {
+          setAudioPersistWarning(null);
+        }
       }
 
       updateState({ jobId: data.job_id, step: 2, isProcessing: false });
@@ -434,10 +1093,18 @@ export default function Home() {
         silence_threshold: audioSettings.silenceThreshold.toString(),
         speed_factor: audioSettings.speedFactor.toString(),
       });
+      const qaTranscriptFixture = searchParams.get("qaTranscriptFixture");
+      if (qaTranscriptFixture) {
+        params.set("qa_transcript_fixture", qaTranscriptFixture);
+      }
 
       const startRes = await fetchWithRetry(`${API_URL}/api/transcribe/${state.jobId}?${params}`, {
         method: "POST",
-        headers: getAPIHeaders(),
+        // x-user-id / x-project-id must be sent so the backend can upload the
+        // post-cleanup audio to Supabase Storage. Without them, cleanup runs
+        // locally but is lost after a restore → video ends up with the raw
+        // (uncut) audio length instead of the cleaned one.
+        headers: getAPIHeadersWithProject(userId, projectId),
       });
       const startData = await startRes.json();
       if (!startRes.ok) throw new Error(startData.detail || startData.error || "Start failed");
@@ -577,7 +1244,7 @@ export default function Home() {
     try {
       const res = await fetch(`${API_URL}/api/polish-outline/${state.jobId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAPIHeaders() },
         body: JSON.stringify({ outline: state.outline }),
       });
       const data = await res.json();
@@ -672,7 +1339,7 @@ export default function Home() {
 
       const headers: HeadersInit = {
         "Content-Type": "application/json",
-        ...getAPIHeaders()
+        ...getAPIHeadersWithProject(userId, projectId),
       };
       if (selectedColorTheme) {
         (headers as Record<string, string>)["x-color-theme"] = selectedColorTheme;
@@ -695,6 +1362,9 @@ export default function Home() {
           illustration_percentage: illustrationPercentage,
           facecam_position: facecamUploaded ? facecamPosition : null,
           facecam_size: facecamUploaded ? facecamSize : null,
+          // Sprint C: send the chosen design mode. Backend defaults to
+          // "flash_standard" if missing/unknown so older frontends are safe.
+          design_mode: state.designMode,
         })
       });
 
@@ -761,14 +1431,70 @@ export default function Home() {
               message: `スライド ${statusData.batch_start}-${statusData.batch_end} 完了`
             });
 
+            const newSlidePreviews = statusData.slide_previews.map((p: string) => `${API_URL}${p}`);
+            const newStep = (statusData.is_complete ? 6 : 5) as Step;
+
+            // Sprint A: surface any OpenRouter fallback warnings returned
+            // by the backend as a dismissible banner. Example payload:
+            //   [{kind:"openrouter_fallback", requested_model:"anthropic/claude-opus-4-7",
+            //     fallback_model:"google/gemini-2.5-flash", reason:"invalid_model_id"}]
+            // Without this, users would silently be served by a cheaper
+            // model without knowing, and wonder why "Opus 4.7" looks the
+            // same as Gemini Flash.
+            const backendWarnings: Array<{
+              kind?: string;
+              requested_model?: string;
+              fallback_model?: string;
+              reason?: string;
+            }> = Array.isArray(statusData.warnings) ? statusData.warnings : [];
+            const warningMessages: string[] = [];
+            for (const w of backendWarnings) {
+              if (w.kind === "openrouter_fallback" && w.requested_model && w.fallback_model) {
+                warningMessages.push(
+                  `⚠️ OpenRouter がモデル「${w.requested_model}」を拒否したため、` +
+                  `代わりに「${w.fallback_model}」で生成しました。設定で有効なモデルIDを選び直してください。`
+                );
+              }
+            }
+
             updateState({
               slideCount: statusData.batch_end,
-              slidePreviews: statusData.slide_previews.map((p: string) => `${API_URL}${p}`),
-              step: statusData.is_complete ? 6 as Step : 5 as Step,
+              slidePreviews: newSlidePreviews,
+              step: newStep,
               isProcessing: isPreviewMode.current ? false : !statusData.is_complete,
+              designQualityMetrics: Array.isArray(statusData.design_quality_metrics) ? statusData.design_quality_metrics : [],
+              manualEditFrictionSummary: statusData.manual_edit_friction_summary || null,
+              ...(warningMessages.length > 0 ? { apiWarnings: warningMessages } : {}),
             });
             setSelectedSlide(null);
             setSlideFeedback("");
+
+            // CRITICAL: explicitly persist the new slide URLs RIGHT NOW.
+            // Relying solely on the autosave useEffect was racing against
+            // user navigation: clicking back to dashboard via the header's
+            // <a href> triggers a hard nav, which can abort the in-flight
+            // Supabase write. As a result, the DB kept stale slide URLs
+            // pointing at a previous session's job_id, and on next restore
+            // the backend couldn't find any slides → "0 slides" state.
+            // Awaiting the save here guarantees the URLs are durably
+            // persisted before the user can navigate away.
+            if (projectId) {
+              try {
+                const baseState = stateRef.current;
+                await saveProject(
+                  {
+                    ...baseState,
+                    slideCount: statusData.batch_end,
+                    slidePreviews: newSlidePreviews,
+                    step: newStep,
+                  },
+                  buildSettings()
+                );
+                console.log(`[GenerateSlides] ✓ Persisted ${newSlidePreviews.length} slide URLs (job=${baseState.jobId})`);
+              } catch (e) {
+                console.error("[GenerateSlides] Save failed (autosave will retry):", e);
+              }
+            }
 
             // Auto-continue to next batch if not complete
             if (!statusData.is_complete && statusData.next_start && !isPreviewMode.current) {
@@ -796,6 +1522,8 @@ export default function Home() {
   // Direct slide editing: Load slide HTML for iframe editing
   const handleLoadSlideText = async (slideNum: number) => {
     if (!state.jobId) return;
+    manualEditSessionStartedAtRef.current = Date.now();
+    recordManualEditFriction("direct_editor_opened", { slideNumber: slideNum });
     setIsLoadingText(true);
     try {
       const res = await fetch(`${API_URL}/api/slides/${state.jobId}/html/${slideNum}`, {
@@ -871,6 +1599,39 @@ export default function Home() {
     
     makeEditable(document.body);
     makeDecorativePassthrough(document.body);
+
+    function classHint(el) {
+      if (!el || !el.className) return '';
+      return String(el.className).split(/\s+/).slice(0, 3).join(' ').slice(0, 80);
+    }
+    document.addEventListener('focusin', function(e) {
+      var el = e.target;
+      if (!el || el.contentEditable !== 'true') return;
+      window.parent.postMessage({
+        type: 'MANUAL_EDIT_FRICTION',
+        event_type: 'direct_editor_text_focused',
+        slide_number: ${slideNum},
+        details: {
+          target_tag: el.tagName,
+          target_class_hint: classHint(el),
+          text_length_before: (el.textContent || '').length
+        }
+      }, '*');
+    });
+    document.addEventListener('input', function(e) {
+      var el = e.target;
+      if (!el || el.contentEditable !== 'true') return;
+      window.parent.postMessage({
+        type: 'MANUAL_EDIT_FRICTION',
+        event_type: 'direct_editor_text_input',
+        slide_number: ${slideNum},
+        details: {
+          target_tag: el.tagName,
+          target_class_hint: classHint(el),
+          text_length_after: (el.textContent || '').length
+        }
+      }, '*');
+    });
     
     window.addEventListener('message', function(e) {
       if (e.data === 'GET_HTML') {
@@ -911,6 +1672,8 @@ export default function Home() {
   // Direct slide editing: Save modified HTML
   const handleSaveSlideText = async () => {
     if (!state.jobId || !selectedSlide) return;
+    manualEditSaveStartedAtRef.current = Date.now();
+    recordManualEditFriction("direct_editor_save_started", { slideNumber: selectedSlide });
     setIsSavingText(true);
     try {
       // Request HTML from iframe via postMessage
@@ -940,7 +1703,7 @@ export default function Home() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          ...getAPIHeaders()
+          ...getAPIHeadersWithProject(userId, projectId),
         },
         body: JSON.stringify({ html: modifiedHtml })
       });
@@ -950,10 +1713,18 @@ export default function Home() {
         newPreviews[selectedSlide - 1] = `${API_URL}${data.preview_url}`;
         updateState({ slidePreviews: newPreviews });
         setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
+        recordManualEditFriction("direct_editor_save_succeeded", {
+          slideNumber: selectedSlide,
+          details: { save_duration_ms: manualEditSaveStartedAtRef.current ? Date.now() - manualEditSaveStartedAtRef.current : undefined }
+        });
         setIsTextEditing(false);
       }
     } catch (err) {
       console.error("Failed to save slide HTML:", err);
+      recordManualEditFriction("direct_editor_save_failed", {
+        slideNumber: selectedSlide,
+        details: { error_kind: "save_exception" }
+      });
     } finally {
       setIsSavingText(false);
     }
@@ -968,6 +1739,15 @@ export default function Home() {
     const isImageRegen = type === "image" || type === "regenerate_image";
     if (!isImageRegen && !slideFeedback.trim() && !slideImage.file) return;
 
+    recordManualEditFriction("ai_feedback_started", {
+      slideNumber: selectedSlide,
+      details: {
+        feedback_type: type,
+        has_feedback_text: Boolean(slideFeedback.trim()),
+        feedback_length: slideFeedback.trim().length,
+        has_image: Boolean(slideImage.file),
+      }
+    });
     setIsRegenerating(true);
 
     try {
@@ -985,7 +1765,7 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...getAPIHeaders()
+          ...getAPIHeadersWithProject(userId, projectId),
         },
         body: JSON.stringify({
           slide_number: selectedSlide,
@@ -1010,6 +1790,7 @@ export default function Home() {
         setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
       }
 
+      recordManualEditFriction("ai_feedback_succeeded", { slideNumber: selectedSlide, details: { feedback_type: type } });
       setSlideFeedback("");
       setSlideImage({ file: null, preview: null });
 
@@ -1024,6 +1805,7 @@ export default function Home() {
         return;
       }
     } catch (err: any) {
+      recordManualEditFriction("ai_feedback_failed", { slideNumber: selectedSlide, details: { feedback_type: type, error_kind: "request_failed" } });
       updateState({ error: err.message });
     } finally {
       setIsRegenerating(false);
@@ -1041,7 +1823,7 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...getAPIHeaders()
+          ...getAPIHeadersWithProject(userId, projectId),
         },
         body: JSON.stringify({
           slide_number: selectedSlide,
@@ -1068,12 +1850,13 @@ export default function Home() {
   const handleSlideUndo = async () => {
     if (!selectedSlide || !slideCanUndo[selectedSlide]) return;
 
+    recordManualEditFriction("undo_clicked", { slideNumber: selectedSlide });
     setIsUndoing(true);
 
     try {
       const res = await fetch(`${API_URL}/api/slides/${state.jobId}/undo/${selectedSlide}`, {
         method: "POST",
-        headers: getAPIHeaders()
+        headers: getAPIHeadersWithProject(userId, projectId),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Undo failed");
@@ -1085,8 +1868,10 @@ export default function Home() {
 
       // Update undo state
       setSlideCanUndo(prev => ({ ...prev, [selectedSlide]: data.can_undo }));
+      recordManualEditFriction("undo_succeeded", { slideNumber: selectedSlide });
 
     } catch (err: any) {
+      recordManualEditFriction("undo_failed", { slideNumber: selectedSlide, details: { error_kind: "request_failed" } });
       updateState({ error: err.message });
     } finally {
       setIsUndoing(false);
@@ -1100,8 +1885,9 @@ export default function Home() {
     const fileArray = Array.from(files);
     const formData = new FormData();
 
-    // Check if it's a PDF or multiple images
-    if (fileArray.length === 1 && fileArray[0].name.endsWith(".pdf")) {
+    // Check if it's a PDF or multiple images. Some browsers/users keep the
+    // original uppercase extension (e.g. .PDF), so detect case-insensitively.
+    if (fileArray.length === 1 && fileArray[0].name.toLowerCase().endsWith(".pdf")) {
       formData.append("file", fileArray[0]);
       formData.append("file_type", "pdf");
     } else {
@@ -1275,6 +2061,42 @@ export default function Home() {
   };
 
   // Step 10: Generate Video (with edited timing if available)
+  // Re-upload audio for a restored project whose original audio was lost.
+  const handleReuploadAudio = async (file: File) => {
+    if (!state.jobId) return;
+    updateState({ isProcessing: true, error: null });
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const headers: Record<string, string> = { ...(getAPIHeaders() as Record<string, string>) };
+      if (userId) headers["x-user-id"] = userId;
+      if (projectId) headers["x-project-id"] = projectId;
+
+      const res = await fetch(`${API_URL}/api/reupload-audio/${state.jobId}`, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "再アップロードに失敗しました");
+      if (data.audio_storage_path) {
+        setAudioStoragePath(data.audio_storage_path);
+        setAudioPersistWarning(null);
+        console.log("[Reupload] ✓ Audio persisted to Supabase Storage:", data.audio_storage_path);
+      } else if (data.audio_storage_status === "failed") {
+        setAudioPersistWarning(
+          "音声をクラウドに保存できませんでした。次回プロジェクトを開いた時に再アップロードが必要になる可能性があります。"
+        );
+        console.warn(`[Reupload] Audio NOT persisted (detail=${data.audio_storage_detail || ""})`);
+      }
+      updateState({ audioMissing: false, isProcessing: false, error: null });
+      console.log("[Reupload] ✓ Audio re-uploaded:", data.audio_path);
+    } catch (err: any) {
+      console.error("[Reupload] Error:", err.message);
+      updateState({ error: err.message, isProcessing: false });
+    }
+  };
+
   const handleGenerateVideo = async () => {
     updateState({ isProcessing: true });
 
@@ -1296,6 +2118,8 @@ export default function Home() {
         method: "POST",
         headers: {
           ...getAPIHeaders(),
+          ...(userId ? { "x-user-id": userId } : {}),
+          ...(projectId ? { "x-project-id": projectId } : {}),
           ...(body ? { "Content-Type": "application/json" } : {}),
         },
         body,
@@ -1303,12 +2127,27 @@ export default function Home() {
       const data = await res.json();
       console.log('[Video] response status:', res.status);
       console.log('[Video] response timing_map:', data.timing_map?.length || 0, 'items');
-      if (!res.ok) throw new Error(data.detail || "Video generation failed");
+
+      // 409: audio file was lost (placeholder WAV). Prompt re-upload instead of producing a broken video.
+      if (res.status === 409 && data.detail?.error_code === "audio_placeholder") {
+        updateState({
+          audioMissing: true,
+          isProcessing: false,
+          error: data.detail.message || "音声ファイルが失われています。再アップロードしてください。",
+        });
+        return;
+      }
+
+      if (!res.ok) throw new Error(
+        typeof data.detail === "string" ? data.detail : (data.detail?.message || "Video generation failed")
+      );
 
       updateState({
         videoUrl: `${API_URL}${data.video_url}?t=${Date.now()}`,
         step: 10,
         isProcessing: false,
+        videoMissing: false,
+        videoJustGenerated: true,  // arm the "did you download?" modal for this session
         // バックエンドが+10秒反映済みのtiming_mapを返す
         ...(data.timing_map ? { timingMap: data.timing_map } : {}),
       });
@@ -1374,6 +2213,65 @@ export default function Home() {
       timingMap: newTimingMap,
       slidePreviews: newPreviews
     });
+  };
+
+  const handleDuplicateSlide = async (slideIndex: number) => {
+    if (!state.jobId) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/slides/${state.jobId}/duplicate/${slideIndex}`, {
+        method: 'POST',
+        headers: getAPIHeaders(),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        console.error('[DuplicateSlide] Backend error:', data.detail);
+        return;
+      }
+
+      const data = await res.json();
+
+      // slidePreviews を更新: 複製元の直後に挿入
+      const newPreviews = [...state.slidePreviews];
+      const insertPos = data.new_index;
+      newPreviews.splice(insertPos, 0, `${API_URL}${data.image_url}`);
+
+      // timingMap を更新: 複製元のタイミングを半分に分割
+      const newTimingMap = [...state.timingMap];
+      if (slideIndex < newTimingMap.length) {
+        const original = newTimingMap[slideIndex];
+        const midTime = ((original.start_time || 0) + (original.end_time || 0)) / 2;
+
+        // 元スライドの後半を新スライドに割り当て
+        const duplicatedEntry = {
+          ...JSON.parse(JSON.stringify(original)),
+          slide_number: slideIndex + 2,
+          start_time: midTime,
+          end_time: original.end_time,
+        };
+
+        // 元スライドの終了時間を中間点に
+        newTimingMap[slideIndex] = {
+          ...newTimingMap[slideIndex],
+          end_time: midTime,
+        };
+
+        newTimingMap.splice(insertPos, 0, duplicatedEntry);
+
+        // リナンバリング
+        for (let i = 0; i < newTimingMap.length; i++) {
+          newTimingMap[i].slide_number = i + 1;
+        }
+      }
+
+      updateState({
+        slidePreviews: newPreviews,
+        timingMap: newTimingMap,
+      });
+    } catch (err) {
+      console.error('[DuplicateSlide] Failed:', err);
+    }
   };
 
   // Slide add/replace state
@@ -1562,11 +2460,76 @@ export default function Home() {
       isProcessing: false,
       error: null,
       cleanupInfo: null,
+      audioMissing: false,
+      videoStoragePath: null,
+      videoCachedAt: null,
+      videoMissing: false,
+      videoJustGenerated: false,
+      slidesStoragePrefix: null,
+      apiWarnings: [],
+      designMode: "flash_standard",
+      designQualityMetrics: [],
+      manualEditFrictionSummary: null,
     });
     setEditText("");
     setIsEditingTranscript(false);
     setEditedTranscript("");
   };
+
+  // Modal that gates leaving a freshly-generated video screen. Shown from two
+  // entry points — the in-page "マイプロジェクトへ戻る" button and the Header's
+  // "ダッシュボードへ戻る" back-arrow. Both must honour the user's choice.
+  //
+  // The two callers want different follow-up actions: the in-page button
+  // resets the session state, while the Header awaits a boolean so it can
+  // decide whether to proceed with `router.push("/dashboard")`. We support
+  // both by stashing a promise resolver in a ref — if set, the modal's
+  // yes/no buttons resolve it; otherwise they fall back to the in-page flow.
+  const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+  const leaveConfirmResolverRef = useRef<((ok: boolean) => void) | null>(null);
+
+  const handleBackToProjects = () => {
+    if (state.videoJustGenerated) {
+      setShowDownloadConfirm(true);
+    } else {
+      handleReset();
+    }
+  };
+
+  // はい → 戻る
+  const handleConfirmLeave = () => {
+    setShowDownloadConfirm(false);
+    const resolver = leaveConfirmResolverRef.current;
+    if (resolver) {
+      // Header-initiated leave: resolve so goDashboard proceeds to /dashboard.
+      leaveConfirmResolverRef.current = null;
+      resolver(true);
+    } else {
+      // In-page "マイプロジェクトへ戻る" button: reset session state in place.
+      handleReset();
+    }
+  };
+
+  // いいえ → このページに留まる
+  const handleCancelLeave = () => {
+    setShowDownloadConfirm(false);
+    const resolver = leaveConfirmResolverRef.current;
+    if (resolver) {
+      leaveConfirmResolverRef.current = null;
+      resolver(false);
+    }
+  };
+
+  // Helper for Header.onBeforeNavigate: if the user is on the "video just
+  // generated" screen, surface the same confirm modal and block navigation
+  // until they choose. Returns true to proceed, false to stay.
+  const confirmLeaveIfNeeded = useCallback((): Promise<boolean> => {
+    if (!stateRef.current.videoJustGenerated) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      leaveConfirmResolverRef.current = resolve;
+      setShowDownloadConfirm(true);
+    });
+  }, []);
 
   // 前のステップに戻る（状態を適切にリセット）
   const goToPreviousStep = () => {
@@ -1770,7 +2733,29 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      <Header
+        lastSavedAt={lastSavedAt}
+        isSaving={isSavingProject}
+        projectName={projectName}
+        projectId={projectId}
+        onBeforeNavigate={async () => {
+          if (!projectId) return;
+          // If the user just generated a video, require them to confirm
+          // before we leave the completion screen. Returning false aborts
+          // the Header's router.push("/dashboard").
+          const ok = await confirmLeaveIfNeeded();
+          if (!ok) return false;
+          // Flush a final save with the freshest state before leaving for
+          // the dashboard. Without this, an in-flight Supabase write can
+          // be aborted by the navigation, leaving the DB pointing at a
+          // previous session's slide URLs (= "0 slides" on next restore).
+          try {
+            await saveProject(stateRef.current, settingsRef.current);
+          } catch (e) {
+            console.error("[Header.onBeforeNavigate] save failed:", e);
+          }
+        }}
+      />
 
       {/* API Keys Settings Modal */}
       {showSettings && <APIKeysSettings onClose={() => setShowSettings(false)} />}
@@ -1790,6 +2775,40 @@ export default function Home() {
         className="hidden"
         onChange={handleReplaceSlideFileSelected}
       />
+
+      {/* 戻る前の確認モーダル：動画は保存されないことを伝え、はい/いいえで判断してもらう。
+          「いいえ」を選べばダウンロード操作のためにこの画面に留まる。 */}
+      {showDownloadConfirm && (
+        <div
+          className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4"
+          onClick={handleCancelLeave}
+        >
+          <div
+            className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold mb-2 text-white">この動画は保存されません</h3>
+            <p className="text-sm text-zinc-400 mb-6">
+              戻ると動画は残らず、再度開いた際は再生成が必要になります。<br />
+              ダウンロードせずに戻ってもよろしいですか？
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelLeave}
+                className="btn-secondary flex-1"
+              >
+                いいえ
+              </button>
+              <button
+                onClick={handleConfirmLeave}
+                className="btn-primary flex-1"
+              >
+                はい
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Slide Zoom Modal */}
       {zoomedSlide !== null && state.slidePreviews.length > 0 && (
@@ -1924,6 +2943,40 @@ export default function Home() {
             <p className="text-red-400">❌ {state.error}</p>
             <button onClick={handleReset} className="btn-secondary mt-2 text-sm">
               やり直す
+            </button>
+          </div>
+        )}
+
+        {/* Audio persistence warning — only shown when backend reported a real
+            failure (vs. intentional skip). Tells the user their work is fine
+            for this session but may need re-upload after a long break. */}
+        {audioPersistWarning && (
+          <div className="glass rounded-xl p-4 mb-6 border-l-4 border-amber-500">
+            <p className="text-amber-400 text-sm">⚠️ {audioPersistWarning}</p>
+            <button
+              onClick={() => setAudioPersistWarning(null)}
+              className="btn-secondary mt-2 text-xs"
+            >
+              閉じる
+            </button>
+          </div>
+        )}
+
+        {/* Sprint A: API warnings (OpenRouter fallback etc.) — shown as a
+            dismissible yellow banner so the user knows the selected model
+            wasn't actually used. Without this the fallback was silent. */}
+        {state.apiWarnings && state.apiWarnings.length > 0 && (
+          <div className="glass rounded-xl p-4 mb-6 border-l-4 border-amber-500">
+            {state.apiWarnings.map((msg, i) => (
+              <p key={i} className="text-amber-300 text-sm whitespace-pre-line">
+                {msg}
+              </p>
+            ))}
+            <button
+              onClick={() => updateState({ apiWarnings: [] })}
+              className="btn-secondary mt-2 text-xs"
+            >
+              閉じる
             </button>
           </div>
         )}
@@ -2773,8 +3826,8 @@ export default function Home() {
                                   return (
                                     <div
                                       key={slideNum}
-                                      onClick={() => setSelectedSlide(slideNum)}
-                                      onDoubleClick={() => setZoomedSlide(startIdx + i)}
+                                      onClick={() => { setSelectedSlide(slideNum); recordManualEditFriction("slide_selected", { slideNumber: slideNum }); }}
+                                      onDoubleClick={() => { setZoomedSlide(startIdx + i); recordManualEditFriction("zoom_opened", { slideNumber: slideNum }); }}
                                       className={`rounded-lg overflow-hidden border-2 cursor-pointer transition-all relative group ${selectedSlide === slideNum
                                         ? 'border-amber-500 ring-2 ring-amber-500/50 scale-105'
                                         : 'border-zinc-700 hover:border-zinc-500'
@@ -2823,7 +3876,7 @@ export default function Home() {
                                         スライド {slideNum}
                                       </div>
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); setZoomedSlide(startIdx + i); }}
+                                        onClick={(e) => { e.stopPropagation(); setZoomedSlide(startIdx + i); recordManualEditFriction("zoom_opened", { slideNumber: slideNum }); }}
                                         className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-sm px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                                       >
                                         🔍
@@ -2843,6 +3896,7 @@ export default function Home() {
                                     <button
                                       onClick={() => {
                                         if (isTextEditing) {
+                                          recordManualEditFriction("direct_editor_closed", { slideNumber: selectedSlide });
                                           setIsTextEditing(false);
                                         } else {
                                           handleLoadSlideText(selectedSlide);
@@ -3016,6 +4070,7 @@ export default function Home() {
                                             setSelectedSlide(null);
                                             setSlideFeedback("");
                                             setSlideImage({ file: null, preview: null });
+                                            recordManualEditFriction("direct_editor_closed", { slideNumber: selectedSlide });
                                             setIsTextEditing(false);
                                           }}
                                           className="px-4 text-sm py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-700"
@@ -3034,14 +4089,64 @@ export default function Home() {
                     </>
                   )}
 
+                  {/* スライドプレビューが無い場合の再生成ボタン */}
+                  {state.slidePreviews.length === 0 && showSlideRegenButton && (
+                    <div className="mb-6 p-6 bg-zinc-800/50 rounded-xl border border-amber-500/30 text-center">
+                      <p className="text-zinc-300 mb-4">
+                        スライドのプレビューが見つかりません。再生成してください。
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowSlideRegenButton(false);
+                          updateState({ step: (state.workflowMode === "full-ai" ? 5 : 8) as Step });
+                        }}
+                        className="btn-primary"
+                      >
+                        🔄 スライドを再生成
+                      </button>
+                    </div>
+                  )}
 
+                  {state.audioMissing && (
+                    <div className="mb-6 p-6 bg-zinc-800/50 rounded-xl border border-amber-500/40 text-center">
+                      <p className="text-amber-300 font-semibold mb-2">⚠️ 音声ファイルが失われています</p>
+                      <p className="text-zinc-400 text-sm mb-4">
+                        プロジェクトを再開した際に元の音声ファイルが見つかりませんでした。<br />
+                        動画を生成するには音声を再アップロードしてください。
+                      </p>
+                      <label className="btn-primary inline-flex cursor-pointer">
+                        {state.isProcessing ? "アップロード中..." : "🎙️ 音声を再アップロード"}
+                        <input
+                          type="file"
+                          accept=".mp3,.wav,.m4a,.mp4,.mov,.webm,.avi,.mkv,audio/*,video/*"
+                          disabled={state.isProcessing}
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleReuploadAudio(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
 
+                  {state.videoMissing && !state.audioMissing && (
+                    <div className="mb-6 p-6 bg-zinc-800/50 rounded-xl border border-amber-500/40 text-center">
+                      <p className="text-amber-300 font-semibold mb-2">⚠️ 動画が保存されていませんでした</p>
+                      <p className="text-zinc-400 text-sm">
+                        動画の一時キャッシュが見つかりませんでした（生成直後にページを離れた場合や、48時間の保存期間を過ぎた場合に発生します）。<br />
+                        スライドと設定は残っているので、下の「🎬 動画を生成」から再生成してください。
+                      </p>
+                    </div>
+                  )}
 
                   <div className="flex gap-4 flex-wrap">
                     <button
-                      onClick={handleGenerateVideo}
-                      disabled={state.isProcessing}
+                      onClick={() => { recordManualEditFriction("video_generate_clicked", { slideNumber: selectedSlide }); handleGenerateVideo(); }}
+                      disabled={state.isProcessing || state.audioMissing}
                       className="btn-primary flex-1"
+                      title={state.audioMissing ? "音声を再アップロードしてください" : ""}
                     >
                       {state.isProcessing ? "動画生成中..." : "🎬 動画を生成"}
                     </button>
@@ -3533,16 +4638,67 @@ export default function Home() {
               </div>
 
 
+              {/* Sprint C: 品質モード選択
+                  Flash 標準 = Python の決定論的レイアウト選択（速い・安い、
+                  Gemini 3 Flash で十分）。Pro = AI にレイアウト・フォント・
+                  アクセント決定権を渡す（Claude Opus 4.7 / GPT-5 の性能が
+                  実際に差別化される代わりに、トークン消費は増える）。 */}
+              <div className="mb-4 p-4 bg-zinc-800/40 rounded-xl border border-zinc-700">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-semibold text-zinc-200">🎯 品質モード</label>
+                  <span className="text-xs text-zinc-500">
+                    プロジェクトごとに切替え可能
+                  </span>
+                </div>
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => updateState({ designMode: "flash_standard" })}
+                    disabled={state.isProcessing}
+                    className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      state.designMode === "flash_standard"
+                        ? "bg-blue-600 text-white border-2 border-blue-400"
+                        : "bg-zinc-700/60 text-zinc-300 border-2 border-transparent hover:bg-zinc-700"
+                    }`}
+                  >
+                    ⚡ Flash 標準<br />
+                    <span className="text-xs opacity-80">速い・安い・Gemini 向け</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateState({ designMode: "pro" })}
+                    disabled={state.isProcessing}
+                    className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      state.designMode === "pro"
+                        ? "bg-purple-600 text-white border-2 border-purple-400"
+                        : "bg-zinc-700/60 text-zinc-300 border-2 border-transparent hover:bg-zinc-700"
+                    }`}
+                  >
+                    ✨ Pro<br />
+                    <span className="text-xs opacity-80">AI 自由度高・Opus/GPT-5 向け</span>
+                  </button>
+                </div>
+                {state.designMode === "pro" && (
+                  <p className="text-xs text-amber-300 mt-2 leading-relaxed">
+                    ⚠️ Pro モードは AI にレイアウト・配色・フォント判断を委ねます。
+                    Claude Opus 4.7 / GPT-5 等の上位モデル指定時に最大限効果を発揮。
+                    Gemini 3 Flash の場合は効果が限定的です。
+                    <br />
+                    コスト目安: Opus 4.7 で 10 スライドあたり約 $3〜$5 相当。
+                  </p>
+                )}
+              </div>
+
               <div className="flex gap-3 justify-center">
                 <button
                   onClick={() => {
                     isPreviewMode.current = false;
                     handleGenerateSlides(1);
                   }}
-                  disabled={state.isProcessing}
+                  disabled={state.isProcessing || isRestoringProject}
                   className="btn-primary"
                 >
-                  {state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成"}
+                  {isRestoringProject ? "プロジェクト復元中..." : state.isProcessing ? "スライド生成中..." : "✨ AIでスライドを生成"}
                 </button>
                 <button
                   onClick={() => {
@@ -3847,21 +5003,63 @@ export default function Home() {
                           </div>
                         )}
                       </div>
-                      {/* Delete button - only show if more than 1 slide */}
-                      {state.timingMap.length > 1 && (
+                      <div className="flex flex-col gap-1">
+                        {/* Duplicate button */}
                         <button
-                          onClick={() => handleDeleteSlide(i)}
-                          className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
-                          title="このスライドを削除"
+                          onClick={() => handleDuplicateSlide(i)}
+                          className="p-2 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-900/20 rounded-lg transition-colors"
+                          title="このスライドを複製"
                         >
-                          🗑️
+                          📋
                         </button>
-                      )}
+                        {/* Delete button - only show if more than 1 slide */}
+                        {state.timingMap.length > 1 && (
+                          <button
+                            onClick={() => handleDeleteSlide(i)}
+                            className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+                            title="このスライドを削除"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-              <button onClick={handleGenerateVideo} disabled={state.isProcessing} className="btn-primary w-full">
+              {state.audioMissing && (
+                <div className="mb-4 p-4 bg-zinc-800/50 rounded-xl border border-amber-500/40 text-center">
+                  <p className="text-amber-300 font-semibold mb-2 text-sm">⚠️ 音声ファイルが失われています</p>
+                  <label className="btn-primary inline-flex cursor-pointer">
+                    {state.isProcessing ? "アップロード中..." : "🎙️ 音声を再アップロード"}
+                    <input
+                      type="file"
+                      accept=".mp3,.wav,.m4a,.mp4,.mov,.webm,.avi,.mkv,audio/*,video/*"
+                      disabled={state.isProcessing}
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleReuploadAudio(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+              {state.videoMissing && !state.audioMissing && (
+                <div className="mb-4 p-4 bg-zinc-800/50 rounded-xl border border-amber-500/40 text-center">
+                  <p className="text-amber-300 font-semibold mb-1 text-sm">⚠️ 動画が保存されていませんでした</p>
+                  <p className="text-zinc-400 text-xs">
+                    動画の一時キャッシュが見つかりませんでした。下のボタンから再生成してください。
+                  </p>
+                </div>
+              )}
+              <button
+                onClick={handleGenerateVideo}
+                disabled={state.isProcessing || state.audioMissing}
+                className="btn-primary w-full"
+                title={state.audioMissing ? "音声を再アップロードしてください" : ""}
+              >
                 {state.isProcessing ? "処理中..." : "🎬 動画を生成"}
               </button>
             </div>
@@ -3879,10 +5077,14 @@ export default function Home() {
 
               <div className="flex flex-wrap justify-center gap-3 mb-8">
                 <button
-                  onClick={() => handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`)}
-                  className="btn-primary"
+                  onClick={() => {
+                    handleDownloadVideo(`${API_URL}/api/download/${state.jobId}`, `voiceslide_${state.jobId}.mp4`);
+                    // a download click is strong evidence the user captured the file
+                    updateState({ videoJustGenerated: false });
+                  }}
+                  className="btn-primary text-lg px-8 py-4 shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-400/30 animate-pulse hover:animate-none"
                 >
-                  📥 動画をダウンロード
+                  ⬇️ 動画をダウンロード
                 </button>
                 <button
                   onClick={() => {
@@ -3894,7 +5096,7 @@ export default function Home() {
                 >
                   🖼️ スライド画像一括DL
                 </button>
-                <button onClick={handleReset} className="btn-secondary">
+                <button onClick={handleBackToProjects} className="btn-secondary">
                   🔄 新規作成
                 </button>
               </div>
@@ -4120,15 +5322,24 @@ export default function Home() {
                               </span>
                               <span className="text-zinc-500 text-xs">({duration.toFixed(1)}秒)</span>
                             </div>
-                            {state.timingMap.length > 1 && (
+                            <div className="flex gap-1">
                               <button
-                                onClick={() => handleDeleteSlide(i)}
-                                className="p-1 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
-                                title="このスライドを削除"
+                                onClick={() => handleDuplicateSlide(i)}
+                                className="p-1 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-900/20 rounded transition-colors"
+                                title="このスライドを複製"
                               >
-                                🗑️
+                                📋
                               </button>
-                            )}
+                              {state.timingMap.length > 1 && (
+                                <button
+                                  onClick={() => handleDeleteSlide(i)}
+                                  className="p-1 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+                                  title="このスライドを削除"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -4286,5 +5497,13 @@ export default function Home() {
         geminiKey={getAPIKeys().gemini}
       />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeInner />
+    </Suspense>
   );
 }

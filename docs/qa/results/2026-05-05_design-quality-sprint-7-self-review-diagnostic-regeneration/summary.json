@@ -1,0 +1,101 @@
+{
+  "ok": true,
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "f4432c0f-775d-4613-a7eb-8eef406d1e23",
+      "generation_telemetry_summary": {
+        "job_id": "f4432c0f-775d-4613-a7eb-8eef406d1e23",
+        "entry_count": 3,
+        "total_calls": 3,
+        "total_duration_ms": 0,
+        "fallback_count": 3,
+        "total_input_tokens": null,
+        "total_output_tokens": null,
+        "total_estimated_cost_usd": null
+      },
+      "stage_counts": {
+        "fallback": 3
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:Slide HTML generation failed": 2
+      },
+      "self_review_diagnostic_count": 0,
+      "self_review_diagnostics": [],
+      "text_safety_title_missing_count": 0,
+      "text_safety_title_missing_entries": [],
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 84.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "mode": "pro",
+      "job_id": "049026aa-1afb-4600-ae9d-0c6389994dde",
+      "generation_telemetry_summary": {
+        "job_id": "049026aa-1afb-4600-ae9d-0c6389994dde",
+        "entry_count": 3,
+        "total_calls": 3,
+        "total_duration_ms": 0,
+        "fallback_count": 3,
+        "total_input_tokens": null,
+        "total_output_tokens": null,
+        "total_estimated_cost_usd": null
+      },
+      "stage_counts": {
+        "fallback": 3
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:Slide HTML generation failed": 2
+      },
+      "self_review_diagnostic_count": 0,
+      "self_review_diagnostics": [],
+      "text_safety_title_missing_count": 0,
+      "text_safety_title_missing_entries": [],
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 16.0,
+          "title_font_size_px": 88.0,
+          "small_text_count": 1,
+          "fallback_used": true,
+          "quality_gate": "fail",
+          "warnings_count": 1,
+          "warnings": [
+            "1個のフォントサイズが20px以下です（最小: 16.0px）。通常テキストで20px以下は禁止です。"
+          ]
+        }
+      ]
+    }
+  ]
+}

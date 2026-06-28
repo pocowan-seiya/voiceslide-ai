@@ -7,10 +7,12 @@ import os
 import asyncio
 import subprocess
 import re
+import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 import google.generativeai as genai
+from services.generation_telemetry import redact_secrets
 from typing import Dict, Any, List, Optional
 
 from config import OPENAI_API_KEY, GEMINI_API_KEY, VIDEO_WIDTH, VIDEO_HEIGHT
@@ -123,7 +125,7 @@ def get_openai_client(api_key: Optional[str] = None) -> OpenAI:
 
 def get_available_gemini_model(api_key: str) -> str:
     """Find an available Gemini model for content generation"""
-    print(f"[Gemini] Configuring with key: {str(api_key)[:10]}...{str(api_key)[-4:]}")
+    print(f"[Gemini] Configuring with key: {redact_secrets(str(api_key))}")
     if not api_key:
         print("[Gemini] No API key provided to get_available_gemini_model")
         return "gemini-3-flash-preview"
@@ -138,7 +140,10 @@ def get_available_gemini_model(api_key: str) -> str:
         
         print(f"[Gemini] Available models: {available_models[:10]}")
         
-        # Prefer gemini-3-flash-preview first for consistency
+        # Preference order — Google rolls models over ~every 6 months, so we
+        # list stable non-preview IDs and let the substring check pick the best.
+        # gemini-2.5-flash is current (verified in the user's live API); older
+        # versions are fallbacks if the account isn't upgraded.
         preferred = ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-pro']
         for pref in preferred:
             for avail in available_models:
@@ -159,8 +164,49 @@ def get_available_gemini_model(api_key: str) -> str:
     return "gemini-pro"
 
 
-def _transcribe_sync(audio_path: str, openai_key: Optional[str] = None) -> Dict[str, Any]:
+def load_transcription_fixture(fixture_path: str) -> Dict[str, Any]:
+    """Load timestamped transcript fixture for OpenAI-free local QA."""
+    with open(fixture_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    segments = []
+    for index, segment in enumerate(payload.get("segments", [])):
+        text = str(segment.get("text", "")).strip()
+        start = float(segment.get("start", 0.0))
+        end = float(segment.get("end", start))
+        segments.append({
+            "id": int(segment.get("id", index)),
+            "start": start,
+            "end": end,
+            "text": text,
+        })
+
+    full_text = str(payload.get("full_text") or " ".join([s["text"] for s in segments])).strip()
+    duration = float(payload.get("duration") or (segments[-1]["end"] if segments else 0.0))
+    srt_path = fixture_path.rsplit(".", 1)[0] + ".srt"
+
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write(generate_srt(segments))
+
+    return {
+        "srt_path": srt_path,
+        "segments": segments,
+        "full_text": full_text,
+        "duration": duration,
+        "provider": "qa_fixture",
+    }
+
+
+def _transcribe_sync(
+    audio_path: str,
+    openai_key: Optional[str] = None,
+    fixture_transcript_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """Synchronous transcription (runs in thread pool)"""
+    if fixture_transcript_path:
+        print(f"[Transcribe] Using QA transcript fixture: {fixture_transcript_path}")
+        return load_transcription_fixture(fixture_transcript_path)
+
     client = get_openai_client(openai_key)
     
     # Whisper API has a 25MB limit - compress if needed
@@ -222,14 +268,26 @@ def _transcribe_sync(audio_path: str, openai_key: Optional[str] = None) -> Dict[
         if compressed_path and os.path.exists(compressed_path):
             try:
                 os.remove(compressed_path)
-            except:
-                pass
+            except OSError as e:
+                # Temp file may have been deleted by another process or by
+                # OS cleanup — log so we notice if disk usage starts climbing.
+                print(f"[Transcribe] failed to remove temp file {compressed_path}: {e}")
 
 
-async def transcribe_audio(audio_path: str, openai_key: Optional[str] = None) -> Dict[str, Any]:
+async def transcribe_audio(
+    audio_path: str,
+    openai_key: Optional[str] = None,
+    fixture_transcript_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """Async wrapper for transcription"""
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(executor, _transcribe_sync, audio_path, openai_key)
+    result = await loop.run_in_executor(
+        executor,
+        _transcribe_sync,
+        audio_path,
+        openai_key,
+        fixture_transcript_path,
+    )
     return result
 
 
@@ -255,7 +313,7 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None) -> str:
+async def polish_transcript(text: str, gemini_key: Optional[str] = None, original_script: Optional[str] = None, model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash-preview") -> str:
     """Polishes the transcript for readability and alignment with a reference script."""
     key = gemini_key or GEMINI_API_KEY
     
@@ -267,9 +325,12 @@ async def polish_transcript(text: str, gemini_key: Optional[str] = None, origina
         return text 
 
     try:
-        # Get available model
-        model_name = get_available_gemini_model(key)
-        print(f"[{get_ts()}] [Polish] Starting with model: {model_name}")
+        # Use specified model or auto-detect
+        if model_name != "gemini-3-flash-preview":
+            actual_model = model_name
+        else:
+            actual_model = get_available_gemini_model(key)
+        print(f"[{get_ts()}] [Polish] Starting with model: {actual_model}")
         
         reference_script = f"参考台本:\n{original_script}\n\n" if original_script else ""
     
@@ -288,12 +349,14 @@ async def polish_transcript(text: str, gemini_key: Optional[str] = None, origina
 
 整形後:"""
         
-        # Use the robust shared utility
+        # Use the robust shared utility (OpenRouter routing if available)
         result = await safe_gemini_generate(
-            model_name,
+            actual_model,
             prompt,
             key,
-            config=None # Default config
+            config=None, # Default config
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model,
         )
         
         print(f"[{get_ts()}] [Polish] Success!")

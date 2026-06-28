@@ -1,0 +1,87 @@
+[
+  {
+    "mode": "flash_standard",
+    "job_id": "67f87e3d-342f-4059-9fd0-fcb8489aad5f",
+    "telemetry_summary": {
+      "job_id": "67f87e3d-342f-4059-9fd0-fcb8489aad5f",
+      "entry_count": 6,
+      "total_calls": 6,
+      "total_duration_ms": 97721,
+      "fallback_count": 0,
+      "total_input_tokens": 13806,
+      "total_output_tokens": 9399,
+      "total_estimated_cost_usd": null
+    },
+    "stage_counts": {
+      "strategy": 1,
+      "slide_html": 2,
+      "self_review": 2,
+      "self_review_diagnostic": 1
+    },
+    "fallback_stage_counts": {},
+    "design_quality_metrics": [
+      {
+        "slide_number": 1,
+        "min_font_size_px": 24.0,
+        "title_font_size_px": 112.0,
+        "body_font_size_px_min": 38.0,
+        "small_text_count": 0,
+        "fallback_used": false,
+        "quality_gate": "pass",
+        "warnings": []
+      },
+      {
+        "slide_number": 2,
+        "min_font_size_px": 24.0,
+        "title_font_size_px": 104.0,
+        "body_font_size_px_min": 32.0,
+        "small_text_count": 0,
+        "fallback_used": false,
+        "quality_gate": "pass",
+        "warnings": []
+      }
+    ]
+  },
+  {
+    "mode": "pro",
+    "job_id": "4d6161bd-1ec9-4841-ab12-8b8daa54f56c",
+    "telemetry_summary": {
+      "job_id": "4d6161bd-1ec9-4841-ab12-8b8daa54f56c",
+      "entry_count": 5,
+      "total_calls": 5,
+      "total_duration_ms": 130141,
+      "fallback_count": 0,
+      "total_input_tokens": 16453,
+      "total_output_tokens": 12822,
+      "total_estimated_cost_usd": null
+    },
+    "stage_counts": {
+      "strategy": 1,
+      "slide_html": 2,
+      "self_review": 2
+    },
+    "fallback_stage_counts": {},
+    "design_quality_metrics": [
+      {
+        "slide_number": 1,
+        "min_font_size_px": 24.0,
+        "title_font_size_px": 120.0,
+        "body_font_size_px_min": 28.0,
+        "small_text_count": 0,
+        "fallback_used": false,
+        "quality_gate": "pass",
+        "warnings": []
+      },
+      {
+        "slide_number": 2,
+        "min_font_size_px": 22.0,
+        "title_font_size_px": 88.0,
+        "body_font_size_px_min": 32.0,
+        "small_text_count": 0,
+        "fallback_used": false,
+        "quality_gate": "pass",
+        "warnings": []
+      }
+    ]
+  }
+]

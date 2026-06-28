@@ -1,0 +1,40 @@
+{
+  "flash_standard": [
+    {
+      "slide": 1,
+      "quality_gate": "warn",
+      "text_clipping_detected": true,
+      "main_element_occupancy_ratio": 0.975317,
+      "warnings": [
+        "タイトル要素の横幅または高さが不足し、ブラウザ描画で文字がはみ出しています。"
+      ]
+    },
+    {
+      "slide": 2,
+      "quality_gate": "warn",
+      "text_clipping_detected": false,
+      "main_element_occupancy_ratio": 0.000868,
+      "warnings": [
+        "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+      ]
+    }
+  ],
+  "pro": [
+    {
+      "slide": 1,
+      "quality_gate": "warn",
+      "text_clipping_detected": false,
+      "main_element_occupancy_ratio": 0.000347,
+      "warnings": [
+        "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+      ]
+    },
+    {
+      "slide": 2,
+      "quality_gate": "pass",
+      "text_clipping_detected": false,
+      "main_element_occupancy_ratio": 1.0,
+      "warnings": []
+    }
+  ]
+}

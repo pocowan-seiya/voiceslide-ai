@@ -9,6 +9,7 @@ from openai import OpenAI
 import google.generativeai as genai
 
 from config import OPENAI_API_KEY, GEMINI_API_KEY
+from services.generation_telemetry import redact_secrets
 
 
 # Initialize clients
@@ -156,7 +157,7 @@ async def generate_outline(transcript: str, segments: List[Dict[str, Any]]) -> D
         if outline:
             return outline
     except Exception as e:
-        print(f"Gemini outline failed: {e}")
+        print(f"Gemini outline failed: {redact_secrets(str(e))}")
     
     return await generate_outline_with_gpt4(formatted_transcript)
 
@@ -172,7 +173,7 @@ async def generate_slides(outline: Dict[str, Any]) -> List[Dict[str, Any]]:
         if slides:
             return slides
     except Exception as e:
-        print(f"Gemini slides failed: {e}")
+        print(f"Gemini slides failed: {redact_secrets(str(e))}")
     
     return await generate_slides_with_gpt4(outline_json)
 
@@ -193,11 +194,11 @@ def format_transcript_with_segments(transcript: str, segments: List[Dict[str, An
     return "\n".join(lines)
 
 
-async def generate_outline_with_gemini(transcript: str) -> Dict[str, Any]:
+async def generate_outline_with_gemini(transcript: str, model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
     """
     Generate outline using Gemini
     """
-    model = genai.GenerativeModel("gemini-3-flash-preview")
+    model = genai.GenerativeModel(model_name)
     
     prompt = OUTLINE_GENERATION_PROMPT + transcript
     
@@ -233,11 +234,11 @@ async def generate_outline_with_gpt4(transcript: str) -> Dict[str, Any]:
     return json.loads(response.choices[0].message.content)
 
 
-async def generate_slides_with_gemini(outline_json: str) -> List[Dict[str, Any]]:
+async def generate_slides_with_gemini(outline_json: str, model_name: str = "gemini-3-flash-preview") -> List[Dict[str, Any]]:
     """
     Generate detailed slides using Gemini
     """
-    model = genai.GenerativeModel("gemini-3-flash-preview")
+    model = genai.GenerativeModel(model_name)
     
     prompt = SLIDE_DESIGN_PROMPT + outline_json + """
 

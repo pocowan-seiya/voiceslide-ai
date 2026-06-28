@@ -184,10 +184,14 @@ def detect_silences(audio_path: str, min_duration: float = 0.5, threshold_db: in
         silence_start = None
         for line in lines:
             if "silence_start:" in line:
+                # Parse failures here are expected (malformed ffmpeg output, locale
+                # issues, etc.) — we want to skip the bad line and continue, not
+                # crash silence detection. Catching ValueError specifically so
+                # genuine bugs (KeyError etc.) still surface.
                 try:
                     silence_start = float(line.split("silence_start:")[1].strip().split()[0])
-                except:
-                    pass
+                except (ValueError, IndexError) as e:
+                    print(f"[SilenceDetect] skipping malformed silence_start line: {line.strip()!r} ({e})")
             elif "silence_end:" in line and silence_start is not None:
                 try:
                     silence_end = float(line.split("silence_end:")[1].strip().split()[0])
@@ -196,8 +200,8 @@ def detect_silences(audio_path: str, min_duration: float = 0.5, threshold_db: in
                     if duration < 3.0:
                         silences.append((silence_start, silence_end))
                     silence_start = None
-                except:
-                    pass
+                except (ValueError, IndexError) as e:
+                    print(f"[SilenceDetect] skipping malformed silence_end line: {line.strip()!r} ({e})")
         
         return silences
     

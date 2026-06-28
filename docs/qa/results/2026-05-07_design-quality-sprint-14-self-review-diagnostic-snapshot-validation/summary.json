@@ -1,0 +1,68 @@
+{
+  "ok": true,
+  "source_result": "/tmp/voislide_sprint14_quality_fix_regeneration_qa_result.json",
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "9cfada23-43dc-43de-b8f7-6d938a5bb8a3",
+      "stage_counts": {
+        "strategy": 1,
+        "slide_html": 2,
+        "self_review": 2,
+        "self_review_diagnostic": 2
+      },
+      "fallback_stage_counts": {},
+      "design_quality_pass_count": 0,
+      "design_quality_total": 2,
+      "small_text_total": 0,
+      "self_review_diagnostic_count": 2,
+      "self_review_diagnostics": [
+        {
+          "design_mode": "flash_standard",
+          "slide_number": 1,
+          "warning": "SelfReview title diagnostic: original_title_present=true improved_title_present=false decision=keep_original"
+        },
+        {
+          "design_mode": "flash_standard",
+          "slide_number": 2,
+          "warning": "SelfReview title diagnostic: original_title_present=true improved_title_present=false decision=keep_original"
+        }
+      ],
+      "diagnostic_files_copied": [
+        "flash_standard_9cfada23-43dc-43de-b8f7-6d938a5bb8a3_self_review_diagnostics/slide_001_flash_standard_title_rewrite_diff.patch",
+        "flash_standard_9cfada23-43dc-43de-b8f7-6d938a5bb8a3_self_review_diagnostics/slide_001_flash_standard_title_rewrite_improved.html",
+        "flash_standard_9cfada23-43dc-43de-b8f7-6d938a5bb8a3_self_review_diagnostics/slide_001_flash_standard_title_rewrite_original.html",
+        "flash_standard_9cfada23-43dc-43de-b8f7-6d938a5bb8a3_self_review_diagnostics/slide_002_flash_standard_title_rewrite_diff.patch",
+        "flash_standard_9cfada23-43dc-43de-b8f7-6d938a5bb8a3_self_review_diagnostics/slide_002_flash_standard_title_rewrite_improved.html",
+        "flash_standard_9cfada23-43dc-43de-b8f7-6d938a5bb8a3_self_review_diagnostics/slide_002_flash_standard_title_rewrite_original.html"
+      ]
+    },
+    {
+      "mode": "pro",
+      "job_id": "c1dfa05c-486c-4196-abcd-f51d8cbbefb3",
+      "stage_counts": {
+        "strategy": 1,
+        "slide_html": 2,
+        "self_review": 2,
+        "self_review_diagnostic": 1
+      },
+      "fallback_stage_counts": {},
+      "design_quality_pass_count": 1,
+      "design_quality_total": 2,
+      "small_text_total": 1,
+      "self_review_diagnostic_count": 1,
+      "self_review_diagnostics": [
+        {
+          "design_mode": "pro",
+          "slide_number": 2,
+          "warning": "SelfReview title diagnostic: original_title_present=true improved_title_present=false decision=keep_original"
+        }
+      ],
+      "diagnostic_files_copied": [
+        "pro_c1dfa05c-486c-4196-abcd-f51d8cbbefb3_self_review_diagnostics/slide_002_pro_title_rewrite_diff.patch",
+        "pro_c1dfa05c-486c-4196-abcd-f51d8cbbefb3_self_review_diagnostics/slide_002_pro_title_rewrite_improved.html",
+        "pro_c1dfa05c-486c-4196-abcd-f51d8cbbefb3_self_review_diagnostics/slide_002_pro_title_rewrite_original.html"
+      ]
+    }
+  ]
+}

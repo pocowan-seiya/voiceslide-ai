@@ -1,0 +1,528 @@
+{
+  "started_at": "2026-05-05T14:34:26+0900",
+  "origin": "http://127.0.0.1:3010/",
+  "backend": "http://127.0.0.1:8001",
+  "fixture": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/fixtures/short_voislide_quality_check_32s.mp3",
+  "key_presence": {
+    "openai": true,
+    "gemini": true,
+    "geminiModel": true,
+    "openrouter": true,
+    "openrouterModel": true,
+    "openrouterDesignModel": true
+  },
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "started_at": "2026-05-05T14:34:26+0900",
+      "job_id": "1a3770e3-ec35-469f-a513-c45a4dd6c327",
+      "audio_storage_status": "skipped",
+      "transcript_length": 189,
+      "outline_slide_count": 5,
+      "batch_status_api": {
+        "status": "complete",
+        "message": "バッチ完了 (1-2)",
+        "generation_telemetry_summary": {
+          "job_id": "1a3770e3-ec35-469f-a513-c45a4dd6c327",
+          "entry_count": 3,
+          "total_calls": 3,
+          "total_duration_ms": 0,
+          "fallback_count": 3,
+          "total_input_tokens": null,
+          "total_output_tokens": null,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 3,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "stage_counts": {
+            "fallback": 3
+          },
+          "fallback_entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "fallback_stage_counts": {
+            "fallback:Strategy generation failed": 1,
+            "fallback:Slide HTML generation failed": 2
+          }
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 84.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 72.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 2,
+        "warnings_count": 0,
+        "batch_start": 1,
+        "batch_end": 2,
+        "total_slides": 5,
+        "is_complete": false
+      },
+      "status_api": {
+        "status": "uploaded",
+        "message": null,
+        "generation_telemetry_summary": {
+          "job_id": "1a3770e3-ec35-469f-a513-c45a4dd6c327",
+          "entry_count": 3,
+          "total_calls": 3,
+          "total_duration_ms": 0,
+          "fallback_count": 3,
+          "total_input_tokens": null,
+          "total_output_tokens": null,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 3,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "stage_counts": {
+            "fallback": 3
+          },
+          "fallback_entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "fallback_stage_counts": {
+            "fallback:Strategy generation failed": 1,
+            "fallback:Slide HTML generation failed": 2
+          }
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 84.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 72.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 0,
+        "warnings_count": 0,
+        "batch_start": null,
+        "batch_end": null,
+        "total_slides": null,
+        "is_complete": null
+      },
+      "completed_at": "2026-05-05T14:34:52+0900"
+    },
+    {
+      "mode": "pro",
+      "started_at": "2026-05-05T14:34:52+0900",
+      "job_id": "975afdd6-11dc-4be8-b92c-93d53beb73d1",
+      "audio_storage_status": "skipped",
+      "transcript_length": 189,
+      "outline_slide_count": 5,
+      "batch_status_api": {
+        "status": "complete",
+        "message": "バッチ完了 (1-2)",
+        "generation_telemetry_summary": {
+          "job_id": "975afdd6-11dc-4be8-b92c-93d53beb73d1",
+          "entry_count": 3,
+          "total_calls": 3,
+          "total_duration_ms": 0,
+          "fallback_count": 3,
+          "total_input_tokens": null,
+          "total_output_tokens": null,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 3,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "stage_counts": {
+            "fallback": 3
+          },
+          "fallback_entries": [
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "fallback_stage_counts": {
+            "fallback:Strategy generation failed": 1,
+            "fallback:Slide HTML generation failed": 2
+          }
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 72.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 24.0,
+            "title_font_size_px": 88.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 2,
+        "warnings_count": 0,
+        "batch_start": 1,
+        "batch_end": 2,
+        "total_slides": 5,
+        "is_complete": false
+      },
+      "status_api": {
+        "status": "uploaded",
+        "message": null,
+        "generation_telemetry_summary": {
+          "job_id": "975afdd6-11dc-4be8-b92c-93d53beb73d1",
+          "entry_count": 3,
+          "total_calls": 3,
+          "total_duration_ms": 0,
+          "fallback_count": 3,
+          "total_input_tokens": null,
+          "total_output_tokens": null,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 3,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "stage_counts": {
+            "fallback": 3
+          },
+          "fallback_entries": [
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": null,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Strategy generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 1,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            },
+            {
+              "design_mode": "pro",
+              "stage": "fallback",
+              "slide_number": 2,
+              "requested_model": "gemini-3-flash-preview",
+              "actual_model": "gemini-3-flash-preview",
+              "provider": "openrouter",
+              "duration_ms": 0,
+              "fallback_reason": "Slide HTML generation failed",
+              "warning": "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 12288 tokens, but can only afford 1121. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402, 'metadata': {'provider_name': None}}, 'user_id': 'user_[REDACTED]'}"
+            }
+          ],
+          "fallback_stage_counts": {
+            "fallback:Strategy generation failed": 1,
+            "fallback:Slide HTML generation failed": 2
+          }
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 22.0,
+            "title_font_size_px": 72.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 24.0,
+            "title_font_size_px": 88.0,
+            "small_text_count": 0,
+            "fallback_used": true,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 0,
+        "warnings_count": 0,
+        "batch_start": null,
+        "batch_end": null,
+        "total_slides": null,
+        "is_complete": null
+      },
+      "completed_at": "2026-05-05T14:35:09+0900"
+    }
+  ],
+  "completed_at": "2026-05-05T14:35:09+0900",
+  "ok": true
+}

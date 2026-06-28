@@ -13,6 +13,7 @@ from io import BytesIO
 import math
 
 from config import GEMINI_API_KEY, OUTPUT_DIR, VIDEO_WIDTH, VIDEO_HEIGHT
+from services.generation_telemetry import redact_secrets
 
 
 # Configure Gemini
@@ -163,12 +164,12 @@ def create_professional_background(theme: Dict, slide_index: int, total_slides: 
     return image.convert("RGB")
 
 
-async def generate_slide_illustration(title: str, points: List[str], description: str) -> Image.Image:
+async def generate_slide_illustration(title: str, points: List[str], description: str, model_name: str = "gemini-3-flash-preview") -> Image.Image:
     """
     Generate an illustration for the slide using Gemini
     """
     try:
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         
         content_summary = f"{title}. {'. '.join(points[:2])}" if points else title
         
@@ -202,7 +203,7 @@ Requirements:
         return None
         
     except Exception as e:
-        print(f"Illustration generation failed: {e}")
+        print(f"Illustration generation failed: {redact_secrets(str(e))}")
         return None
 
 

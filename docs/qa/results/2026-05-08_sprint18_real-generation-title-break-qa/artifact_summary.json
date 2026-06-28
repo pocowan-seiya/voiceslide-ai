@@ -1,0 +1,132 @@
+{
+  "flash_standard_2slide": {
+    "job_id": "660fc45a-900e-49a5-a754-d9e9b70d351c",
+    "files": [
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/flash_standard_2slide/slide_001.png",
+        "bytes": 915352,
+        "sha256": "bea8b949f00a5b59de3abb78d8a6286fb4be8ea5b4c6253f5de2475b4f8493f7"
+      },
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/flash_standard_2slide/slide_002.png",
+        "bytes": 906125,
+        "sha256": "6eb49bc620c5347c77abb30f4b53a76097f3ef3b8878a2efbe4d0b55d1809133"
+      }
+    ],
+    "br_findings": [
+      {
+        "slide": 1,
+        "br_between_japanese_samples": [],
+        "h_titles": [
+          "音声からスライド動画を作る流れ"
+        ]
+      },
+      {
+        "slide": 2,
+        "br_between_japanese_samples": [
+          "h1>日本語の読みやすさと<br/>復元確認</h1>\n<di"
+        ],
+        "h_titles": [
+          "日本語の読みやすさと<br/>復元確認"
+        ]
+      }
+    ]
+  },
+  "pro_2slide": {
+    "job_id": "69069177-84b3-482d-9f17-405444aca075",
+    "files": [
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/pro_2slide/slide_001.png",
+        "bytes": 1618299,
+        "sha256": "990b105726a85922048de876706239b8fc6b8707461793e61dc5ab6c6fc4f990"
+      },
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/pro_2slide/slide_002.png",
+        "bytes": 1233063,
+        "sha256": "89125e11dd95449785b0f0e2410a48ee373234f636944cd252df79a4e482f41c"
+      }
+    ],
+    "br_findings": [
+      {
+        "slide": 1,
+        "br_between_japanese_samples": [
+          "\">音声からスライド動画を<br/>作る流れ</h1>\n<di"
+        ],
+        "h_titles": [
+          "音声からスライド動画を<br/>作る流れ"
+        ]
+      },
+      {
+        "slide": 2,
+        "br_between_japanese_samples": [],
+        "h_titles": [
+          "\n<span class=\"line\">日本語の読みやすさと</span>\n<span class=\"line\">復元確認</span>\n"
+        ]
+      }
+    ]
+  },
+  "flash_standard_5slide_initial": {
+    "job_id": "53311ad9-b3be-470c-ad72-5e940d0c512a",
+    "files": [
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/flash_standard_5slide_initial/slide_001.png",
+        "bytes": 774476,
+        "sha256": "c6baf23a241940542ffc2265fc30f2aec88e666b37b210a54524049e86a68587"
+      },
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/flash_standard_5slide_initial/slide_002.png",
+        "bytes": 842740,
+        "sha256": "082dc309af98ed73a5ff83e7c3750a31f08a5a3a35f28fe65e5e020ba04d51d6"
+      },
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/flash_standard_5slide_initial/slide_003.png",
+        "bytes": 942679,
+        "sha256": "d4b34045eba5aa3983d53cc0ce90cfc74e2f32049cb847b20423307552f580c6"
+      },
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/flash_standard_5slide_initial/slide_004.png",
+        "bytes": 851173,
+        "sha256": "dd368b55f650bbe52cddf7a22ffc0216f369dc3263ff27b2f88645b70b8359eb"
+      },
+      {
+        "file": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/flash_standard_5slide_initial/slide_005.png",
+        "bytes": 717723,
+        "sha256": "c9065f72ae7371e892805292a7af28f5e02b6e3e0afe920e94cd326075cfe019"
+      }
+    ],
+    "br_findings": [
+      {
+        "slide": 1,
+        "br_between_japanese_samples": [],
+        "h_titles": [
+          "セクション 1"
+        ]
+      },
+      {
+        "slide": 2,
+        "br_between_japanese_samples": [],
+        "h_titles": [
+          "セクション 2"
+        ]
+      },
+      {
+        "slide": 3,
+        "br_between_japanese_samples": [],
+        "h_titles": []
+      },
+      {
+        "slide": 4,
+        "br_between_japanese_samples": [],
+        "h_titles": []
+      },
+      {
+        "slide": 5,
+        "br_between_japanese_samples": [],
+        "h_titles": [
+          "セクション 5"
+        ]
+      }
+    ]
+  },
+  "contact_sheet": "docs/qa/results/2026-05-08_sprint18_real-generation-title-break-qa/contact_sheet_flash_vs_pro_2slide.png"
+}

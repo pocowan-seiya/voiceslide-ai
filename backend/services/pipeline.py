@@ -96,9 +96,17 @@ class HybridPipeline:
         return synced_segments
     
     # Step 2: Transcription
-    async def step_transcribe(self, openai_key: Optional[str] = None) -> Dict[str, Any]:
+    async def step_transcribe(
+        self,
+        openai_key: Optional[str] = None,
+        fixture_transcript_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Transcribe audio to text with timestamps"""
-        result = await transcribe_audio(self.audio_path, openai_key=openai_key)
+        result = await transcribe_audio(
+            self.audio_path,
+            openai_key=openai_key,
+            fixture_transcript_path=fixture_transcript_path,
+        )
         
         self.raw_transcript = result["full_text"]
         self.segments = result["segments"]
@@ -113,18 +121,24 @@ class HybridPipeline:
     
     # Step 3: Transcription Polish
     async def step_polish_transcript(
-        self, 
-        edited_transcript: Optional[str] = None, 
+        self,
+        edited_transcript: Optional[str] = None,
         gemini_key: Optional[str] = None,
-        original_script: Optional[str] = None
+        original_script: Optional[str] = None,
+        model_name: str = "gemini-3-flash-preview",
+        openrouter_key: Optional[str] = None,
+        openrouter_model: str = "google/gemini-3-flash-preview",
     ) -> Dict[str, Any]:
         """Polish and improve the transcript"""
         text_to_polish = edited_transcript or self.raw_transcript
-        
+
         self.polished_transcript = await polish_transcript(
-            text_to_polish, 
+            text_to_polish,
             gemini_key=gemini_key,
-            original_script=original_script
+            original_script=original_script,
+            model_name=model_name,
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model,
         )
         
         return {
@@ -135,34 +149,40 @@ class HybridPipeline:
     
     # Step 4: Outline Generation
     async def step_generate_outline(
-        self, 
-        edited_transcript: Optional[str] = None, 
+        self,
+        edited_transcript: Optional[str] = None,
         gemini_key: Optional[str] = None,
         slide_count_mode: str = "auto",
-        custom_slide_count: int = 10
+        custom_slide_count: int = 10,
+        model_name: str = "gemini-3-flash-preview",
+        openrouter_key: Optional[str] = None,
+        openrouter_model: str = "google/gemini-3-flash-preview",
     ) -> Dict[str, Any]:
         """Generate slide outline from transcript"""
         transcript = edited_transcript or self.polished_transcript or self.raw_transcript
-        
+
         # Sync segments with edited transcript if provided
         segments_to_use = self.segments
         if edited_transcript and self.segments:
             segments_to_use = self._sync_segments_with_transcript(edited_transcript)
-        
+
         # Get actual audio duration from file (not from segments)
         actual_audio_duration = None
         if self.audio_path:
             from services.video_composer import get_audio_duration
             actual_audio_duration = get_audio_duration(self.audio_path)
             print(f"[Pipeline] Actual audio duration from file: {actual_audio_duration:.1f}s")
-        
+
         self.raw_outline = await generate_outline(
-            transcript, 
-            segments_to_use, 
+            transcript,
+            segments_to_use,
             gemini_key=gemini_key,
             slide_count_mode=slide_count_mode,
             custom_slide_count=custom_slide_count,
-            audio_duration=actual_audio_duration
+            audio_duration=actual_audio_duration,
+            model_name=model_name,
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model,
         )
         
         return {
@@ -172,11 +192,11 @@ class HybridPipeline:
         }
     
     # Step 5: Outline Brush-up
-    async def step_polish_outline(self, edited_outline: Optional[Dict] = None) -> Dict[str, Any]:
+    async def step_polish_outline(self, edited_outline: Optional[Dict] = None, model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: str = "google/gemini-3-flash-preview", gemini_key: Optional[str] = None) -> Dict[str, Any]:
         """Brush up and improve the outline"""
         outline_to_polish = edited_outline or self.raw_outline
-        
-        self.polished_outline = await polish_outline(outline_to_polish)
+
+        self.polished_outline = await polish_outline(outline_to_polish, model_name=model_name, openrouter_key=openrouter_key, openrouter_model=openrouter_model, gemini_key=gemini_key)
         
         return {
             "step": 5,
@@ -215,7 +235,7 @@ class HybridPipeline:
         }
     
     # Step 9: AI Auto-Mapping (or use outline timestamps if available)
-    async def step_map_slides(self) -> Dict[str, Any]:
+    async def step_map_slides(self, model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
         """Map slides to audio - uses outline timestamps if available, otherwise AI mapping"""
         
         # First, try to use timing from the outline (already determined during outline generation)
@@ -250,7 +270,8 @@ class HybridPipeline:
         self.timing_map = await map_slides_to_audio(
             slides=self.slide_contents,
             segments=self.segments,
-            total_duration=self.segments[-1]["end"] if self.segments else 60.0
+            total_duration=self.segments[-1]["end"] if self.segments else 60.0,
+            model_name=model_name
         )
         
         return {

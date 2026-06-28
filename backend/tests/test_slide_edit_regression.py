@@ -172,3 +172,144 @@ class TestGetSlideHtmlEndpoint:
         finally:
             jobs.pop(job_id, None)
             pipelines.pop(job_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: slide-edit endpoints must schedule a debounced slides-cache task
+# so edits eventually land in Supabase Storage. Rather than exercising the
+# real HTTP stack (which requires Playwright, Supabase, etc.), we poke the
+# debounce helper directly to pin its contract:
+#   - identical-project rapid calls coalesce to a single task
+#   - missing user_id/project_id is a no-op (no anonymous uploads)
+# ---------------------------------------------------------------------------
+
+
+class TestSlidesCacheDebounce:
+    def _drain(self):
+        """Cancel any leftover debounce tasks from other tests / runs."""
+        import asyncio
+        from main import _slides_cache_debounce
+        for k, t in list(_slides_cache_debounce.items()):
+            if not t.done():
+                t.cancel()
+        _slides_cache_debounce.clear()
+
+    def test_debounce_coalesces_rapid_edits(self):
+        """Five schedule calls within the debounce window produce exactly 1
+        pending task per project_id (second call cancels the first, etc.)."""
+        import asyncio
+        from main import (
+            _schedule_slides_cache_debounced,
+            _slides_cache_debounce,
+        )
+
+        async def _run():
+            self._drain()
+            for _ in range(5):
+                _schedule_slides_cache_debounced("job-1", "user-a", "proj-xyz")
+            tasks = list(_slides_cache_debounce.values())
+            # Exactly one task should remain pending for this project
+            assert len(tasks) == 1
+            # And the previous 4 should have been cancelled
+            task = tasks[0]
+            assert not task.done()
+            # Cleanup
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._drain()
+
+        asyncio.run(_run())
+
+    def test_debounce_per_project_not_global(self):
+        """Two different project_ids get two separate tasks (no coalescing
+        across projects — otherwise one busy user would delay another)."""
+        import asyncio
+        from main import (
+            _schedule_slides_cache_debounced,
+            _slides_cache_debounce,
+        )
+
+        async def _run():
+            self._drain()
+            _schedule_slides_cache_debounced("job-a", "user-a", "proj-A")
+            _schedule_slides_cache_debounced("job-b", "user-a", "proj-B")
+            assert len(_slides_cache_debounce) == 2
+            for t in _slides_cache_debounce.values():
+                t.cancel()
+            self._drain()
+
+        asyncio.run(_run())
+
+    def test_debounce_noop_without_ids(self):
+        """Anonymous session (no user_id / project_id) → no task registered."""
+        import asyncio
+        from main import (
+            _schedule_slides_cache_debounced,
+            _slides_cache_debounce,
+        )
+
+        async def _run():
+            self._drain()
+            _schedule_slides_cache_debounced("job-x", None, "proj-z")
+            _schedule_slides_cache_debounced("job-x", "user-a", None)
+            _schedule_slides_cache_debounced("job-x", None, None)
+            assert len(_slides_cache_debounce) == 0
+
+        asyncio.run(_run())
+
+    def test_immediate_schedule_fires_task(self):
+        """_schedule_slides_cache_immediate creates a task right away (not
+        routed through the debounce window)."""
+        import asyncio
+        from main import _schedule_slides_cache_immediate
+
+        async def _run():
+            # Install a stub for the actual upload task so we don't hit HTTP.
+            from main import jobs
+            import main as main_mod
+            created = []
+
+            original = main_mod._cache_slides_to_storage
+
+            async def stub(job_id, user_id, project_id):
+                created.append((job_id, user_id, project_id))
+
+            main_mod._cache_slides_to_storage = stub
+            try:
+                jobs["test-job"] = {"id": "test-job"}
+                _schedule_slides_cache_immediate("test-job", "user-1", "proj-1")
+                # Let the event loop run the scheduled task
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)  # may need a couple ticks
+                assert created == [("test-job", "user-1", "proj-1")]
+            finally:
+                main_mod._cache_slides_to_storage = original
+                jobs.pop("test-job", None)
+
+        asyncio.run(_run())
+
+    def test_immediate_schedule_noop_without_ids(self):
+        """Anonymous session bypasses the Storage path entirely."""
+        import asyncio
+        from main import _schedule_slides_cache_immediate
+
+        async def _run():
+            import main as main_mod
+            created = []
+
+            async def stub(job_id, user_id, project_id):
+                created.append(job_id)
+
+            original = main_mod._cache_slides_to_storage
+            main_mod._cache_slides_to_storage = stub
+            try:
+                _schedule_slides_cache_immediate("test-job", None, None)
+                await asyncio.sleep(0)
+                assert created == []
+            finally:
+                main_mod._cache_slides_to_storage = original
+
+        asyncio.run(_run())

@@ -1,0 +1,131 @@
+{
+  "ok": true,
+  "result_source": "/tmp/voislide_sprint10_post_sprint9_regeneration_qa_result.json",
+  "artifact_dir": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/results/2026-05-05_design-quality-sprint-10-post-sprint9-real-regeneration",
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "1a3770e3-ec35-469f-a513-c45a4dd6c327",
+      "status": "uploaded",
+      "transcript_length": 189,
+      "outline_slide_count": 5,
+      "generation_telemetry_summary": {
+        "job_id": "1a3770e3-ec35-469f-a513-c45a4dd6c327",
+        "entry_count": 3,
+        "total_calls": 3,
+        "total_duration_ms": 0,
+        "fallback_count": 3,
+        "total_input_tokens": null,
+        "total_output_tokens": null,
+        "total_estimated_cost_usd": null
+      },
+      "stage_counts": {
+        "fallback": 3
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:Slide HTML generation failed": 2
+      },
+      "strategy_count": 0,
+      "slide_html_count": 0,
+      "self_review_count": 0,
+      "self_review_diagnostic_count": 0,
+      "fallback_count_from_entries": 3,
+      "text_safety_title_missing_count": 0,
+      "strategy_generation_failed_count": 1,
+      "slide_html_generation_failed_count": 2,
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 84.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ],
+      "quality_gate_counts": {
+        "pass": 2
+      },
+      "small_text_total": 0,
+      "fallback_used_slides": [
+        1,
+        2
+      ]
+    },
+    {
+      "mode": "pro",
+      "job_id": "975afdd6-11dc-4be8-b92c-93d53beb73d1",
+      "status": "uploaded",
+      "transcript_length": 189,
+      "outline_slide_count": 5,
+      "generation_telemetry_summary": {
+        "job_id": "975afdd6-11dc-4be8-b92c-93d53beb73d1",
+        "entry_count": 3,
+        "total_calls": 3,
+        "total_duration_ms": 0,
+        "fallback_count": 3,
+        "total_input_tokens": null,
+        "total_output_tokens": null,
+        "total_estimated_cost_usd": null
+      },
+      "stage_counts": {
+        "fallback": 3
+      },
+      "fallback_stage_counts": {
+        "fallback:Strategy generation failed": 1,
+        "fallback:Slide HTML generation failed": 2
+      },
+      "strategy_count": 0,
+      "slide_html_count": 0,
+      "self_review_count": 0,
+      "self_review_diagnostic_count": 0,
+      "fallback_count_from_entries": 3,
+      "text_safety_title_missing_count": 0,
+      "strategy_generation_failed_count": 1,
+      "slide_html_generation_failed_count": 2,
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 22.0,
+          "title_font_size_px": 72.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 24.0,
+          "title_font_size_px": 88.0,
+          "small_text_count": 0,
+          "fallback_used": true,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ],
+      "quality_gate_counts": {
+        "pass": 2
+      },
+      "small_text_total": 0,
+      "fallback_used_slides": [
+        1,
+        2
+      ]
+    }
+  ]
+}

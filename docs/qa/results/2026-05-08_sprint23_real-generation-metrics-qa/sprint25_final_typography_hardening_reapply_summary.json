@@ -1,0 +1,57 @@
+[
+  {
+    "mode": "flash_standard",
+    "slide": 1,
+    "title": "音声からスライド動画を作る流れ",
+    "before_gate": "warn",
+    "before_title_clipping": true,
+    "before_title_font_size_px": 128.0,
+    "after_gate": "pass",
+    "after_title_clipping": false,
+    "after_title_font_size_px": 72.0,
+    "after_warnings": []
+  },
+  {
+    "mode": "flash_standard",
+    "slide": 2,
+    "title": "日本語の読みやすさと復元確認",
+    "before_gate": "warn",
+    "before_title_clipping": true,
+    "before_title_font_size_px": 132.0,
+    "after_gate": "warn",
+    "after_title_clipping": false,
+    "after_title_font_size_px": 132.0,
+    "after_warnings": [
+      "主役要素の画面占有率が0.00です。目標は0.30以上です。"
+    ]
+  },
+  {
+    "mode": "pro",
+    "slide": 1,
+    "title": "音声からスライド動画を作る流れ",
+    "before_gate": "warn",
+    "before_title_clipping": true,
+    "before_title_font_size_px": 120.0,
+    "after_gate": "warn",
+    "after_title_clipping": true,
+    "after_title_font_size_px": 120.0,
+    "after_warnings": [
+      "主役要素の画面占有率が0.00です。目標は0.30以上です。",
+      "タイトル要素の横幅または高さが不足し、ブラウザ描画で文字がはみ出しています。"
+    ]
+  },
+  {
+    "mode": "pro",
+    "slide": 2,
+    "title": "日本語の読みやすさと復元確認",
+    "before_gate": "warn",
+    "before_title_clipping": true,
+    "before_title_font_size_px": 82.0,
+    "after_gate": "warn",
+    "after_title_clipping": true,
+    "after_title_font_size_px": 82.0,
+    "after_warnings": [
+      "タイトル要素の横幅または高さが不足し、ブラウザ描画で文字がはみ出しています。"
+    ]
+  }
+]

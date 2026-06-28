@@ -20,7 +20,8 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY)
 async def map_slides_to_audio(
     slides: List[Dict[str, Any]],
     segments: List[Dict[str, Any]],
-    total_duration: float
+    total_duration: float,
+    model_name: str = "gemini-3-flash-preview"
 ) -> List[Dict[str, Any]]:
     """
     高精度AIマッピング - スライドと音声セグメントを内容ベースで同期
@@ -49,7 +50,7 @@ async def map_slides_to_audio(
     
     try:
         # Gemini Pro を使用（より高精度）
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         response = model.generate_content(
             mapping_prompt,
             generation_config=genai.GenerationConfig(

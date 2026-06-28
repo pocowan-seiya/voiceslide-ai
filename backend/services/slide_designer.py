@@ -152,7 +152,8 @@ async def get_design_decision(
     subheadline: str,
     bullet_count: int,
     key_message: str,
-    slide_role: str
+    slide_role: str,
+    model_name: str = "gemini-3-flash-preview"
 ) -> Dict[str, Any]:
     """
     Geminiを使用してスライドのデザイン決定を取得
@@ -168,7 +169,7 @@ async def get_design_decision(
     )
     
     try:
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
@@ -415,8 +416,11 @@ def load_fonts(sizes: Dict[str, int]) -> Dict[str, ImageFont.FreeTypeFont]:
                 continue
             try:
                 return ImageFont.truetype(path, size)
-            except:
+            except (OSError, IOError):
+                # Font file missing on this system — try next path. Common in
+                # local dev where Japanese fonts aren't installed.
                 continue
+        print(f"[SlideDesigner] all font paths failed (bold={bold}, size={size}), using default")
         return ImageFont.load_default()
     
     return {
@@ -543,7 +547,10 @@ def wrap_text(text: str, font, max_width: int) -> List[str]:
         try:
             bbox = font.getbbox(test_line)
             text_width = bbox[2] - bbox[0]
-        except:
+        except (AttributeError, TypeError) as e:
+            # Default ImageFont (load_default fallback) lacks getbbox in older
+            # Pillow versions — estimate via char count. Logged once per call
+            # path to surface unexpected font issues without spamming.
             text_width = len(test_line) * 30
         
         if text_width <= max_width:

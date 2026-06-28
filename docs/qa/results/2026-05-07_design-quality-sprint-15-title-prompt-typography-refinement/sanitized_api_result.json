@@ -1,0 +1,476 @@
+{
+  "started_at": "2026-05-07T14:15:58+0900",
+  "origin": "http://127.0.0.1:3010/",
+  "backend": "http://127.0.0.1:8001",
+  "fixture": "/Users/seiyaeto/Antigravity/voiceslide-ai/docs/qa/fixtures/short_voislide_quality_check_32s.mp3",
+  "key_presence": {
+    "openai": true,
+    "gemini": true,
+    "geminiModel": true,
+    "openrouter": true,
+    "openrouterModel": true,
+    "openrouterDesignModel": true
+  },
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "started_at": "2026-05-07T14:15:58+0900",
+      "job_id": "a4078487-6354-4603-83de-9812c319217e",
+      "audio_storage_status": "skipped",
+      "transcript_length": 189,
+      "outline_slide_count": 2,
+      "batch_status_api": {
+        "status": "complete",
+        "message": "バッチ完了 (1-2)",
+        "generation_telemetry_summary": {
+          "job_id": "a4078487-6354-4603-83de-9812c319217e",
+          "entry_count": 5,
+          "total_calls": 5,
+          "total_duration_ms": 90822,
+          "fallback_count": 0,
+          "total_input_tokens": 14433,
+          "total_output_tokens": 10627,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 5,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "strategy",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 7200,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 1,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 30801,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 22402,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 2,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 14514,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 15905,
+              "fallback_reason": null,
+              "warning": null
+            }
+          ],
+          "stage_counts": {
+            "strategy": 1,
+            "slide_html": 2,
+            "self_review": 2
+          },
+          "fallback_entries": [],
+          "fallback_stage_counts": {}
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 28.0,
+            "title_font_size_px": 104.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 28.0,
+            "title_font_size_px": 132.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 2,
+        "warnings_count": 0,
+        "batch_start": 1,
+        "batch_end": 2,
+        "total_slides": 2,
+        "is_complete": true
+      },
+      "status_api": {
+        "status": "uploaded",
+        "message": null,
+        "generation_telemetry_summary": {
+          "job_id": "a4078487-6354-4603-83de-9812c319217e",
+          "entry_count": 5,
+          "total_calls": 5,
+          "total_duration_ms": 90822,
+          "fallback_count": 0,
+          "total_input_tokens": 14433,
+          "total_output_tokens": 10627,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 5,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "flash_standard",
+              "stage": "strategy",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 7200,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 1,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 30801,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 22402,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "slide_html",
+              "slide_number": 2,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 14514,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "flash_standard",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 15905,
+              "fallback_reason": null,
+              "warning": null
+            }
+          ],
+          "stage_counts": {
+            "strategy": 1,
+            "slide_html": 2,
+            "self_review": 2
+          },
+          "fallback_entries": [],
+          "fallback_stage_counts": {}
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 28.0,
+            "title_font_size_px": 104.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 28.0,
+            "title_font_size_px": 132.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 0,
+        "warnings_count": 0,
+        "batch_start": null,
+        "batch_end": null,
+        "total_slides": null,
+        "is_complete": null
+      },
+      "completed_at": "2026-05-07T14:17:58+0900"
+    },
+    {
+      "mode": "pro",
+      "started_at": "2026-05-07T14:17:58+0900",
+      "job_id": "f5b75814-54e3-4fd4-8cc3-c238dbfd6b72",
+      "audio_storage_status": "skipped",
+      "transcript_length": 189,
+      "outline_slide_count": 2,
+      "batch_status_api": {
+        "status": "complete",
+        "message": "バッチ完了 (1-2)",
+        "generation_telemetry_summary": {
+          "job_id": "f5b75814-54e3-4fd4-8cc3-c238dbfd6b72",
+          "entry_count": 5,
+          "total_calls": 5,
+          "total_duration_ms": 109664,
+          "fallback_count": 0,
+          "total_input_tokens": 18010,
+          "total_output_tokens": 14857,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 5,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "pro",
+              "stage": "strategy",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 12425,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "slide_html",
+              "slide_number": 1,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 23960,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 27890,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "slide_html",
+              "slide_number": 2,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 22178,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 23211,
+              "fallback_reason": null,
+              "warning": null
+            }
+          ],
+          "stage_counts": {
+            "strategy": 1,
+            "slide_html": 2,
+            "self_review": 2
+          },
+          "fallback_entries": [],
+          "fallback_stage_counts": {}
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 24.0,
+            "title_font_size_px": 82.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 26.0,
+            "title_font_size_px": 84.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 2,
+        "warnings_count": 0,
+        "batch_start": 1,
+        "batch_end": 2,
+        "total_slides": 2,
+        "is_complete": true
+      },
+      "status_api": {
+        "status": "uploaded",
+        "message": null,
+        "generation_telemetry_summary": {
+          "job_id": "f5b75814-54e3-4fd4-8cc3-c238dbfd6b72",
+          "entry_count": 5,
+          "total_calls": 5,
+          "total_duration_ms": 109664,
+          "fallback_count": 0,
+          "total_input_tokens": 18010,
+          "total_output_tokens": 14857,
+          "total_estimated_cost_usd": null
+        },
+        "telemetry_count": 5,
+        "telemetry_detail_summary": {
+          "entries": [
+            {
+              "design_mode": "pro",
+              "stage": "strategy",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 12425,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "slide_html",
+              "slide_number": 1,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 23960,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 27890,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "slide_html",
+              "slide_number": 2,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 22178,
+              "fallback_reason": null,
+              "warning": null
+            },
+            {
+              "design_mode": "pro",
+              "stage": "self_review",
+              "slide_number": null,
+              "requested_model": "anthropic/claude-opus-4-7",
+              "actual_model": "anthropic/claude-opus-4-7",
+              "provider": "openrouter",
+              "duration_ms": 23211,
+              "fallback_reason": null,
+              "warning": null
+            }
+          ],
+          "stage_counts": {
+            "strategy": 1,
+            "slide_html": 2,
+            "self_review": 2
+          },
+          "fallback_entries": [],
+          "fallback_stage_counts": {}
+        },
+        "design_quality_metrics_count": 2,
+        "design_quality_metrics_summary": [
+          {
+            "slide_number": 1,
+            "min_font_size_px": 24.0,
+            "title_font_size_px": 82.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          },
+          {
+            "slide_number": 2,
+            "min_font_size_px": 26.0,
+            "title_font_size_px": 84.0,
+            "small_text_count": 0,
+            "fallback_used": false,
+            "quality_gate": "pass",
+            "warnings_count": 0,
+            "warnings": []
+          }
+        ],
+        "slide_previews_count": 0,
+        "warnings_count": 0,
+        "batch_start": null,
+        "batch_end": null,
+        "total_slides": null,
+        "is_complete": null
+      },
+      "completed_at": "2026-05-07T14:20:13+0900"
+    }
+  ],
+  "completed_at": "2026-05-07T14:20:13+0900",
+  "ok": true
+}

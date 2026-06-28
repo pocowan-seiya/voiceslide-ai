@@ -56,12 +56,12 @@ async def analyze_slides(file_path: str, file_type: str, job_id: str) -> Dict[st
 
 async def pdf_to_images(pdf_path: str, output_dir: str) -> List[str]:
     """PDFを画像に変換"""
+    image_paths: List[str] = []
     try:
         from pdf2image import convert_from_path
         
         pages = convert_from_path(pdf_path, dpi=150)
         
-        image_paths = []
         for i, page in enumerate(pages):
             image_path = os.path.join(output_dir, f"slide_{i+1:03d}.png")
             page.save(image_path, "PNG")
@@ -69,9 +69,37 @@ async def pdf_to_images(pdf_path: str, output_dir: str) -> List[str]:
         
         return image_paths
     
-    except Exception as e:
-        print(f"PDF変換エラー: {e}")
-        raise Exception(f"PDF変換に失敗しました: {e}")
+    except Exception as pdf2image_error:
+        print(f"PDF変換エラー(pdf2image): {pdf2image_error}")
+
+    # pdf2image requires the external poppler binary. In backend-only Railway
+    # deploys or user PDFs that poppler cannot handle, fall back to PyMuPDF so
+    # hybrid mode does not fail at the PDF解析 step.
+    try:
+        import fitz  # PyMuPDF
+
+        doc = fitz.open(pdf_path)
+        try:
+            if doc.page_count <= 0:
+                raise Exception("PDFにページがありません")
+
+            for i in range(doc.page_count):
+                page = doc.load_page(i)
+                matrix = fitz.Matrix(150 / 72, 150 / 72)
+                pix = page.get_pixmap(matrix=matrix, alpha=False)
+                image_path = os.path.join(output_dir, f"slide_{i+1:03d}.png")
+                pix.save(image_path)
+                image_paths.append(image_path)
+        finally:
+            doc.close()
+
+        return image_paths
+
+    except Exception as pymupdf_error:
+        print(f"PDF変換エラー(PyMuPDF): {pymupdf_error}")
+        raise Exception(
+            "PDFの読み込み・画像変換に失敗しました。PDFが破損している、保護されている、または解析できない形式の可能性があります。"
+        )
 
 
 async def copy_images(source_path: str, output_dir: str) -> List[str]:
@@ -103,7 +131,7 @@ async def copy_images(source_path: str, output_dir: str) -> List[str]:
     return image_paths
 
 
-async def analyze_slide_image(image_path: str, slide_number: int) -> Dict[str, Any]:
+async def analyze_slide_image(image_path: str, slide_number: int, model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
     """
     Gemini Visionでスライド画像を詳細分析
     マッピング精度向上のため、より多くの情報を抽出
@@ -112,7 +140,7 @@ async def analyze_slide_image(image_path: str, slide_number: int) -> Dict[str, A
         with open(image_path, "rb") as f:
             image_data = f.read()
         
-        model = genai.GenerativeModel("gemini-3-flash-preview")
+        model = genai.GenerativeModel(model_name)
         
         # より詳細な分析プロンプト
         prompt = """このスライド画像を詳細に分析してください。

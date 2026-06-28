@@ -20,6 +20,7 @@ import asyncio
 from config import UPLOAD_DIR, OUTPUT_DIR, ASPECT_RATIO_PRESETS, get_video_dimensions, ACCESS_PASSWORD
 from services.pipeline import get_or_create_pipeline, delete_pipeline, pipelines
 from services.outline_generator import format_outline_for_export
+from services.upload_utils import is_pdf_upload, is_supported_slide_image
 
 
 app = FastAPI(
@@ -99,8 +100,36 @@ slide_progress: Dict[str, Dict[str, Any]] = {}
 # Slide history for undo (job_id -> slide_number -> list of previous versions)
 slide_history: Dict[str, Dict[int, List[Dict[str, Any]]]] = {}
 
+# Manual edit friction events (job_id -> events)
+# Privacy note: stores interaction metadata only, never edited slide text.
+manual_edit_friction_events: Dict[str, List[Dict[str, Any]]] = {}
+
 # Job timestamps for cleanup tracking
 job_timestamps: Dict[str, datetime] = {}
+
+
+def resolve_qa_transcript_fixture_path(fixture_name: str) -> str:
+    """Resolve a local QA transcript fixture when explicitly enabled.
+
+    This is intentionally env-gated and restricted to docs/qa/fixtures so it
+    cannot become an accidental production bypass for real transcription.
+    """
+    enabled = os.environ.get("VOICESLIDE_ENABLE_QA_TRANSCRIPT_FIXTURE", "").lower() in {"1", "true", "yes"}
+    if not enabled:
+        raise HTTPException(403, "QA transcript fixture mode is disabled")
+
+    safe_name = os.path.basename(fixture_name)
+    if safe_name != fixture_name or not safe_name.endswith(".json"):
+        raise HTTPException(400, "Invalid QA transcript fixture name")
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    fixtures_dir = os.path.join(repo_root, "docs", "qa", "fixtures")
+    fixture_path = os.path.abspath(os.path.join(fixtures_dir, safe_name))
+    if not fixture_path.startswith(os.path.abspath(fixtures_dir) + os.sep):
+        raise HTTPException(400, "Invalid QA transcript fixture path")
+    if not os.path.exists(fixture_path):
+        raise HTTPException(404, "QA transcript fixture not found")
+    return fixture_path
 
 # Cleanup configuration
 CLEANUP_INTERVAL_HOURS = 1  # Run cleanup every hour
@@ -121,22 +150,45 @@ async def cleanup_old_jobs():
                     jobs_to_delete.append(job_id)
             
             # Delete old jobs
+            # NOTE: this loop is the ONLY place that frees per-job state. If a
+            # cache lives keyed by job_id, it MUST be popped here or memory
+            # leaks linearly with usage (eventually OOMing the process).
             for job_id in jobs_to_delete:
                 print(f"[Cleanup] Removing old job: {job_id}")
-                
-                # Clean memory
+
+                # Clean memory caches in main.py
                 jobs.pop(job_id, None)
                 api_keys.pop(job_id, None)
                 slide_progress.pop(job_id, None)
                 slide_history.pop(job_id, None)
+                manual_edit_friction_events.pop(job_id, None)
                 job_timestamps.pop(job_id, None)
-                
-                # Clean pipeline
+
+                # Clean memory caches in services/ai_slide_generator.py
+                # (Previously these were never freed → memory leak. Discovered
+                # during the Phase-1 architectural audit.)
+                try:
+                    from services.ai_slide_generator import (
+                        _slide_data_cache,
+                        _used_layouts_cache,
+                        release_slide_data_lock,
+                    )
+                    _slide_data_cache.pop(job_id, None)
+                    _used_layouts_cache.pop(job_id, None)
+                    # The per-job mutex itself also leaks otherwise — Lock
+                    # objects don't get GC'd because they live in the
+                    # _slide_data_locks dict. Phase 2.1 added them.
+                    release_slide_data_lock(job_id)
+                except Exception as e:
+                    print(f"[Cleanup] Failed to pop ai_slide_generator caches for {job_id}: {e}")
+
+                # Clean pipeline (use specific Exception type so failures are visible
+                # — bare `except: pass` was hiding genuine errors)
                 try:
                     delete_pipeline(job_id)
-                except:
-                    pass
-                
+                except Exception as e:
+                    print(f"[Cleanup] delete_pipeline failed for {job_id}: {e}")
+
                 # Clean disk (output files)
                 for suffix in ["_slides", "_user_images", "_reference"]:
                     dir_path = os.path.join(OUTPUT_DIR, f"{job_id}{suffix}")
@@ -146,21 +198,76 @@ async def cleanup_old_jobs():
                             print(f"[Cleanup] Deleted directory: {dir_path}")
                         except Exception as e:
                             print(f"[Cleanup] Failed to delete {dir_path}: {e}")
-                
+
                 # Clean uploads
                 upload_dir = os.path.join(UPLOAD_DIR, job_id)
                 if os.path.exists(upload_dir):
                     try:
                         shutil.rmtree(upload_dir)
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"[Cleanup] Failed to delete uploads {upload_dir}: {e}")
             
             if jobs_to_delete:
                 print(f"[Cleanup] Removed {len(jobs_to_delete)} old jobs")
-        
+
         except Exception as e:
             print(f"[Cleanup] Error: {e}")
-        
+
+        # --- 48h video cache sweep (independent of in-memory job cleanup) ---
+        # Wrapped in its own try block so a Supabase outage never kills the
+        # parent loop. Orphan Storage objects are recoverable — we prioritize
+        # clearing DB columns so resumes don't attempt stale paths.
+        try:
+            import httpx as _httpx
+            from datetime import timezone as _tz, timedelta as _td
+            from services.supabase_storage import (
+                is_configured, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, delete_video,
+            )
+            if is_configured():
+                cutoff = (datetime.now(_tz.utc) - _td(hours=48)).isoformat()
+                async with _httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.get(
+                        f"{SUPABASE_URL}/rest/v1/projects",
+                        params={
+                            "select": "id,video_storage_path,video_cached_at",
+                            "video_cached_at": f"lt.{cutoff}",
+                            "video_storage_path": "not.is.null",
+                        },
+                        headers={
+                            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                        },
+                    )
+                    expired = resp.json() if resp.status_code == 200 else []
+                    if expired:
+                        print(f"[Cleanup] Found {len(expired)} expired video cache entries")
+                    for row in expired:
+                        pid = row.get("id")
+                        path = row.get("video_storage_path")
+                        if not pid or not path:
+                            continue
+                        try:
+                            await delete_video(path)
+                        except Exception as e:
+                            print(f"[Cleanup] Storage delete failed for {pid}: {e}")
+                            # still clear columns below so future restores don't point at it
+                        try:
+                            await client.patch(
+                                f"{SUPABASE_URL}/rest/v1/projects",
+                                params={"id": f"eq.{pid}"},
+                                headers={
+                                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                                    "Content-Type": "application/json",
+                                    "Prefer": "return=minimal",
+                                },
+                                json={"video_storage_path": None, "video_cached_at": None},
+                            )
+                        except Exception as e:
+                            print(f"[Cleanup] PATCH clear failed for {pid}: {e}")
+        except Exception as e:
+            print(f"[Cleanup] video cache sweep error (non-fatal): {e}")
+
         # Wait before next cleanup cycle
         await asyncio.sleep(CLEANUP_INTERVAL_HOURS * 3600)
 
@@ -540,6 +647,50 @@ async def delete_slide(job_id: str, slide_index: int):
     }
 
 
+@app.post("/api/slides/{job_id}/duplicate/{slide_index}")
+async def duplicate_slide(job_id: str, slide_index: int):
+    """指定スライドを複製して直後に挿入"""
+    pipeline = get_or_create_pipeline(job_id)
+
+    if not hasattr(pipeline, 'slide_images') or not pipeline.slide_images:
+        raise HTTPException(400, "No slides found for this job")
+
+    if slide_index < 0 or slide_index >= len(pipeline.slide_images):
+        raise HTTPException(400, f"Invalid slide_index: {slide_index} (total: {len(pipeline.slide_images)})")
+
+    source_path = pipeline.slide_images[slide_index]
+
+    if not os.path.exists(source_path):
+        raise HTTPException(400, f"Source slide image not found: {os.path.basename(source_path)}")
+
+    # コピー先ファイル名を生成
+    base_dir = os.path.dirname(source_path)
+    ext = os.path.splitext(source_path)[1]
+    import time
+    new_filename = f"slide_dup_{slide_index}_{int(time.time())}{ext}"
+    new_path = os.path.join(base_dir, new_filename)
+
+    shutil.copy2(source_path, new_path)
+
+    # 複製元の直後に挿入
+    insert_pos = slide_index + 1
+    pipeline.slide_images.insert(insert_pos, new_path)
+
+    # 公開URLを生成
+    image_url = f"/outputs/{job_id}/{new_filename}"
+
+    print(f"[DuplicateSlide] Duplicated slide {slide_index} -> {insert_pos} for job {job_id}")
+    print(f"[DuplicateSlide] Total slides: {len(pipeline.slide_images)}")
+
+    return {
+        "success": True,
+        "source_index": slide_index,
+        "new_index": insert_pos,
+        "image_url": image_url,
+        "total_slides": len(pipeline.slide_images)
+    }
+
+
 @app.post("/api/upload-reference-image/{job_id}")
 async def upload_reference_image(
     job_id: str,
@@ -586,25 +737,98 @@ async def upload_reference_image(
 
 # ========== STEP 1: Upload Audio ==========
 
+_AUDIO_STORAGE_RETRY_DELAYS_SEC = (1, 4, 12)  # exponential backoff between attempts
+
+
+async def _upload_audio_to_storage_with_retry(
+    audio_path: str,
+    user_id: Optional[str],
+    project_id: Optional[str],
+    log_prefix: str = "[AudioStorage]",
+) -> tuple:
+    """Upload audio to Supabase Storage with explicit status reporting + retry.
+
+    Returns (storage_path or None, status, detail) where status is one of:
+      - 'persisted': uploaded successfully, path is set
+      - 'skipped'  : intentionally not attempted (no creds / no headers)
+      - 'failed'   : attempts exhausted; user should be warned
+
+    The previous implementation just returned None on failure, which was
+    indistinguishable from "intentionally skipped" — the frontend then
+    silently saved a project with no audioStoragePath, and 24h later the
+    restore couldn't recover audio. Now the frontend can show a clear
+    warning when status == 'failed'.
+    """
+    import asyncio as _asyncio
+
+    if not user_id or not project_id:
+        return (None, "skipped", "missing_user_or_project_id")
+
+    try:
+        from services.supabase_storage import upload_audio as storage_upload, is_configured
+    except Exception as e:
+        print(f"{log_prefix} ✗ storage import failed: {e}")
+        return (None, "failed", "import_error")
+
+    if not is_configured():
+        print(f"{log_prefix} skipped (Supabase not configured)")
+        return (None, "skipped", "supabase_not_configured")
+
+    last_err: Optional[str] = None
+    for attempt, delay_before in enumerate(((0,) + _AUDIO_STORAGE_RETRY_DELAYS_SEC)):
+        if delay_before:
+            await _asyncio.sleep(delay_before)
+        attempt_num = attempt + 1
+        try:
+            storage_path = await storage_upload(
+                audio_path, user_id, project_id, ext=os.path.splitext(audio_path)[1]
+            )
+            if storage_path:
+                print(f"{log_prefix} ✓ attempt {attempt_num}: persisted to {storage_path}")
+                return (storage_path, "persisted", "")
+            last_err = "upload_returned_none"
+            print(f"{log_prefix} attempt {attempt_num} ✗ upload returned None")
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            print(f"{log_prefix} attempt {attempt_num} ✗ exception: {last_err}")
+
+    print(
+        f"{log_prefix} ✗ GAVE UP after {len(_AUDIO_STORAGE_RETRY_DELAYS_SEC) + 1} attempts: "
+        f"last_err={last_err}. Audio is on local disk but NOT persisted — next "
+        f"restore after Railway redeploy will fail to recover this audio."
+    )
+    return (None, "failed", last_err or "unknown")
+
+
 @app.post("/api/upload-audio")
-async def upload_audio(file: UploadFile = File(...)):
-    """Step 1: Upload audio or video file. For video, audio is auto-extracted."""
+async def upload_audio(
+    file: UploadFile = File(...),
+    x_user_id: Optional[str] = Header(None),
+    x_project_id: Optional[str] = Header(None),
+):
+    """Step 1: Upload audio or video file. For video, audio is auto-extracted.
+
+    When `x-user-id` and `x-project-id` headers are provided, the extracted
+    audio is also uploaded to Supabase Storage for persistence across
+    Railway redeploys. The storage path is returned in the response as
+    `audio_storage_path`.
+    """
     audio_ext = [".mp3", ".wav", ".m4a"]
     video_ext = [".mp4", ".mov", ".webm", ".avi", ".mkv"]
     allowed_ext = audio_ext + video_ext
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in allowed_ext:
         raise HTTPException(400, f"対応形式: MP3, WAV, M4A, MP4, MOV, WebM")
-    
+
     job_id = str(uuid.uuid4())
     upload_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
-    
+
     with open(upload_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    
+
     is_video = ext in video_ext
     facecam_auto_set = False
-    
+
     if is_video:
         # Extract audio from video using FFmpeg
         audio_path = os.path.join(UPLOAD_DIR, f"{job_id}.wav")
@@ -622,12 +846,12 @@ async def upload_audio(file: UploadFile = File(...)):
         if result.returncode != 0:
             print(f"[Upload] FFmpeg audio extraction error: {result.stderr[:200]}")
             raise HTTPException(500, "動画から音声を抽出できませんでした")
-        
+
         print(f"[Upload] Extracted audio from video: {audio_path}")
         facecam_auto_set = True
     else:
         audio_path = upload_path
-    
+
     # Initialize job
     jobs[job_id] = {
         "id": job_id,
@@ -636,23 +860,125 @@ async def upload_audio(file: UploadFile = File(...)):
         "audio_path": audio_path,
         "created_at": datetime.now().isoformat()
     }
-    
+
     # Track job timestamp for cleanup
     job_timestamps[job_id] = datetime.now()
-    
+
     # Initialize pipeline
     pipeline = get_or_create_pipeline(job_id, audio_path)
-    
+
     # Auto-set face cam if video was uploaded
     if facecam_auto_set:
         pipeline.facecam_video_path = upload_path
         print(f"[Upload] Auto-set face cam video: {upload_path}")
-    
+
+    # Upload audio to Supabase Storage for persistence across redeploys.
+    # We track WHY the upload didn't happen (vs just returning None) so the
+    # frontend can show a clear warning if the user's work isn't durably saved.
+    audio_storage_path, audio_storage_status, audio_storage_detail = (
+        await _upload_audio_to_storage_with_retry(
+            audio_path, x_user_id, x_project_id, log_prefix="[Upload]"
+        )
+    )
+    jobs[job_id]["audio_storage_status"] = audio_storage_status
+
     return {
         "job_id": job_id,
         "message": "動画アップロード完了" if is_video else "音声アップロード完了",
         "is_video": is_video,
-        "facecam_auto_set": facecam_auto_set
+        "facecam_auto_set": facecam_auto_set,
+        "audio_storage_path": audio_storage_path,  # None if Storage not configured
+        "audio_storage_status": audio_storage_status,  # 'persisted' | 'failed' | 'skipped'
+        "audio_storage_detail": audio_storage_detail,  # Why, if not 'persisted'
+    }
+
+
+@app.post("/api/reupload-audio/{job_id}")
+async def reupload_audio(
+    job_id: str,
+    file: UploadFile = File(...),
+    x_user_id: Optional[str] = Header(None),
+    x_project_id: Optional[str] = Header(None),
+):
+    """Re-upload audio for a restored project whose original audio was lost
+    (e.g. after Railway redeploy wiped the filesystem).
+
+    Keeps the existing job_id so all other project state stays intact.
+    Replaces any placeholder WAV with the real audio file.
+
+    When user_id + project_id are provided, also uploads to Supabase Storage
+    so the next restore won't need a manual re-upload.
+    """
+    audio_ext = [".mp3", ".wav", ".m4a"]
+    video_ext = [".mp4", ".mov", ".webm", ".avi", ".mkv"]
+    allowed_ext = audio_ext + video_ext
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(400, "対応形式: MP3, WAV, M4A, MP4, MOV, WebM")
+
+    # Job must already exist (from restore-project)
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found. Please restore the project first.")
+
+    upload_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+    with open(upload_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    is_video = ext in video_ext
+    if is_video:
+        audio_path = os.path.join(UPLOAD_DIR, f"{job_id}.wav")
+        import subprocess
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", upload_path,
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", "44100",
+            "-ac", "1",
+            audio_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"[Reupload] FFmpeg audio extraction error: {result.stderr[:200]}")
+            raise HTTPException(500, "動画から音声を抽出できませんでした")
+        print(f"[Reupload] Extracted audio from video: {audio_path}")
+    else:
+        audio_path = upload_path
+
+    # Remove any placeholder WAV left over from restore
+    placeholder = os.path.join(UPLOAD_DIR, f"{job_id}_placeholder.wav")
+    if os.path.exists(placeholder):
+        try:
+            os.remove(placeholder)
+            print(f"[Reupload] Removed placeholder: {placeholder}")
+        except OSError:
+            pass
+
+    # Update pipeline to point at the new audio
+    pipeline = get_or_create_pipeline(job_id)
+    pipeline.audio_path = audio_path
+    jobs[job_id]["audio_path"] = audio_path
+    if is_video and not getattr(pipeline, "facecam_video_path", None):
+        pipeline.facecam_video_path = upload_path
+        print(f"[Reupload] Auto-set face cam video: {upload_path}")
+
+    # Also push to Supabase Storage so future restores can recover this audio.
+    audio_storage_path, audio_storage_status, audio_storage_detail = (
+        await _upload_audio_to_storage_with_retry(
+            audio_path, x_user_id, x_project_id, log_prefix="[Reupload]"
+        )
+    )
+    jobs[job_id]["audio_storage_status"] = audio_storage_status
+
+    print(f"[Reupload] ✓ Audio re-uploaded for job {job_id}: {audio_path}")
+    return {
+        "job_id": job_id,
+        "message": "音声を再アップロードしました",
+        "is_video": is_video,
+        "audio_path": audio_path,
+        "audio_storage_path": audio_storage_path,
+        "audio_storage_status": audio_storage_status,
+        "audio_storage_detail": audio_storage_detail,
     }
 
 
@@ -660,30 +986,49 @@ async def upload_audio(file: UploadFile = File(...)):
 
 @app.post("/api/transcribe/{job_id}")
 async def transcribe(
-    job_id: str, 
+    job_id: str,
     background_tasks: BackgroundTasks,
     cleanup_audio: bool = True,
     cleanup_mode: str = "natural",  # "strict" or "natural"
     silence_threshold: float = 0.5,  # user-adjustable
     speed_factor: float = 1.0,  # 1.0, 1.2, 1.5, 2.0
+    qa_transcript_fixture: Optional[str] = None,
     x_openai_key: Optional[str] = Header(None),
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Step 2: Start transcription (async background processing)"""
     audio_path = jobs.get(job_id, {}).get("audio_path")
     if not audio_path:
         raise HTTPException(404, "Job not found or no audio uploaded")
-    
+
     # Store API keys and settings in job
     if x_openai_key:
         jobs[job_id]["openai_key"] = x_openai_key
     if x_gemini_key:
         jobs[job_id]["gemini_key"] = x_gemini_key
-    
+    if x_gemini_model:
+        jobs[job_id]["gemini_model"] = x_gemini_model
+    qa_transcript_fixture_path = None
+    if qa_transcript_fixture:
+        qa_transcript_fixture_path = resolve_qa_transcript_fixture_path(qa_transcript_fixture)
+        jobs[job_id]["transcription_provider"] = "qa_fixture"
+        jobs[job_id]["qa_transcript_fixture"] = os.path.basename(qa_transcript_fixture_path)
+    # Remember which Supabase project this job belongs to — needed so the
+    # post-cleanup / post-speed audio can be uploaded to Storage and survive
+    # a Railway redeploy. Without this, restore falls back to the ORIGINAL
+    # uncut audio and the video ends up with the pre-cleanup duration.
+    if x_user_id:
+        jobs[job_id]["user_id"] = x_user_id
+    if x_project_id:
+        jobs[job_id]["project_id"] = x_project_id
+
     jobs[job_id]["step"] = 2
     jobs[job_id]["transcribe_status"] = "processing"
     jobs[job_id]["transcribe_progress"] = "開始中..."
-    
+
     # Store settings for background task
     jobs[job_id]["cleanup_settings"] = {
         "cleanup_audio": cleanup_audio,
@@ -691,14 +1036,15 @@ async def transcribe(
         "silence_threshold": silence_threshold,
         "speed_factor": max(0.5, min(3.0, speed_factor))  # clamp to safe range
     }
-    
+
     # Start background processing
     background_tasks.add_task(
         run_transcribe_background,
         job_id,
-        x_openai_key
+        x_openai_key,
+        qa_transcript_fixture_path,
     )
-    
+
     return {
         "job_id": job_id,
         "status": "processing",
@@ -706,7 +1052,11 @@ async def transcribe(
     }
 
 
-async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
+async def run_transcribe_background(
+    job_id: str,
+    openai_key: Optional[str],
+    qa_transcript_fixture_path: Optional[str] = None,
+):
     """Background task for transcription"""
     try:
         audio_path = jobs[job_id].get("audio_path")
@@ -743,7 +1093,12 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
         
         # Step 2b: Transcription
         jobs[job_id]["transcribe_progress"] = "AI文字起こし中..."
-        result = await pipeline.step_transcribe(openai_key=openai_key)
+        if qa_transcript_fixture_path:
+            jobs[job_id]["transcribe_progress"] = "QAフィクスチャ文字起こしを読み込み中..."
+        result = await pipeline.step_transcribe(
+            openai_key=openai_key,
+            fixture_transcript_path=qa_transcript_fixture_path,
+        )
         
         # Step 2c: Audio cleanup
         cleanup_result = None
@@ -888,11 +1243,75 @@ async def run_transcribe_background(job_id: str, openai_key: Optional[str]):
                     print(f"[BGM Mix] Failed: {e}")
         
         print(f"[Transcribe] Completed for job {job_id}")
-        
+
+        # Persist the post-cleanup / post-speed audio to Supabase Storage so
+        # the user's cleanup choices survive restore. Without this, restore
+        # would fall back to the ORIGINAL uncut audio and the re-generated
+        # video would be longer than the user expected.
+        #
+        # Only upload when:
+        #   (1) the final audio_path differs from the original upload
+        #       (i.e. cleanup or speed actually changed something), and
+        #   (2) we have a user/project id to route the upload.
+        try:
+            user_id = jobs[job_id].get("user_id")
+            project_id = jobs[job_id].get("project_id")
+            final_audio = jobs[job_id].get("audio_path")
+            original_audio = jobs[job_id].get("original_audio_path")
+            if (
+                user_id and project_id
+                and final_audio and original_audio
+                and final_audio != original_audio
+                and os.path.exists(final_audio)
+            ):
+                # Schedule fire-and-forget so we don't hold up the user.
+                asyncio.create_task(
+                    _upload_processed_audio_fire_and_forget(
+                        final_audio, user_id, project_id, job_id
+                    )
+                )
+            else:
+                print(f"[ProcessedAudio] skipped for job={job_id} "
+                      f"(user={bool(user_id)}, project={bool(project_id)}, "
+                      f"changed={final_audio != original_audio if final_audio else False})")
+        except Exception as e:
+            print(f"[ProcessedAudio] scheduling failed: {e}")
+
     except Exception as e:
         print(f"[Transcribe] Error for job {job_id}: {e}")
         jobs[job_id]["transcribe_status"] = "error"
         jobs[job_id]["transcribe_error"] = str(e)
+
+
+async def _upload_processed_audio_fire_and_forget(
+    local_path: str,
+    user_id: str,
+    project_id: str,
+    job_id: str,
+):
+    """Upload the post-cleanup audio with a small retry loop. Mirrors the
+    video / slides cache helpers so failures are visible in Railway logs."""
+    try:
+        from services.supabase_storage import upload_processed_audio
+    except Exception as e:
+        print(f"[ProcessedAudio] ✗ import failed: {e}")
+        return
+
+    for attempt, delay in enumerate((0, 2, 8, 30)):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            path = await upload_processed_audio(local_path, user_id, project_id)
+            if path:
+                print(f"[ProcessedAudio] ✓ attempt {attempt + 1}: cached {path} for project={project_id}")
+                if job_id in jobs:
+                    jobs[job_id]["processed_audio_status"] = "cached"
+                return
+        except Exception as e:
+            print(f"[ProcessedAudio] attempt {attempt + 1} ✗ {type(e).__name__}: {e}")
+    print(f"[ProcessedAudio] ✗ GAVE UP for project={project_id} — next restore will use the uncut original")
+    if job_id in jobs:
+        jobs[job_id]["processed_audio_status"] = "failed"
 
 
 @app.get("/api/transcribe-status/{job_id}")
@@ -1199,23 +1618,33 @@ async def get_mixed_audio(job_id: str):
 
 @app.post("/api/polish-transcript/{job_id}")
 async def polish_transcript(
-    job_id: str, 
+    job_id: str,
     update: Optional[TranscriptUpdate] = None,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
 ):
     """Step 3: Polish and improve transcript"""
     pipeline = get_or_create_pipeline(job_id)
-    
-    # Store API key for this job
+
+    # Store API key and model for this job
     if x_gemini_key:
         jobs[job_id]["gemini_key"] = x_gemini_key
-    
+    if x_gemini_model:
+        jobs[job_id]["gemini_model"] = x_gemini_model
+    if x_openrouter_key:
+        jobs[job_id]["openrouter_key"] = x_openrouter_key
+    if x_openrouter_model:
+        jobs[job_id]["openrouter_model"] = x_openrouter_model
+
     jobs[job_id]["step"] = 3
     jobs[job_id]["status"] = "processing"
-    
+
     edited = update.transcript if update else None
     original_script = update.original_script if update else None
-    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script)
+    gemini_model = jobs[job_id].get("gemini_model", "gemini-3-flash-preview")
+    result = await pipeline.step_polish_transcript(edited, gemini_key=x_gemini_key, original_script=original_script, model_name=gemini_model, openrouter_key=x_openrouter_key, openrouter_model=x_openrouter_model or "google/gemini-3-flash-preview")
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["polished_transcript"] = result["polished_transcript"]
@@ -1231,37 +1660,50 @@ async def polish_transcript(
 
 @app.post("/api/generate-outline/{job_id}")
 async def generate_outline(
-    job_id: str, 
+    job_id: str,
     background_tasks: BackgroundTasks,
     update: Optional[TranscriptUpdate] = None,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
 ):
     """Step 4: Start outline generation (async background processing)"""
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
-    
-    # Store API key and settings
+
+    # Store API key, model and settings
     if x_gemini_key:
         jobs[job_id]["gemini_key"] = x_gemini_key
-    
+    if x_gemini_model:
+        jobs[job_id]["gemini_model"] = x_gemini_model
+    if x_openrouter_key:
+        jobs[job_id]["openrouter_key"] = x_openrouter_key
+    if x_openrouter_model:
+        jobs[job_id]["openrouter_model"] = x_openrouter_model
+
     jobs[job_id]["step"] = 4
     jobs[job_id]["outline_status"] = "processing"
     jobs[job_id]["outline_progress"] = "アウトライン生成開始..."
-    
+
     # Store settings for background task
     jobs[job_id]["outline_settings"] = {
         "transcript": update.transcript if update else None,
         "slide_count_mode": update.slide_count_mode if update else "auto",
         "custom_slide_count": update.custom_slide_count if update else 10
     }
-    
+
     # Start background processing
+    gemini_model = jobs[job_id].get("gemini_model", "gemini-3-flash-preview")
     background_tasks.add_task(
         run_outline_background,
         job_id,
-        x_gemini_key
+        x_gemini_key,
+        gemini_model,
+        x_openrouter_key,
+        x_openrouter_model,
     )
-    
+
     return {
         "job_id": job_id,
         "status": "processing",
@@ -1269,23 +1711,26 @@ async def generate_outline(
     }
 
 
-async def run_outline_background(job_id: str, gemini_key: Optional[str]):
+async def run_outline_background(job_id: str, gemini_key: Optional[str], model_name: str = "gemini-3-flash-preview", openrouter_key: Optional[str] = None, openrouter_model: Optional[str] = None):
     """Background task for outline generation"""
     try:
         pipeline = get_or_create_pipeline(job_id)
         settings = jobs[job_id].get("outline_settings", {})
-        
+
         edited = settings.get("transcript")
         slide_count_mode = settings.get("slide_count_mode", "auto")
         custom_slide_count = settings.get("custom_slide_count", 10)
-        
+
         jobs[job_id]["outline_progress"] = "AIでアウトライン作成中..."
-        
+
         result = await pipeline.step_generate_outline(
-            edited, 
+            edited,
             gemini_key=gemini_key,
             slide_count_mode=slide_count_mode,
-            custom_slide_count=custom_slide_count
+            custom_slide_count=custom_slide_count,
+            model_name=model_name,
+            openrouter_key=openrouter_key,
+            openrouter_model=openrouter_model or "google/gemini-3-flash-preview",
         )
         
         jobs[job_id]["outline_status"] = "completed"
@@ -1326,19 +1771,52 @@ async def get_outline_status(job_id: str):
 # ========== STEP 5: Polish Outline ==========
 
 @app.post("/api/polish-outline/{job_id}")
-async def polish_outline(job_id: str, update: Optional[OutlineUpdate] = None):
+async def polish_outline(
+    job_id: str,
+    update: Optional[OutlineUpdate] = None,
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+):
     """Step 5: Brush up outline"""
     pipeline = get_or_create_pipeline(job_id)
-    
+
     jobs[job_id]["step"] = 5
     jobs[job_id]["status"] = "processing"
-    
+
+    # Store Gemini key/model for this job
+    if x_gemini_key:
+        jobs[job_id]["gemini_key"] = x_gemini_key
+    if x_gemini_model:
+        jobs[job_id]["gemini_model"] = x_gemini_model
+
+    # Store in api_keys dict
+    if x_gemini_key:
+        if job_id not in api_keys:
+            api_keys[job_id] = {"openai": "", "gemini": ""}
+        api_keys[job_id]["gemini"] = x_gemini_key
+
+    # OpenRouter params from header or stored in job
+    openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
+    openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash-preview")
+
+    # Gemini params from header or stored in job
+    gemini_key = x_gemini_key or jobs.get(job_id, {}).get("gemini_key", "")
+    gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+
     edited = update.outline if update else None
-    result = await pipeline.step_polish_outline(edited)
-    
+    result = await pipeline.step_polish_outline(
+        edited,
+        model_name=gemini_model,
+        openrouter_key=openrouter_key if openrouter_key else None,
+        openrouter_model=openrouter_model,
+        gemini_key=gemini_key if gemini_key else None,
+    )
+
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["polished_outline"] = result["polished_outline"]
-    
+
     return {
         "job_id": job_id,
         "step": 5,
@@ -1377,22 +1855,44 @@ async def export_outline(job_id: str, format: str = "json"):
 async def generate_slides_endpoint(
     job_id: str,
     x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
     x_color_theme: Optional[str] = Header(None),  # Color theme: cosmic, warm, elegant, nature, ocean, mono
-    x_font_style: Optional[str] = Header(None)    # Font style: gothic, mincho, pop, handwritten
+    x_font_style: Optional[str] = Header(None),   # Font style: gothic, mincho, pop, handwritten
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
+    x_openrouter_design_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Step 7 (Full AI Mode): AI generates unique custom slides from outline"""
     pipeline = get_or_create_pipeline(job_id)
-    
+
     jobs[job_id]["step"] = 7
     jobs[job_id]["status"] = "generating_slides"
-    
+
+    # Sprint A: collect OpenRouter fallback events for the UI. Reset the
+    # context list at the start of every request; openrouter_generate will
+    # append to it when it swaps to the safe fallback model (invalid model
+    # id). We read it back after generation and stash on the job so the
+    # status endpoint can return it to the frontend.
+    from services.openrouter_utils import _openrouter_warnings
+    from services.generation_telemetry import (
+        TelemetryCollector,
+        reset_current_collector,
+        set_current_collector,
+    )
+    _openrouter_warnings.set([])
+    telemetry_collector = TelemetryCollector(job_id)
+    telemetry_token = set_current_collector(telemetry_collector)
+
     # アウトラインを取得
     outline = pipeline.polished_outline or pipeline.raw_outline
     if not outline:
+        reset_current_collector(telemetry_token)
         raise HTTPException(400, "アウトラインが見つかりません。先にアウトラインを生成してください。")
-    
+
     try:
-        from services.ai_slide_generator import generate_all_custom_slides
+        from services.ai_slide_generator import generate_all_custom_slides, get_slide_data
         
         slides = outline.get("slides", [])
         total_slides = len(slides)
@@ -1417,6 +1917,10 @@ async def generate_slides_endpoint(
             }
         
         # Generate completely custom HTML/CSS for each slide using AI Design Architect
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+        openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
+        openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash-preview")
+        openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-3-flash-preview")
         image_paths = await generate_all_custom_slides(
             slides=slides,
             job_id=job_id,
@@ -1424,28 +1928,62 @@ async def generate_slides_endpoint(
             outline=outline,
             color_theme=x_color_theme,
             font_style=x_font_style,
-            progress_callback=update_progress
+            progress_callback=update_progress,
+            model_name=gemini_model,
+            openrouter_key=openrouter_key if openrouter_key else None,
+            openrouter_model=openrouter_model,
+            openrouter_design_model=openrouter_design_model,
         )
         
         # パイプラインに保存
         pipeline.slide_images = image_paths
         pipeline.slide_contents = slides
+        slide_data = get_slide_data(job_id) or {}
+        design_quality_metrics = slide_data.get("design_quality_metrics", [])
         
         # スライドプレビューURLを生成
         slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
         
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["slide_count"] = len(image_paths)
-        
+        jobs[job_id]["generation_telemetry"] = telemetry_collector.to_list()
+        jobs[job_id]["generation_telemetry_summary"] = telemetry_collector.summary()
+        jobs[job_id]["design_quality_metrics"] = design_quality_metrics
+
+        # Capture any OpenRouter fallback warnings collected during this
+        # request so /api/status can surface them to the UI. De-dup by
+        # (requested_model, fallback_model) since many slide calls in one
+        # batch would otherwise spam the same entry.
+        warnings = _openrouter_warnings.get() or []
+        if warnings:
+            seen = set()
+            deduped = []
+            for w in warnings:
+                key = (w.get("requested_model"), w.get("fallback_model"))
+                if key not in seen:
+                    seen.add(key)
+                    deduped.append(w)
+            jobs[job_id]["warnings"] = (jobs[job_id].get("warnings") or []) + deduped
+
+        # Fire-and-forget upload to Supabase Storage so the slides survive
+        # Railway redeploys. User is actively on the page here, so we skip
+        # the debounce and schedule immediately.
+        _schedule_slides_cache_immediate(job_id, x_user_id, x_project_id)
+
+        reset_current_collector(telemetry_token)
         return {
             "job_id": job_id,
             "step": 7,
             "slide_count": len(image_paths),
             "slide_previews": slide_previews,
+            "generation_telemetry": telemetry_collector.to_list(),
+            "generation_telemetry_summary": telemetry_collector.summary(),
+            "design_quality_metrics": design_quality_metrics,
             "message": "AIがユニークなスライドデザインを自動生成しました"
         }
-        
+
     except Exception as e:
+        reset_current_collector(telemetry_token)
         import traceback
         traceback.print_exc()
         jobs[job_id]["status"] = "error"
@@ -1462,6 +2000,9 @@ class BatchGenerateRequest(BaseModel):
     illustration_percentage: int = 50  # Percentage of slides to add illustrations (10-100)
     facecam_position: Optional[str] = None  # PiP overlay position: top-left, top-right, bottom-left, bottom-right
     facecam_size: Optional[int] = None  # PiP overlay size in px
+    # Sprint C: design mode. "flash_standard" (default) or "pro". Body takes
+    # precedence over the x-design-mode header when both are sent.
+    design_mode: Optional[str] = None
 
 
 @app.post("/api/generate-slides-batch/{job_id}")
@@ -1470,8 +2011,15 @@ async def generate_slides_batch_endpoint(
     request: BatchGenerateRequest,
     background_tasks: BackgroundTasks,
     x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
     x_color_theme: Optional[str] = Header(None),
-    x_font_style: Optional[str] = Header(None)
+    x_font_style: Optional[str] = Header(None),
+    x_openrouter_key: Optional[str] = Header(None),
+    x_openrouter_model: Optional[str] = Header(None),
+    x_openrouter_design_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
+    x_design_mode: Optional[str] = Header(None, alias="x-design-mode"),
 ):
     """Batch slide generation: runs in background to avoid timeout"""
     pipeline = get_or_create_pipeline(job_id)
@@ -1504,9 +2052,21 @@ async def generate_slides_batch_endpoint(
 
     # Define background task
     async def generate_batch_async():
+        # Sprint A: isolate OpenRouter fallback warnings to this batch.
+        # ContextVar.set is local to this task's context; the warnings list
+        # is read back at the end so /api/status surfaces a dedup'd view.
+        from services.openrouter_utils import _openrouter_warnings
+        from services.generation_telemetry import (
+            TelemetryCollector,
+            reset_current_collector,
+            set_current_collector,
+        )
+        _openrouter_warnings.set([])
+        telemetry_collector = TelemetryCollector(job_id)
+        telemetry_token = set_current_collector(telemetry_collector)
         try:
-            from services.ai_slide_generator import generate_all_custom_slides
-            
+            from services.ai_slide_generator import generate_all_custom_slides, get_slide_data
+
             def update_progress(current: int, total: int, message: str):
                 slide_progress[job_id] = {
                     **slide_progress.get(job_id, {}),
@@ -1520,6 +2080,28 @@ async def generate_slides_batch_endpoint(
             video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
             
             # Generate batch of slides
+            gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
+            openrouter_key = x_openrouter_key or jobs.get(job_id, {}).get("openrouter_key", "")
+            openrouter_model = x_openrouter_model or jobs.get(job_id, {}).get("openrouter_model", "google/gemini-3-flash-preview")
+            openrouter_design_model = x_openrouter_design_model or jobs.get(job_id, {}).get("openrouter_design_model", "google/gemini-3-flash-preview")
+
+            # Sprint C: resolve design_mode with this precedence:
+            #   body (request.design_mode) > header (x-design-mode) >
+            #   job-memoized > default "flash_standard"
+            # Unknown values normalize back to "flash_standard" so a client
+            # bug can't accidentally flip every project to Pro mode.
+            resolved_design_mode = (
+                request.design_mode
+                or x_design_mode
+                or jobs.get(job_id, {}).get("design_mode")
+                or "flash_standard"
+            )
+            if resolved_design_mode not in ("flash_standard", "pro"):
+                print(f"[Batch Generate] Unknown design_mode={resolved_design_mode!r}, normalizing to flash_standard")
+                resolved_design_mode = "flash_standard"
+            jobs[job_id]["design_mode"] = resolved_design_mode
+            print(f"[Batch Generate] design_mode={resolved_design_mode}")
+
             image_paths = await generate_all_custom_slides(
                 slides=slides,
                 job_id=job_id,
@@ -1541,12 +2123,19 @@ async def generate_slides_batch_endpoint(
                 video_width=video_w,
                 video_height=video_h,
                 facecam_position=request.facecam_position,
-                facecam_size=request.facecam_size
+                facecam_size=request.facecam_size,
+                model_name=gemini_model,
+                openrouter_key=openrouter_key if openrouter_key else None,
+                openrouter_model=openrouter_model,
+                openrouter_design_model=openrouter_design_model,
+                design_mode=resolved_design_mode,
             )
             
             # パイプラインに保存
             pipeline.slide_images = image_paths
             pipeline.slide_contents = slides
+            slide_data = get_slide_data(job_id) or {}
+            design_quality_metrics = slide_data.get("design_quality_metrics", [])
             
             # スライドプレビューURLを生成
             slide_previews = [f"/outputs/{job_id}_slides/{os.path.basename(p)}" for p in image_paths]
@@ -1565,19 +2154,50 @@ async def generate_slides_batch_endpoint(
                 "batch_end": end,
                 "next_start": None if is_complete else next_start,
                 "is_complete": is_complete,
-                "total_slides": total_slides
+                "total_slides": total_slides,
+                "generation_telemetry": telemetry_collector.to_list(),
+                "generation_telemetry_summary": telemetry_collector.summary(),
+                "design_quality_metrics": design_quality_metrics,
             }
+            jobs[job_id]["generation_telemetry"] = telemetry_collector.to_list()
+            jobs[job_id]["generation_telemetry_summary"] = telemetry_collector.summary()
+            jobs[job_id]["design_quality_metrics"] = design_quality_metrics
             print(f"[Batch Generate] Completed slides {start}-{end}")
+
+            # Capture dedup'd OpenRouter fallback warnings onto the job so
+            # /api/status surfaces them in the UI. Same shape as the
+            # non-batch endpoint above.
+            warnings = _openrouter_warnings.get() or []
+            if warnings:
+                seen = set()
+                deduped = []
+                for w in warnings:
+                    key = (w.get("requested_model"), w.get("fallback_model"))
+                    if key not in seen:
+                        seen.add(key)
+                        deduped.append(w)
+                jobs[job_id]["warnings"] = (jobs[job_id].get("warnings") or []) + deduped
+
+            # Only cache after the final batch — intermediate batches would
+            # waste bandwidth re-uploading the same early slides on every pass.
+            if is_complete:
+                _schedule_slides_cache_immediate(job_id, x_user_id, x_project_id)
             
         except Exception as e:
+            jobs[job_id]["generation_telemetry"] = telemetry_collector.to_list()
+            jobs[job_id]["generation_telemetry_summary"] = telemetry_collector.summary()
             print(f"[Batch Generate] Error: {e}")
             import traceback
             traceback.print_exc()
             slide_progress[job_id] = {
                 **slide_progress.get(job_id, {}),
                 "status": "error",
-                "message": f"エラー: {str(e)}"
+                "message": f"エラー: {str(e)}",
+                "generation_telemetry": telemetry_collector.to_list(),
+                "generation_telemetry_summary": telemetry_collector.summary(),
             }
+        finally:
+            reset_current_collector(telemetry_token)
     
     # Run in background using asyncio
     import asyncio
@@ -1598,6 +2218,14 @@ async def generate_slides_batch_endpoint(
 async def get_batch_status(job_id: str):
     """Get batch generation status for polling"""
     progress = slide_progress.get(job_id, {})
+    # Sprint A: include OpenRouter fallback warnings captured during this
+    # job so the UI can toast them. Empty list is fine — the frontend just
+    # ignores it when empty. These are set by generate_slides_batch_endpoint
+    # and generate_slides_endpoint after the generate call returns.
+    warnings = jobs.get(job_id, {}).get("warnings") or []
+    generation_telemetry = progress.get("generation_telemetry") or jobs.get(job_id, {}).get("generation_telemetry", [])
+    generation_telemetry_summary = progress.get("generation_telemetry_summary") or jobs.get(job_id, {}).get("generation_telemetry_summary", {})
+    design_quality_metrics = progress.get("design_quality_metrics") or jobs.get(job_id, {}).get("design_quality_metrics", [])
     return {
         "job_id": job_id,
         "status": progress.get("status", "unknown"),
@@ -1609,7 +2237,12 @@ async def get_batch_status(job_id: str):
         "batch_end": progress.get("batch_end"),
         "next_start": progress.get("next_start"),
         "is_complete": progress.get("is_complete", False),
-        "total_slides": progress.get("total_slides", 0)
+        "total_slides": progress.get("total_slides", 0),
+        "warnings": warnings,
+        "generation_telemetry": generation_telemetry,
+        "generation_telemetry_summary": generation_telemetry_summary,
+        "design_quality_metrics": design_quality_metrics,
+        "manual_edit_friction_summary": jobs.get(job_id, {}).get("manual_edit_friction_summary", {}),
     }
 
 
@@ -1827,7 +2460,10 @@ async def update_slide_text(
     job_id: str,
     slide_number: int,
     request: SlideTextUpdateRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Update slide text directly (no AI) and re-render"""
     if job_id not in jobs:
@@ -1901,17 +2537,196 @@ async def update_slide_text(
             await browser.close()
         
         import time
+        # Debounced re-sync of the slides bundle to Supabase Storage.
+        # Collapses rapid successive edits into a single upload (~5s window).
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
         return {
             "success": True,
             "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}",
             "can_undo": True,
             "history_count": len(slide_history[job_id][slide_number])
         }
-        
+
     except Exception as e:
         print(f"[Text Edit] Error: {e}")
         raise HTTPException(500, f"Failed to update text: {str(e)}")
 
+
+
+# ========== Manual Edit Friction Recorder ==========
+
+class ManualEditFrictionEventRequest(BaseModel):
+    event_type: str
+    slide_number: Optional[int] = None
+    workflow_mode: Optional[str] = None
+    design_mode: Optional[str] = None
+    elapsed_ms: Optional[int] = None
+    source: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    quality_snapshot: Optional[Dict[str, Any]] = None
+
+
+_ALLOWED_MANUAL_EDIT_EVENT_TYPES = {
+    "slide_selected",
+    "zoom_opened",
+    "direct_editor_opened",
+    "direct_editor_closed",
+    "direct_editor_text_focused",
+    "direct_editor_text_input",
+    "direct_editor_save_started",
+    "direct_editor_save_succeeded",
+    "direct_editor_save_failed",
+    "ai_feedback_started",
+    "ai_feedback_succeeded",
+    "ai_feedback_failed",
+    "undo_clicked",
+    "undo_succeeded",
+    "undo_failed",
+    "video_generate_clicked",
+}
+
+_ALLOWED_MANUAL_EDIT_DETAIL_KEYS = {
+    "feedback_type",
+    "has_feedback_text",
+    "feedback_length",
+    "has_image",
+    "image_count",
+    "target_tag",
+    "target_class_hint",
+    "text_length_before",
+    "text_length_after",
+    "text_length_delta",
+    "save_duration_ms",
+    "result",
+    "error_kind",
+}
+
+_ALLOWED_QUALITY_KEYS = {
+    "slide_number",
+    "quality_gate",
+    "fallback_used",
+    "text_clipping_detected",
+    "small_text_count",
+    "min_font_size_px",
+    "main_element_occupancy_ratio",
+    "warnings_count",
+}
+
+
+def _safe_int(value: Any, *, minimum: int = 0, maximum: int = 86_400_000) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(minimum, min(parsed, maximum))
+
+
+def _sanitize_manual_edit_details(details: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(details, dict):
+        return {}
+    sanitized: Dict[str, Any] = {}
+    for key in _ALLOWED_MANUAL_EDIT_DETAIL_KEYS:
+        if key not in details:
+            continue
+        value = details[key]
+        if isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, (int, float)):
+            sanitized[key] = _safe_int(value, maximum=1_000_000)
+        elif isinstance(value, str):
+            sanitized[key] = value[:80]
+    return sanitized
+
+
+def _sanitize_quality_snapshot(snapshot: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        return {}
+    sanitized: Dict[str, Any] = {}
+    if isinstance(snapshot.get("warnings"), list):
+        sanitized["warnings_count"] = len(snapshot["warnings"])
+    for key in _ALLOWED_QUALITY_KEYS:
+        if key not in snapshot:
+            continue
+        value = snapshot[key]
+        if isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, (int, float)):
+            sanitized[key] = value
+        elif isinstance(value, str):
+            sanitized[key] = value[:80]
+        elif isinstance(value, list) and key == "warnings_count":
+            sanitized[key] = len(value)
+    return sanitized
+
+
+def _summarize_manual_edit_friction(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_type: Dict[str, int] = {}
+    by_slide: Dict[str, Dict[str, Any]] = {}
+    first_at = events[0]["created_at"] if events else None
+    last_at = events[-1]["created_at"] if events else None
+    for event in events:
+        event_type = event.get("event_type", "unknown")
+        by_type[event_type] = by_type.get(event_type, 0) + 1
+        slide_number = event.get("slide_number")
+        if slide_number is not None:
+            key = str(slide_number)
+            slide_bucket = by_slide.setdefault(key, {"event_count": 0, "event_types": {}, "quality_snapshot": event.get("quality_snapshot") or {}})
+            slide_bucket["event_count"] += 1
+            slide_bucket["event_types"][event_type] = slide_bucket["event_types"].get(event_type, 0) + 1
+            if event.get("quality_snapshot"):
+                slide_bucket["quality_snapshot"] = event["quality_snapshot"]
+    return {
+        "event_count": len(events),
+        "by_type": by_type,
+        "by_slide": by_slide,
+        "first_at": first_at,
+        "last_at": last_at,
+    }
+
+
+@app.post("/api/manual-edit-friction/{job_id}")
+async def record_manual_edit_friction(job_id: str, request: ManualEditFrictionEventRequest):
+    """Record privacy-safe interaction events from the post-generation slide editor."""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    if request.event_type not in _ALLOWED_MANUAL_EDIT_EVENT_TYPES:
+        raise HTTPException(400, "Unsupported manual edit friction event_type")
+
+    event = {
+        "event_type": request.event_type,
+        "slide_number": request.slide_number,
+        "workflow_mode": request.workflow_mode,
+        "design_mode": request.design_mode,
+        "elapsed_ms": _safe_int(request.elapsed_ms),
+        "source": (request.source or "frontend")[:40],
+        "details": _sanitize_manual_edit_details(request.details),
+        "quality_snapshot": _sanitize_quality_snapshot(request.quality_snapshot),
+        "created_at": datetime.now().isoformat(),
+    }
+    events = manual_edit_friction_events.setdefault(job_id, [])
+    events.append(event)
+    # Keep memory bounded per job. The summary still reflects the retained recent window.
+    if len(events) > 500:
+        del events[:-500]
+
+    summary = _summarize_manual_edit_friction(events)
+    jobs[job_id]["manual_edit_friction_events"] = events
+    jobs[job_id]["manual_edit_friction_summary"] = summary
+    return {"ok": True, "manual_edit_friction_summary": summary}
+
+
+@app.get("/api/manual-edit-friction/{job_id}")
+async def get_manual_edit_friction(job_id: str):
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    events = manual_edit_friction_events.get(job_id, jobs[job_id].get("manual_edit_friction_events", []))
+    return {
+        "job_id": job_id,
+        "events": events,
+        "manual_edit_friction_summary": _summarize_manual_edit_friction(events),
+    }
 
 # ========== Direct Slide HTML Editor ==========
 
@@ -1947,7 +2762,10 @@ async def update_slide_html(
     job_id: str,
     slide_number: int,
     request: SlideHtmlUpdateRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Update slide with directly edited HTML and re-render screenshot"""
     if job_id not in jobs:
@@ -2002,13 +2820,14 @@ async def update_slide_html(
             await browser.close()
         
         import time
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
         return {
             "success": True,
             "preview_url": f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}",
             "can_undo": True,
             "history_count": len(slide_history[job_id][slide_number])
         }
-        
+
     except Exception as e:
         print(f"[HTML Edit] Error: {e}")
         raise HTTPException(500, f"Failed to update HTML: {str(e)}")
@@ -2029,7 +2848,10 @@ class SlideFeedbackRequest(BaseModel):
 async def slide_feedback_endpoint(
     job_id: str,
     request: SlideFeedbackRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Regenerate a slide based on user feedback"""
     if job_id not in jobs:
@@ -2068,6 +2890,7 @@ async def slide_feedback_endpoint(
         pipeline = get_or_create_pipeline(job_id)
         video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
         
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
         result = await regenerate_slide_with_feedback(
             job_id=job_id,
             slide_number=request.slide_number,
@@ -2079,7 +2902,8 @@ async def slide_feedback_endpoint(
             video_width=video_w,
             video_height=video_h,
             facecam_position=request.facecam_position,
-            facecam_size=request.facecam_size
+            facecam_size=request.facecam_size,
+            model_name=gemini_model
         )
         
         if not result["success"]:
@@ -2090,13 +2914,14 @@ async def slide_feedback_endpoint(
         result["preview_url"] = f"{result['preview_url']}?t={int(time.time())}"
         result["history_count"] = len(slide_history.get(job_id, {}).get(slide_num, []))
         
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
         return {
             "job_id": job_id,
             **result,
             "message": f"スライド {request.slide_number} を更新しました",
             "can_undo": result["history_count"] > 0
         }
-        
+
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -2114,26 +2939,31 @@ class ImageRegenerateRequest(BaseModel):
 async def regenerate_image_endpoint(
     job_id: str,
     request: ImageRegenerateRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Regenerate only the AI-generated illustration for a specific slide"""
     if job_id not in jobs:
         raise HTTPException(404, "Job not found")
-    
+
     try:
         from services.ai_slide_generator import regenerate_slide_illustration
-        
+
         # Get video dimensions from pipeline
         pipeline = get_or_create_pipeline(job_id)
         video_w, video_h = get_video_dimensions(getattr(pipeline, 'aspect_ratio', 'landscape'))
-        
+
+        gemini_model = x_gemini_model or jobs.get(job_id, {}).get("gemini_model", "gemini-3-flash-preview")
         result = await regenerate_slide_illustration(
             job_id=job_id,
             slide_number=request.slide_number,
             feedback=request.feedback,
             gemini_key=x_gemini_key,
             video_width=video_w,
-            video_height=video_h
+            video_height=video_h,
+            model_name=gemini_model
         )
         
         if not result["success"]:
@@ -2143,12 +2973,13 @@ async def regenerate_image_endpoint(
         import time
         result["preview_url"] = f"{result['preview_url']}?t={int(time.time())}"
         
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
         return {
             "job_id": job_id,
             **result,
             "message": f"スライド {request.slide_number} の画像を再生成しました"
         }
-        
+
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -2159,7 +2990,9 @@ async def regenerate_image_endpoint(
 @app.post("/api/slides/{job_id}/undo/{slide_number}")
 async def undo_slide_endpoint(
     job_id: str,
-    slide_number: int
+    slide_number: int,
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
 ):
     """Undo last slide change - restore previous version"""
     if job_id not in jobs:
@@ -2199,7 +3032,8 @@ async def undo_slide_endpoint(
         preview_url = f"/outputs/{job_id}_slides/slide_{slide_number:03d}.png?t={int(time.time())}"
         
         print(f"[History] Restored slide {slide_number} to version {len(history_list)}")
-        
+        _schedule_slides_cache_debounced(job_id, x_user_id, x_project_id)
+
         return {
             "job_id": job_id,
             "slide_number": slide_number,
@@ -2208,7 +3042,7 @@ async def undo_slide_endpoint(
             "history_count": len(history_list),
             "message": f"スライド {slide_number} を前のバージョンに戻しました"
         }
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2230,16 +3064,33 @@ async def upload_slides(
     slides_dir = os.path.join(UPLOAD_DIR, f"{job_id}_slides_input")
     os.makedirs(slides_dir, exist_ok=True)
     
-    if file_type == "pdf" and file:
+    file_list = files if files else ([file] if file else [])
+    inferred_single_pdf = len(file_list) == 1 and is_pdf_upload(file_list[0])
+    normalized_file_type = "pdf" if (file_type == "pdf" and file) or inferred_single_pdf else "images"
+
+    if normalized_file_type == "pdf":
         # Single PDF file
-        ext = os.path.splitext(file.filename)[1].lower()
+        pdf_upload = file if file else file_list[0]
+        if not is_pdf_upload(pdf_upload):
+            raise HTTPException(400, "PDFファイルをアップロードしてください。")
+
+        ext = os.path.splitext(pdf_upload.filename or "slides.pdf")[1].lower() or ".pdf"
         slides_path = os.path.join(UPLOAD_DIR, f"{job_id}_slides{ext}")
         
         with open(slides_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+            shutil.copyfileobj(pdf_upload.file, f)
     else:
         # Multiple image files
-        file_list = files if files else ([file] if file else [])
+        if not file_list:
+            raise HTTPException(400, "PDFまたは画像ファイルをアップロードしてください。")
+
+        unsupported = [upload_file.filename or "unknown" for upload_file in file_list if not is_supported_slide_image(upload_file)]
+        if unsupported:
+            raise HTTPException(
+                400,
+                "画像アップロードではPNG/JPG/JPEGのみ対応しています。PDFは1ファイルだけ選択してください。"
+            )
+
         slides_path = slides_dir
         
         for i, upload_file in enumerate(file_list):
@@ -2253,11 +3104,29 @@ async def upload_slides(
     jobs[job_id]["step"] = 8
     jobs[job_id]["status"] = "processing"
     
-    result = await pipeline.step_upload_slides(slides_path, file_type)
-    
+    result = await pipeline.step_upload_slides(slides_path, normalized_file_type)
+
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["slide_count"] = result["slide_count"]
-    
+
+    # Populate _slide_data_cache so post-restore slide edits work.
+    # Hybrid slides have no AI-generated HTML (the "slide" is the user's own
+    # image), but the cache entry is still required so get_slide_data() doesn't
+    # return None. Strategy is minimal; slides carry just the index + content.
+    try:
+        from services.ai_slide_generator import save_slide_data
+        hybrid_slides = [
+            {"number": i + 1, "content": c if isinstance(c, str) else str(c)}
+            for i, c in enumerate(result.get("slide_contents", []))
+        ]
+        save_slide_data(
+            job_id,
+            hybrid_slides,
+            {"mode": "hybrid", "file_type": normalized_file_type, "slide_count": result["slide_count"]},
+        )
+    except Exception as e:
+        print(f"[UploadSlides] save_slide_data failed (non-fatal): {e}")
+
     return {
         "job_id": job_id,
         "step": 8,
@@ -2370,8 +3239,276 @@ async def delete_facecam(job_id: str):
 
 # ========== STEP 10: Generate Video ==========
 
+_VIDEO_CACHE_RETRY_DELAYS_SEC = (2, 8, 30)  # exponential backoff between retry attempts
+
+
+async def _cache_video_to_storage(
+    local_mp4: str,
+    user_id: str,
+    project_id: str,
+    job_id: Optional[str] = None,
+):
+    """Upload the generated video to Supabase Storage for the 48h cache,
+    then PATCH projects.video_storage_path / video_cached_at.
+
+    Runs as a background task (fire-and-forget from caller's perspective)
+    so video generation latency isn't impacted, but internally retries up to
+    3 times with exponential backoff on transient errors. Every attempt is
+    logged with a structured `[VideoCache]` prefix so failures are auditable
+    in Railway logs (the previous version silently swallowed failures, which
+    was the root cause of the "video disappears after 48h" reports).
+
+    `jobs[job_id]["video_cache_status"]` is updated when known so other
+    endpoints can report cache health.
+    """
+    import asyncio as _asyncio
+    import httpx as _httpx
+    from datetime import timezone as _tz
+
+    def _set_status(status: str, detail: str = ""):
+        if job_id and job_id in jobs:
+            jobs[job_id]["video_cache_status"] = status
+            if detail:
+                jobs[job_id]["video_cache_detail"] = detail
+
+    try:
+        from services.supabase_storage import (
+            upload_video, is_configured, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+        )
+    except Exception as e:
+        print(f"[VideoCache] ✗ import failed for project={project_id}: {e}")
+        _set_status("error", "import_failed")
+        return
+
+    if not is_configured():
+        print(f"[VideoCache] skipped (Supabase not configured) for project={project_id}")
+        _set_status("skipped", "not_configured")
+        return
+
+    _set_status("uploading")
+    last_err: Optional[str] = None
+
+    for attempt, delay_before in enumerate(((0,) + _VIDEO_CACHE_RETRY_DELAYS_SEC)):
+        if delay_before:
+            await _asyncio.sleep(delay_before)
+        attempt_num = attempt + 1
+        try:
+            storage_path = await upload_video(local_mp4, user_id, project_id)
+            if not storage_path:
+                last_err = "upload_returned_none"
+                print(f"[VideoCache] attempt {attempt_num} ✗ upload returned None for project={project_id}")
+                continue
+
+            now_iso = datetime.now(_tz.utc).isoformat()
+            async with _httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.patch(
+                    f"{SUPABASE_URL}/rest/v1/projects",
+                    params={"id": f"eq.{project_id}"},
+                    headers={
+                        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                    json={"video_storage_path": storage_path, "video_cached_at": now_iso},
+                )
+            if r.status_code in (200, 204):
+                print(f"[VideoCache] ✓ attempt {attempt_num}: cached {storage_path} for project={project_id}")
+                _set_status("cached", storage_path)
+                return
+            else:
+                last_err = f"patch_status_{r.status_code}"
+                print(
+                    f"[VideoCache] attempt {attempt_num} ✗ PATCH failed for project={project_id}: "
+                    f"{r.status_code} — {r.text[:200]}"
+                )
+                # Non-2xx PATCH usually means project_id wrong / RLS blocked / bad payload.
+                # Retrying won't help for those cases — bail early instead of burning attempts.
+                if r.status_code in (400, 403, 404, 422):
+                    break
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            print(f"[VideoCache] attempt {attempt_num} ✗ exception for project={project_id}: {last_err}")
+
+    print(
+        f"[VideoCache] ✗ GAVE UP after {len(_VIDEO_CACHE_RETRY_DELAYS_SEC) + 1} attempts for "
+        f"project={project_id}: last_err={last_err}. Video stays playable from local disk; "
+        f"DB cache columns remain NULL so next restore will prompt regeneration."
+    )
+    _set_status("failed", last_err or "unknown")
+
+
+# ---------------------------------------------------------------------------
+# Slides Supabase Storage cache (permanent — no retention window)
+# ---------------------------------------------------------------------------
+# Slides are the core project artifact, so we upload PNGs + slide_data.json
+# to Supabase Storage and keep them for the lifetime of the project. This
+# keeps Railway redeploys from wiping users' slide previews.
+#
+# Design choice: generation-end uploads fire immediately (user is watching);
+# edit-endpoint uploads go through a 5-second debounce so rapid edits don't
+# thrash the bucket. Debounce state is project-scoped, not job-scoped, because
+# restore creates a new job_id but keeps the same project_id.
+
+_SLIDES_CACHE_RETRY_DELAYS_SEC = (2, 8, 30)
+_SLIDES_CACHE_DEBOUNCE_SEC = 5.0
+_slides_cache_debounce: Dict[str, asyncio.Task] = {}
+
+
+async def _cache_slides_to_storage(
+    job_id: str,
+    user_id: str,
+    project_id: str,
+):
+    """Upload the on-disk slides dir (PNG + slide_data.json) for this job to
+    Supabase Storage, then PATCH projects.slides_storage_prefix /
+    slides_cached_at. Retries transient errors up to 3 times. Failures are
+    logged with a [SlidesCache] prefix and tracked in
+    jobs[job_id]["slides_cache_status"] for diagnostics.
+
+    Runs as a background task — never blocks the user's generate/edit
+    response, never raises.
+    """
+    import httpx as _httpx
+    from datetime import timezone as _tz
+
+    slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+
+    def _set_status(status: str, detail: str = ""):
+        if job_id in jobs:
+            jobs[job_id]["slides_cache_status"] = status
+            if detail:
+                jobs[job_id]["slides_cache_detail"] = detail
+
+    try:
+        from services.supabase_storage import (
+            upload_slides_bundle, is_configured, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+        )
+    except Exception as e:
+        print(f"[SlidesCache] ✗ import failed for project={project_id}: {e}")
+        _set_status("error", "import_failed")
+        return
+
+    if not is_configured():
+        print(f"[SlidesCache] skipped (Supabase not configured) for project={project_id}")
+        _set_status("skipped", "not_configured")
+        return
+
+    if not os.path.isdir(slides_dir):
+        print(f"[SlidesCache] skipped: slides_dir missing for job={job_id}")
+        _set_status("skipped", "no_slides_dir")
+        return
+
+    _set_status("uploading")
+    last_err: Optional[str] = None
+
+    for attempt, delay_before in enumerate(((0,) + _SLIDES_CACHE_RETRY_DELAYS_SEC)):
+        if delay_before:
+            await asyncio.sleep(delay_before)
+        attempt_num = attempt + 1
+        try:
+            prefix = await upload_slides_bundle(slides_dir, user_id, project_id)
+            if not prefix:
+                last_err = "upload_returned_none"
+                print(f"[SlidesCache] attempt {attempt_num} ✗ upload returned None for project={project_id}")
+                continue
+
+            now_iso = datetime.now(_tz.utc).isoformat()
+            async with _httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.patch(
+                    f"{SUPABASE_URL}/rest/v1/projects",
+                    params={"id": f"eq.{project_id}"},
+                    headers={
+                        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                    json={"slides_storage_prefix": prefix, "slides_cached_at": now_iso},
+                )
+            if r.status_code in (200, 204):
+                print(f"[SlidesCache] ✓ attempt {attempt_num}: cached {prefix} for project={project_id}")
+                _set_status("cached", prefix)
+                return
+            else:
+                last_err = f"patch_status_{r.status_code}"
+                print(
+                    f"[SlidesCache] attempt {attempt_num} ✗ PATCH failed for project={project_id}: "
+                    f"{r.status_code} — {r.text[:200]}"
+                )
+                # Same reasoning as video cache: retrying a 4xx won't help.
+                if r.status_code in (400, 403, 404, 422):
+                    break
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            print(f"[SlidesCache] attempt {attempt_num} ✗ exception for project={project_id}: {last_err}")
+
+    print(
+        f"[SlidesCache] ✗ GAVE UP after {len(_SLIDES_CACHE_RETRY_DELAYS_SEC) + 1} attempts for "
+        f"project={project_id}: last_err={last_err}. Slides remain on local disk; "
+        f"next restore will fall back to local copy or prompt regeneration."
+    )
+    _set_status("failed", last_err or "unknown")
+
+
+def _schedule_slides_cache_immediate(job_id: str, user_id: Optional[str], project_id: Optional[str]):
+    """Fire-and-forget, no debounce. Called right after slide generation —
+    the user is actively watching, so we want the "saved" state visible ASAP.
+    """
+    if not user_id or not project_id:
+        # Anonymous / legacy session — cache silently skipped
+        print(f"[SlidesCache] skipped for job={job_id}: missing user_id={bool(user_id)} project_id={bool(project_id)}")
+        return
+    if job_id in jobs:
+        jobs[job_id]["slides_cache_status"] = "pending"
+    asyncio.create_task(_cache_slides_to_storage(job_id, user_id, project_id))
+
+
+def _schedule_slides_cache_debounced(
+    job_id: str,
+    user_id: Optional[str],
+    project_id: Optional[str],
+):
+    """Called from slide-edit endpoints. Cancels any pending task for the
+    same project_id and schedules a new one after _SLIDES_CACHE_DEBOUNCE_SEC.
+
+    This avoids re-uploading 20 PNGs every time the user tweaks a single
+    character in a slide. The penalty is that a crash during the debounce
+    window loses the most recent edit from Storage — acceptable because
+    (a) the edit is still on local disk for the current container, and
+    (b) slide_data.json carries the HTML source, so next restore would
+    regenerate a fresh PNG anyway.
+    """
+    if not user_id or not project_id:
+        return
+
+    key = project_id
+    existing = _slides_cache_debounce.get(key)
+    if existing and not existing.done():
+        existing.cancel()
+
+    async def _delayed():
+        try:
+            await asyncio.sleep(_SLIDES_CACHE_DEBOUNCE_SEC)
+        except asyncio.CancelledError:
+            return
+        try:
+            await _cache_slides_to_storage(job_id, user_id, project_id)
+        finally:
+            _slides_cache_debounce.pop(key, None)
+
+    if job_id in jobs:
+        jobs[job_id]["slides_cache_status"] = "pending"
+    _slides_cache_debounce[key] = asyncio.create_task(_delayed())
+
+
 @app.post("/api/generate-video/{job_id}")
-async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
+async def generate_video(
+    job_id: str,
+    update: Optional[TimingUpdate] = None,
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    x_project_id: Optional[str] = Header(None, alias="x-project-id"),
+):
     """Step 10: Generate final video"""
     pipeline = get_or_create_pipeline(job_id)
     
@@ -2408,7 +3545,22 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     
     if not pipeline.slide_images:
         raise HTTPException(500, "スライド画像が見つかりません。スライドを先に生成してください。")
-    
+
+    # Refuse to generate a broken video if the audio is just a placeholder.
+    # Placeholder audio is created by restore-project when the original
+    # audio file is no longer on disk (e.g. after Railway redeploy).
+    # Rather than producing a silent 60s video that looks "complete",
+    # return a clear error so the frontend can prompt the user to re-upload.
+    if pipeline.audio_path and "_placeholder.wav" in pipeline.audio_path and os.path.exists(pipeline.audio_path):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "audio_placeholder",
+                "message": "音声ファイルが失われています。プロジェクト再開後の動画生成には音声の再アップロードが必要です。",
+                "action": "reupload_audio",
+            },
+        )
+
     # If no timing provided and no timing_map exists, generate it from outline
     if not update and not pipeline.timing_map:
         print("[Video] Generating timing map from outline...")
@@ -2439,7 +3591,28 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["video_url"] = result["video_url"]
-    
+
+    # Background 48h Supabase Storage cache (with internal retry). Failures
+    # are logged loudly via [VideoCache] prefix and tracked in
+    # jobs[job_id]["video_cache_status"] for diagnosis. We don't await here
+    # because a failed cache shouldn't block the user from playing/downloading
+    # the video that's already on local disk.
+    if x_user_id and x_project_id:
+        local_mp4 = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
+        if os.path.exists(local_mp4):
+            jobs[job_id]["video_cache_status"] = "pending"
+            asyncio.create_task(
+                _cache_video_to_storage(local_mp4, x_user_id, x_project_id, job_id=job_id)
+            )
+        else:
+            print(f"[VideoCache] ✗ cannot cache: local file missing at {local_mp4}")
+            jobs[job_id]["video_cache_status"] = "skipped"
+            jobs[job_id]["video_cache_detail"] = "local_file_missing"
+    elif x_user_id is None or x_project_id is None:
+        # Anonymous/legacy session — caching silently skipped, but log it
+        # so we know how often this path is hit.
+        print(f"[VideoCache] skipped for job={job_id}: missing user_id={bool(x_user_id)} project_id={bool(x_project_id)}")
+
     # Get timing map for frontend timeline editor
     timing_map_data = None
     if edited:
@@ -2486,6 +3659,393 @@ async def generate_video(job_id: str, update: Optional[TimingUpdate] = None):
     return response
 
 
+# ========== Project Restore ==========
+
+def _create_silent_wav(path: str, duration: float = 60.0):
+    """Create a valid silent WAV file with the given duration.
+    Uses raw PCM format: 16-bit, mono, 44100 Hz."""
+    import struct
+    sample_rate = 44100
+    num_channels = 1
+    bits_per_sample = 16
+    num_samples = int(sample_rate * duration)
+    data_size = num_samples * num_channels * (bits_per_sample // 8)
+
+    with open(path, "wb") as f:
+        # RIFF header
+        f.write(b"RIFF")
+        f.write(struct.pack("<I", 36 + data_size))  # file size - 8
+        f.write(b"WAVE")
+        # fmt chunk
+        f.write(b"fmt ")
+        f.write(struct.pack("<I", 16))  # chunk size
+        f.write(struct.pack("<H", 1))   # PCM format
+        f.write(struct.pack("<H", num_channels))
+        f.write(struct.pack("<I", sample_rate))
+        f.write(struct.pack("<I", sample_rate * num_channels * bits_per_sample // 8))  # byte rate
+        f.write(struct.pack("<H", num_channels * bits_per_sample // 8))  # block align
+        f.write(struct.pack("<H", bits_per_sample))
+        # data chunk
+        f.write(b"data")
+        f.write(struct.pack("<I", data_size))
+        # Silence = all zeros
+        f.write(b"\x00" * data_size)
+
+
+class RestoreProjectRequest(BaseModel):
+    """Request body for restoring a project from saved state"""
+    transcript: str = ""
+    polished_transcript: str = ""
+    outline: Optional[dict] = None
+    polished_outline: Optional[dict] = None
+    timing_map: Optional[list] = None
+    aspect_ratio: Optional[str] = "landscape"
+    step: Optional[int] = None
+    slide_previews: Optional[List[str]] = None  # Slide preview URLs from frontend
+    audio_storage_path: Optional[str] = None  # Phase 2: Supabase Storage path for audio
+    # 48h video cache — present if the project's last generation was cached.
+    # video_expired vs video_recovered is determined server-side by comparing
+    # video_cached_at against a 48h window.
+    video_storage_path: Optional[str] = None
+    video_cached_at: Optional[str] = None  # ISO8601 UTC
+    # Signal that the frontend's DB row had a video_url (i.e. the user reached
+    # step 10 at some point). Needed because the cache-write race can leave
+    # the DB in a state where video_url is set but video_storage_path is null
+    # (fire-and-forget upload hadn't landed before the user navigated away).
+    # When step==10 and this is non-empty but video_storage_path is falsy,
+    # we treat the project as "video expired" so the UI rewinds + banners.
+    video_url_hint: Optional[str] = None
+    # Persistent slide cache prefix (see supabase_migration_slides_storage.sql).
+    # Present whenever slides have ever been successfully uploaded. Used as a
+    # fallback when the local old_job_id slides dir is gone (Railway redeploy).
+    slides_storage_prefix: Optional[str] = None
+
+@app.post("/api/restore-project")
+async def restore_project(
+    request: RestoreProjectRequest,
+    x_openai_key: Optional[str] = Header(None),
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None),
+    x_openrouter_key: Optional[str] = Header(None),
+):
+    """Restore a pipeline from saved project data (no audio file needed for slide generation)"""
+    import re as _re
+    import glob as _glob
+
+    job_id = str(uuid.uuid4())
+
+    # --- Extract old_job_id from slide preview URLs ---
+    old_job_id = None
+    if request.slide_previews and len(request.slide_previews) > 0:
+        old_job_match = _re.search(
+            r'/outputs/([0-9a-f-]{36})_slides/',
+            request.slide_previews[0]
+        )
+        if old_job_match:
+            old_job_id = old_job_match.group(1)
+
+    # --- Recover audio file (priority: Supabase Storage → old job_id copy → placeholder) ---
+    audio_path = None
+    audio_recovered = False  # True if real user audio was found; False if placeholder
+
+    # Priority 1: Supabase Storage (Phase 2 — survives Railway redeploys)
+    #
+    # We download TWO files when they exist:
+    #   - the ORIGINAL upload under `{user}/{project}/audio.{ext}` → placed at
+    #     `{job_id}{ext}` so pipeline.audio_path points at the original
+    #   - the POST-CLEANUP version under `{user}/{project}/audio_processed.{ext}`
+    #     → placed at `{job_id}_trimmed{ext}` so the video generator's
+    #     existing "prefer _trimmed" logic picks it up and the regenerated
+    #     video matches the user's cleanup duration (not the raw length).
+    #
+    # If processed is absent (old project or cleanup was skipped), we just
+    # use the original — the video will match the original audio length,
+    # which is the existing legacy behavior.
+    if request.audio_storage_path:
+        try:
+            from services.supabase_storage import download_audio as storage_download, storage_path_ext
+            ext = storage_path_ext(request.audio_storage_path)
+            candidate = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+            ok = await storage_download(request.audio_storage_path, candidate)
+            if ok and os.path.exists(candidate) and os.path.getsize(candidate) > 100:
+                audio_path = candidate
+                audio_recovered = True
+                print(f"[Restore] ✓ Recovered audio from Supabase Storage: {request.audio_storage_path}")
+
+                # Also try to fetch the processed (post-cleanup) version.
+                # Path convention: replace `/audio.` with `/audio_processed.`.
+                if "/audio." in request.audio_storage_path:
+                    processed_path = request.audio_storage_path.replace(
+                        "/audio.", "/audio_processed.", 1
+                    )
+                    trimmed_candidate = os.path.join(UPLOAD_DIR, f"{job_id}_trimmed{ext}")
+                    try:
+                        proc_ok = await storage_download(processed_path, trimmed_candidate)
+                        if (
+                            proc_ok
+                            and os.path.exists(trimmed_candidate)
+                            and os.path.getsize(trimmed_candidate) > 100
+                        ):
+                            print(
+                                f"[Restore] ✓ Recovered processed audio from Supabase Storage: "
+                                f"{processed_path} → {os.path.basename(trimmed_candidate)}"
+                            )
+                        else:
+                            # Not an error — processed version is optional. Most common reason
+                            # is a project that was transcribed before this change landed, or
+                            # one where cleanup was disabled so nothing got uploaded.
+                            print(f"[Restore] (no processed audio at {processed_path}, using original length)")
+                    except Exception as e:
+                        print(f"[Restore] processed audio download failed (ignored): {e}")
+        except Exception as e:
+            print(f"[Restore] Storage download failed (will fall back): {e}")
+
+    # Priority 2: Old job_id on same Railway container (Phase 1 fallback)
+    if not audio_path and old_job_id:
+        # Try common audio extensions in the old job's uploads
+        for ext in [".wav", ".mp3", ".m4a"]:
+            candidate = os.path.join(UPLOAD_DIR, f"{old_job_id}{ext}")
+            if os.path.exists(candidate):
+                # Copy to new job_id so pipeline references are correct
+                new_audio = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+                shutil.copy2(candidate, new_audio)
+                audio_path = new_audio
+                audio_recovered = True
+                print(f"[Restore] ✓ Recovered audio from {old_job_id}{ext} → {job_id}{ext}")
+                break
+            # Also try _trimmed variant
+            trimmed = os.path.join(UPLOAD_DIR, f"{old_job_id}_trimmed{ext}")
+            if os.path.exists(trimmed):
+                new_audio = os.path.join(UPLOAD_DIR, f"{job_id}_trimmed{ext}")
+                shutil.copy2(trimmed, new_audio)
+                # Also need a base audio — use trimmed as base too
+                base_audio = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+                shutil.copy2(trimmed, base_audio)
+                audio_path = base_audio
+                audio_recovered = True
+                print(f"[Restore] ✓ Recovered trimmed audio from {old_job_id} → {job_id}")
+                break
+
+    if not audio_path:
+        # Fallback: create a PLACEHOLDER WAV (marked by filename suffix).
+        # The video-generation endpoint will refuse to proceed with a placeholder
+        # and prompt the user to re-upload audio. We create a valid WAV so the
+        # pipeline doesn't crash on construction, but we mark it clearly.
+        total_duration = 60.0
+        if request.timing_map:
+            max_end = max(
+                (t.get("end_time", 0) for t in request.timing_map),
+                default=60.0
+            )
+            if max_end > 0:
+                total_duration = max_end + 1.0
+
+        audio_path = os.path.join(UPLOAD_DIR, f"{job_id}_placeholder.wav")
+        _create_silent_wav(audio_path, total_duration)
+        audio_recovered = False
+        print(f"[Restore] ⚠ No old audio found, created PLACEHOLDER WAV ({total_duration:.1f}s) - user must re-upload")
+
+    # --- Recover video (48h Supabase Storage cache) ---
+    # UI-facing: we tell users "videos are NOT saved". This silent cache is a
+    # recovery mechanism only; if it expired or is missing, we rewind the step
+    # to 9 so the frontend renders the "動画を再生成" flow.
+    video_recovered = False
+    video_url_out: Optional[str] = None
+    video_expired = False
+    if request.video_storage_path:
+        from datetime import timezone as _tz
+        age_ok = False
+        if request.video_cached_at:
+            try:
+                cached = datetime.fromisoformat(request.video_cached_at.replace("Z", "+00:00"))
+                age_hours = (datetime.now(_tz.utc) - cached).total_seconds() / 3600
+                age_ok = age_hours <= 48
+            except Exception as e:
+                print(f"[Restore] Could not parse video_cached_at={request.video_cached_at!r}: {e}")
+
+        if age_ok:
+            try:
+                from services.supabase_storage import download_video as storage_download_video
+                candidate_mp4 = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
+                if await storage_download_video(request.video_storage_path, candidate_mp4):
+                    if os.path.exists(candidate_mp4) and os.path.getsize(candidate_mp4) > 1024:
+                        video_recovered = True
+                        video_url_out = f"/video/{job_id}"
+                        print(f"[Restore] ✓ Recovered video from Supabase Storage: {request.video_storage_path}")
+                    else:
+                        print(f"[Restore] ⚠ Video downloaded but file looks empty/corrupt: {candidate_mp4}")
+            except Exception as e:
+                print(f"[Restore] Video download failed (will fall through to regenerate): {e}")
+
+        if not video_recovered:
+            # Cache was present but unusable (expired or download failed)
+            video_expired = True
+
+    # Race-window fallback: the user reached step 10 (video_url_hint is set)
+    # but no storage path landed in the DB. This happens when the background
+    # cache upload hadn't completed before the user navigated away, or when
+    # it silently failed. Either way the DB's video_url points at an old
+    # job_id whose MP4 is gone — so we treat this identically to an expired
+    # cache, letting the frontend rewind + show the "再生成してください" banner.
+    if (
+        not video_recovered
+        and not video_expired
+        and request.step == 10
+        and request.video_url_hint
+    ):
+        video_expired = True
+        print(
+            f"[Restore] ⚠ step=10 with video_url_hint={request.video_url_hint!r} "
+            f"but no storage path — marking expired (cache-write race or failure)"
+        )
+
+    # Initialize pipeline with saved state
+    pipeline = get_or_create_pipeline(job_id, audio_path)
+    pipeline.raw_transcript = request.transcript
+    pipeline.polished_transcript = request.polished_transcript
+    pipeline.raw_outline = request.outline
+    pipeline.polished_outline = request.polished_outline
+    if request.timing_map:
+        pipeline.timing_map = request.timing_map
+    if request.aspect_ratio:
+        pipeline.aspect_ratio = request.aspect_ratio
+
+    # Determine restore step: use frontend-provided step if valid, otherwise default to 5
+    restore_step = 5
+    if request.step is not None and 1 <= request.step <= 10:
+        restore_step = request.step
+
+    # NOTE: we intentionally do NOT coerce restore_step when the video cache is
+    # expired. The frontend knows the workflow_mode (hybrid vs full-ai) and
+    # rewinds to the appropriate "slides complete" step itself: step 8 for
+    # hybrid, step 6 for full-ai. Backend just signals `video_expired`.
+
+    # Initialize job tracking with API keys
+    jobs[job_id] = {
+        "id": job_id,
+        "step": restore_step,
+        "status": "restored",
+        "created_at": datetime.now().isoformat(),
+        "gemini_key": x_gemini_key or "",
+        "gemini_model": x_gemini_model or "gemini-3-flash-preview",
+        "openrouter_key": x_openrouter_key or "",
+    }
+    if video_recovered and video_url_out:
+        jobs[job_id]["video_url"] = video_url_out
+        jobs[job_id]["status"] = "completed"
+    job_timestamps[job_id] = datetime.now()
+
+    # Store API keys for this job
+    api_keys[job_id] = {
+        "openai": x_openai_key or "",
+        "gemini": x_gemini_key or "",
+    }
+
+    # --- Recover slide images + slide metadata from old job ---
+    # Slide editing (feedback endpoint) needs the in-memory _slide_data_cache
+    # populated for the NEW job_id. We persist that cache to JSON alongside
+    # the images and copy+rehydrate it here so post-restore edits work.
+    recovered_slides = 0
+    if old_job_id:
+        old_slides_dir = os.path.join(OUTPUT_DIR, f"{old_job_id}_slides")
+        new_slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+
+        if os.path.isdir(old_slides_dir):
+            os.makedirs(new_slides_dir, exist_ok=True)
+            slide_files = sorted(_glob.glob(os.path.join(old_slides_dir, "slide_*.png")))
+            for src in slide_files:
+                dst = os.path.join(new_slides_dir, os.path.basename(src))
+                shutil.copy2(src, dst)
+                pipeline.slide_images.append(dst)
+            recovered_slides = len(slide_files)
+            print(f"[Restore] ✓ Copied {recovered_slides} slide images from {old_job_id} → {job_id}")
+
+            # Copy the slide_data.json (slides metadata + strategy + HTML contents)
+            # so the feedback/edit endpoints can find it under the new job_id.
+            old_slide_data = os.path.join(old_slides_dir, "slide_data.json")
+            if os.path.exists(old_slide_data):
+                new_slide_data = os.path.join(new_slides_dir, "slide_data.json")
+                try:
+                    shutil.copy2(old_slide_data, new_slide_data)
+                    from services.ai_slide_generator import load_slide_data_from_disk
+                    if load_slide_data_from_disk(job_id):
+                        print(f"[Restore] ✓ Recovered slide_data.json and rehydrated cache for {job_id}")
+                    else:
+                        print(f"[Restore] ⚠ Copied slide_data.json but failed to rehydrate cache")
+                except Exception as e:
+                    print(f"[Restore] ⚠ Failed to copy slide_data.json: {e}")
+            else:
+                # Older jobs predate disk persistence — edits on those restores won't work
+                # until the user regenerates slides. Fine as a graceful degradation.
+                print(f"[Restore] ⚠ No slide_data.json in old job (pre-persistence job)")
+        else:
+            print(f"[Restore] ⚠ Old slides dir not found: {old_slides_dir}")
+    elif request.slide_previews:
+        print(f"[Restore] ⚠ Could not parse old job_id from slide_previews: {request.slide_previews[0][:80]}")
+
+    # Fallback: if the local old_job_id copy produced no slides AND the project
+    # has a persistent Supabase Storage prefix (Sprint 2), download the bundle
+    # from Storage. This is the path that rescues projects after a Railway
+    # redeploy. See services/supabase_storage.download_slides_bundle.
+    if recovered_slides == 0 and request.slides_storage_prefix:
+        new_slides_dir = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+        try:
+            from services.supabase_storage import download_slides_bundle as _dl_slides
+            downloaded = await _dl_slides(request.slides_storage_prefix, new_slides_dir)
+        except Exception as e:
+            print(f"[Restore] Slides storage download raised: {type(e).__name__}: {e}")
+            downloaded = 0
+
+        if downloaded > 0:
+            png_files = sorted(_glob.glob(os.path.join(new_slides_dir, "slide_*.png")))
+            for p in png_files:
+                pipeline.slide_images.append(p)
+            recovered_slides = len(png_files)
+            print(f"[Restore] ✓ Recovered {recovered_slides} slides from Supabase Storage "
+                  f"({request.slides_storage_prefix})")
+
+            # Rehydrate slide_data.json cache so feedback/edit endpoints work.
+            # download_slides_bundle would have placed slide_data.json into
+            # new_slides_dir if it existed in Storage.
+            try:
+                from services.ai_slide_generator import load_slide_data_from_disk
+                if load_slide_data_from_disk(job_id):
+                    print(f"[Restore] ✓ Rehydrated slide_data.json cache from Storage for {job_id}")
+                else:
+                    print(f"[Restore] ⚠ slide_data.json rehydration from Storage skipped or failed")
+            except Exception as e:
+                print(f"[Restore] ⚠ slide_data.json rehydration raised: {type(e).__name__}: {e}")
+        else:
+            print(f"[Restore] ⚠ No slides in Supabase Storage at {request.slides_storage_prefix}")
+
+    # Build the authoritative slide_previews list for the NEW job_id.
+    # IMPORTANT: this supersedes whatever the frontend had stored. The previous
+    # approach relied on the frontend HEAD-checking saved URLs (which pointed at
+    # the OLD job_id on potentially-recycled container disk), producing a flaky
+    # "some 404, some 200" result → "4 slides became 2". Now we return the
+    # ground truth from what was just copied into new_slides_dir.
+    new_slides_dir_path = os.path.join(OUTPUT_DIR, f"{job_id}_slides")
+    restored_slide_previews: List[str] = []
+    if os.path.isdir(new_slides_dir_path):
+        for p in sorted(_glob.glob(os.path.join(new_slides_dir_path, "slide_*.png"))):
+            restored_slide_previews.append(f"/outputs/{job_id}_slides/{os.path.basename(p)}")
+
+    print(f"[Restore] Project restored as job {job_id} at step={restore_step} (has_gemini_key={bool(x_gemini_key)}, has_openrouter_key={bool(x_openrouter_key)}, slides={recovered_slides}, previews_returned={len(restored_slide_previews)}, audio={'recovered' if audio_recovered else 'placeholder'}, storage_restore={bool(request.slides_storage_prefix)})")
+
+    return {
+        "job_id": job_id,
+        "status": "restored",
+        "message": "Project restored successfully",
+        "step": restore_step,  # may have been coerced down to 9 if video cache expired
+        "slides_recovered": recovered_slides,
+        "slide_previews": restored_slide_previews,  # Authoritative URLs under the new job_id
+        "audio_recovered": audio_recovered,  # False if placeholder — frontend should prompt re-upload
+        "video_recovered": video_recovered,
+        "video_url": video_url_out,  # None if not recovered — frontend must regenerate
+        "video_expired": video_expired,  # True only if project had a cache but it's gone
+    }
+
+
 # ========== Utilities ==========
 
 @app.get("/api/status/{job_id}")
@@ -2518,6 +4078,7 @@ async def delete_job(job_id: str):
     """Delete job and cleanup files"""
     if job_id in jobs:
         del jobs[job_id]
+    manual_edit_friction_events.pop(job_id, None)
     delete_pipeline(job_id)
     
     # Cleanup files
@@ -2683,14 +4244,15 @@ VoiSlide Movieは音声からスライド動画を自動生成するサービス
 @app.post("/support/chat")
 async def support_chat(
     request: SupportChatRequest,
-    x_gemini_key: Optional[str] = Header(None)
+    x_gemini_key: Optional[str] = Header(None),
+    x_gemini_model: Optional[str] = Header(None)
 ):
     """AI-powered support chat using Gemini"""
     import google.generativeai as genai
-    
+
     # Get API key from header or environment
     gemini_key = x_gemini_key or os.environ.get("GEMINI_API_KEY")
-    
+
     if not gemini_key:
         return {
             "reply": "申し訳ございません。サポートチャットを利用するにはGemini APIキーが必要です。\n\n画面上部の「API設定」からGemini APIキーを設定してください。\n\nAPIキーは https://aistudio.google.com/app/apikey で無料で取得できます。"
@@ -2698,8 +4260,9 @@ async def support_chat(
     
     try:
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-3-flash-preview")
-        
+        support_model = x_gemini_model or "gemini-3-flash-preview"
+        model = genai.GenerativeModel(support_model)
+
         # Build conversation context
         messages = []
         

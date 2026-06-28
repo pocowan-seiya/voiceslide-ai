@@ -1,0 +1,88 @@
+{
+  "ok": true,
+  "source_result": "/tmp/voislide_sprint15_typography_title_prompt_qa_result.json",
+  "runs": [
+    {
+      "mode": "flash_standard",
+      "job_id": "a4078487-6354-4603-83de-9812c319217e",
+      "stage_counts": {
+        "strategy": 1,
+        "slide_html": 2,
+        "self_review": 2
+      },
+      "fallback_stage_counts": {},
+      "self_review_diagnostic_count": 0,
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 28.0,
+          "title_font_size_px": 104.0,
+          "small_text_count": 0,
+          "fallback_used": false,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 28.0,
+          "title_font_size_px": 132.0,
+          "small_text_count": 0,
+          "fallback_used": false,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ],
+      "design_quality_pass_count": 2,
+      "design_quality_total": 2,
+      "small_text_total": 0,
+      "copied_images": [
+        "flash_standard_slide_001.png",
+        "flash_standard_slide_002.png"
+      ],
+      "diagnostic_files_copied": []
+    },
+    {
+      "mode": "pro",
+      "job_id": "f5b75814-54e3-4fd4-8cc3-c238dbfd6b72",
+      "stage_counts": {
+        "strategy": 1,
+        "slide_html": 2,
+        "self_review": 2
+      },
+      "fallback_stage_counts": {},
+      "self_review_diagnostic_count": 0,
+      "design_quality_metrics_summary": [
+        {
+          "slide_number": 1,
+          "min_font_size_px": 24.0,
+          "title_font_size_px": 82.0,
+          "small_text_count": 0,
+          "fallback_used": false,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        },
+        {
+          "slide_number": 2,
+          "min_font_size_px": 26.0,
+          "title_font_size_px": 84.0,
+          "small_text_count": 0,
+          "fallback_used": false,
+          "quality_gate": "pass",
+          "warnings_count": 0,
+          "warnings": []
+        }
+      ],
+      "design_quality_pass_count": 2,
+      "design_quality_total": 2,
+      "small_text_total": 0,
+      "copied_images": [
+        "pro_slide_001.png",
+        "pro_slide_002.png"
+      ],
+      "diagnostic_files_copied": []
+    }
+  ]
+}
