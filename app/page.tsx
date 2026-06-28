@@ -1100,8 +1100,9 @@ export default function Home() {
     const fileArray = Array.from(files);
     const formData = new FormData();
 
-    // Check if it's a PDF or multiple images
-    if (fileArray.length === 1 && fileArray[0].name.endsWith(".pdf")) {
+    // Check if it's a PDF or multiple images. Some browsers/users keep the
+    // original uppercase extension (e.g. .PDF), so detect case-insensitively.
+    if (fileArray.length === 1 && fileArray[0].name.toLowerCase().endsWith(".pdf")) {
       formData.append("file", fileArray[0]);
       formData.append("file_type", "pdf");
     } else {
