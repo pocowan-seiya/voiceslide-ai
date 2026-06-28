@@ -20,6 +20,7 @@ import asyncio
 from config import UPLOAD_DIR, OUTPUT_DIR, ASPECT_RATIO_PRESETS, get_video_dimensions, ACCESS_PASSWORD
 from services.pipeline import get_or_create_pipeline, delete_pipeline, pipelines
 from services.outline_generator import format_outline_for_export
+from services.upload_utils import is_pdf_upload, is_supported_slide_image
 
 
 app = FastAPI(
@@ -3063,16 +3064,33 @@ async def upload_slides(
     slides_dir = os.path.join(UPLOAD_DIR, f"{job_id}_slides_input")
     os.makedirs(slides_dir, exist_ok=True)
     
-    if file_type == "pdf" and file:
+    file_list = files if files else ([file] if file else [])
+    inferred_single_pdf = len(file_list) == 1 and is_pdf_upload(file_list[0])
+    normalized_file_type = "pdf" if (file_type == "pdf" and file) or inferred_single_pdf else "images"
+
+    if normalized_file_type == "pdf":
         # Single PDF file
-        ext = os.path.splitext(file.filename)[1].lower()
+        pdf_upload = file if file else file_list[0]
+        if not is_pdf_upload(pdf_upload):
+            raise HTTPException(400, "PDFファイルをアップロードしてください。")
+
+        ext = os.path.splitext(pdf_upload.filename or "slides.pdf")[1].lower() or ".pdf"
         slides_path = os.path.join(UPLOAD_DIR, f"{job_id}_slides{ext}")
         
         with open(slides_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+            shutil.copyfileobj(pdf_upload.file, f)
     else:
         # Multiple image files
-        file_list = files if files else ([file] if file else [])
+        if not file_list:
+            raise HTTPException(400, "PDFまたは画像ファイルをアップロードしてください。")
+
+        unsupported = [upload_file.filename or "unknown" for upload_file in file_list if not is_supported_slide_image(upload_file)]
+        if unsupported:
+            raise HTTPException(
+                400,
+                "画像アップロードではPNG/JPG/JPEGのみ対応しています。PDFは1ファイルだけ選択してください。"
+            )
+
         slides_path = slides_dir
         
         for i, upload_file in enumerate(file_list):
@@ -3086,7 +3104,7 @@ async def upload_slides(
     jobs[job_id]["step"] = 8
     jobs[job_id]["status"] = "processing"
     
-    result = await pipeline.step_upload_slides(slides_path, file_type)
+    result = await pipeline.step_upload_slides(slides_path, normalized_file_type)
 
     jobs[job_id]["status"] = "completed"
     jobs[job_id]["slide_count"] = result["slide_count"]
@@ -3104,7 +3122,7 @@ async def upload_slides(
         save_slide_data(
             job_id,
             hybrid_slides,
-            {"mode": "hybrid", "file_type": file_type, "slide_count": result["slide_count"]},
+            {"mode": "hybrid", "file_type": normalized_file_type, "slide_count": result["slide_count"]},
         )
     except Exception as e:
         print(f"[UploadSlides] save_slide_data failed (non-fatal): {e}")
